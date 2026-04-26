@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local deployment overrides for OpenCode agent installer
+.opencode-deploy.local.env

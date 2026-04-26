@@ -1,115 +1,112 @@
-# Cuddly Winner | An OpenCode Karpathy Loop
+# Cuddly Winner | OpenCode Loop Agents
 
-This repository implements the **"Karpathy Loop,"** an autonomous machine learning research and code optimization cycle.  
-It is orchestrated using **OpenCode**, an open-source, provider-agnostic AI coding agent.
+This repo stores reusable OpenCode agents for autonomous coding loops.
 
-By leveraging OpenCode's custom agent capabilities and multi-model support, this project automates the execution, evaluation, and iteration of ML experiments while strictly preventing the agent from "reward hacking."
+It currently ships two loop styles from one deploy flow:
+- `@karpathy` for iterative ML research orchestration
+- `@autonomous` for strict spec-driven execution with verification gating
 
----
+## Assumptions
 
-## 🏗 Architecture: The Three-File Contract
+- OpenCode is already installed.
+- OpenCode is already configured with a model provider (for example ChatGPT Codex).
+- You are on macOS or Linux with a working shell.
+- Windows users: please figure out what a shell is before trying this setup.
 
-To maintain operational integrity and ensure every experiment is objectively comparable, this project enforces a rigid **"three-file contract"** between human intent and machine execution.
-
-### 🔒 `prepare.py` (The Immutable Judge)
-This file is strictly frozen. It defines the exact data loading protocols and validation metrics (e.g., bits-per-byte).  
-**The agent is never allowed to edit this file.**
-
-### 🧬 `train.py` (The Evolutionary Target)
-This is the fully mutable file. The OpenCode agent has full access to:
-- Rewrite model architectures  
-- Swap optimizers (e.g., AdamW or Muon)  
-- Tune hyperparameters  
-
-### 🧠 `program.md` (The Research Strategy)
-The natural language strategy protocol. It defines:
-- Agent instructions  
-- Git isolation workflows  
-- Log analysis rules  
-- Experiment stopping criteria  
-
----
-
-## 📂 Project Structure
+## Repository Layout
 
 ```text
-├── .opencode/
-│   └── agents/
-│       └── researcher.md  # OpenCode custom agent config (YAML frontmatter + instructions)
-├── data/                  # Dataset directory (ignored by agent)
-├── logs/                  # Output logs for agent to analyze
-├── prepare.py             # DO NOT TOUCH - Validation & data loading
-├── train.py               # Agent's playground - Neural net architecture
-└── program.md             # The core loop instructions
+.
+|-- agents/
+|   |-- autonomous.md
+|   `-- karpathy.md
+|-- scripts/
+|   `-- deploy-opencode-agents.sh
+|-- .opencode-deploy.local.env.example
+`-- README.md
 ```
 
----
+## Install Agents Globally
 
-## 🚀 Setup & Execution
-
-### 1. Install OpenCode
-
-If you haven't already, install the OpenCode CLI.  
-OpenCode runs locally in your terminal and keeps your workflow entirely within your codebase.
+Install all agents in `agents/*.md` into your global OpenCode agents directory.
 
 ```bash
-curl -sS https://opencode.ai/install | bash
+./scripts/deploy-opencode-agents.sh install
 ```
 
----
+By default the script:
+1. Resolves OpenCode config with `opencode debug paths`.
+2. Uses `<config>/agents` as destination.
+3. Creates file-level symlinks for each markdown agent.
 
-### 2. Configure the LLM Provider
+Check what is installed:
 
-OpenCode supports over 75 LLM providers, allowing you to choose the "brain" for your loop based on your budget and reasoning requirements.
+```bash
+./scripts/deploy-opencode-agents.sh status
+```
 
-#### ☁️ Cloud (Deep Reasoning)
-For complex architectural leaps, configure OpenCode to use frontier models like:
-- Claude Opus 4.6 (best for planning and architecture decisions)  
-- Claude Sonnet 4.6 (best for fast, reliable code generation)  
+Remove managed symlinks:
 
-#### 🖥️ Local (Offline / Free)
-To run long autonomous loops without high API costs, configure OpenCode to use an **Ollama backend**.
+```bash
+./scripts/deploy-opencode-agents.sh remove
+```
 
-Recommended models:
-- Qwen3-Coder (8B or 32B)  
-  - Native 256K token context window  
-  - Strong tool-calling capabilities  
+## Using The Agents
 
----
+OpenCode loads these by filename after deployment.
 
-### 3. Run the Autonomous Loop
-
-OpenCode uses a markdown-based prompt system with YAML frontmatter to define custom agents.  
-The `.opencode/agents/researcher.md` file in this repo restricts the agent to the rules in `program.md`.
-
-Start OpenCode in your terminal:
+From any project directory:
 
 ```bash
 opencode
 ```
 
-Invoke the researcher agent:
+Invoke either loop style:
 
 ```text
-@researcher
+@karpathy
+@autonomous
 ```
 
-Then instruct it to begin the loop:
+## Agent Roles
 
-```text
-Read program.md. Execute the Karpathy Loop by modifying train.py, running the experiment for a maximum of 5 minutes, and logging the results. Repeat until the metric improves.
+- `@karpathy`: strategy/orchestrator loop for iterative ML optimization. It can delegate focused implementation bursts to `autonomous` via Task.
+- `@autonomous`: spec-driven executor. It requires `spec.md`, tracks progress with `[ ]` and `[x]` checkboxes in `progress.txt`, enforces full test coverage against the spec, and gates completion on passing verification commands.
+
+## Required Files In The Project You Run On
+
+For `@karpathy` workflows:
+- `prepare.py` (immutable evaluator)
+- `train.py` (mutable training target)
+- `program.md` (loop strategy and constraints)
+
+For `@autonomous` workflows:
+- `spec.md` (required source of truth)
+- `progress.txt` (created/updated by the agent)
+- project-specific verification commands (tests/build/lint as applicable)
+
+## Promise Semantics
+
+- `<promise>COMPLETE</promise>`: work is complete and verification passed.
+- `<promise>WORK_STUCK</promise>`: agent is blocked after genuine attempts and has documented blockers in `progress.txt`.
+
+## Path Override Strategy
+
+Override precedence:
+1. CLI flags
+2. Environment variables
+3. `.opencode-deploy.local.env`
+4. `opencode debug paths`
+5. Script defaults
+
+Supported environment variables:
+- `OPENCODE_DEPLOY_SOURCE_DIR`
+- `OPENCODE_DEPLOY_CONFIG_DIR`
+- `OPENCODE_DEPLOY_AGENTS_DIR`
+- `OPENCODE_DEPLOY_MODE`
+
+Create local overrides (gitignored):
+
+```bash
+cp .opencode-deploy.local.env.example .opencode-deploy.local.env
 ```
-
----
-
-## 🛡️ Safety & Guardrails
-
-### ⏱️ Time Limits
-Every experiment run via `train.py` must have a strict wall-clock time budget enforced in the script to ensure rapid, comparable iterations.
-
-### 🔄 Version Control
-- Commit your baseline before starting the loop  
-- Use OpenCode’s Git-based undo/redo safety nets  
-- Revert any non-improving architectural regressions  
-
----
