@@ -294,4 +294,4 @@ for src in "${AGENT_FILES[@]}"; do
   fi
 done
 
-printf 'Done. Start OpenCode anywhere and invoke an agent by filename, e.g. @karpathy or @autonomous\n'
+printf 'Done. Start OpenCode anywhere and invoke an agent by filename, e.g. @prometheus, @karpathy, or @autonomous\n'

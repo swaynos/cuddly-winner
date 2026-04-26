@@ -1,16 +1,14 @@
 # Cuddly Winner | OpenCode Loop Agents
 
-This repo stores reusable OpenCode agents for autonomous coding loops.
-
-It currently ships two loop styles from one deploy flow:
-- `@karpathy` for iterative ML research orchestration
-- `@autonomous` for strict spec-driven execution with verification gating
+This repo ships a multi-agent autonomous workflow for OpenCode:
+- `@prometheus`: planning specialist that writes `spec.md`
+- `@autonomous`: spec-driven implementation executor
+- `@karpathy`: iterative ML research loop orchestrator
 
 ## Assumptions
 
-- OpenCode is already installed.
-- OpenCode is already configured with a model provider (for example ChatGPT Codex).
-- You are on macOS or Linux with a working shell.
+- OpenCode is installed and already connected to a model provider.
+- You are running on macOS or Linux with a working shell.
 - Windows users: please figure out what a shell is before trying this setup.
 
 ## Repository Layout
@@ -19,94 +17,76 @@ It currently ships two loop styles from one deploy flow:
 .
 |-- agents/
 |   |-- autonomous.md
-|   `-- karpathy.md
+|   |-- karpathy.md
+|   `-- prometheus.md
 |-- scripts/
 |   `-- deploy-opencode-agents.sh
-|-- .opencode-deploy.local.env.example
-`-- README.md
+|-- prepare.py
+|-- train.py
+`-- .opencode-deploy.local.env.example
 ```
 
 ## Install Agents Globally
 
-Install all agents in `agents/*.md` into your global OpenCode agents directory.
+`agents/` is the single source of truth for deployable agent definitions in this repo.
+
+Deploy all files in `agents/*.md` into your global OpenCode agents directory:
 
 ```bash
 ./scripts/deploy-opencode-agents.sh install
 ```
 
-By default the script:
-1. Resolves OpenCode config with `opencode debug paths`.
-2. Uses `<config>/agents` as destination.
-3. Creates file-level symlinks for each markdown agent.
-
-Check what is installed:
+Then verify deployment:
 
 ```bash
 ./scripts/deploy-opencode-agents.sh status
 ```
 
-Remove managed symlinks:
+## Pipeline: Prometheus -> Autonomous Loop
 
-```bash
-./scripts/deploy-opencode-agents.sh remove
-```
+1. Start in the target project and invoke `@prometheus`.
+2. Let it interview you and generate a complete `spec.md`.
+3. Invoke `@autonomous` in the same OpenCode session and let it execute against `spec.md`.
 
-## Using The Agents
+`@autonomous` behavior is OpenCode-native (no external loop script):
+- Implements from `spec.md` and updates `progress.txt` checklist entries (`[ ]`, `[x]`).
+- Writes exhaustive tests for the spec and runs verification commands.
+- Must not emit `<promise>COMPLETE</promise>` until required verification commands pass with exit code `0`.
+- Emits `<promise>WORK_STUCK</promise>` only after documenting blockers in `progress.txt`.
 
-OpenCode loads these by filename after deployment.
+## Karpathy Loop Baseline Files
 
-From any project directory:
+The repo includes sample baseline files for ML loop experiments:
+- `prepare.py`: frozen synthetic dataset + strict validation metrics.
+- `train.py`: intentionally sub-optimal NumPy classifier with hard wall-clock budget (5 minutes).
 
-```bash
-opencode
-```
-
-Invoke either loop style:
-
-```text
-@karpathy
-@autonomous
-```
+Use `@karpathy` on projects that follow the ML loop pattern (`prepare.py`, `train.py`, `program.md`).
 
 ## Agent Roles
 
-- `@karpathy`: strategy/orchestrator loop for iterative ML optimization. It can delegate focused implementation bursts to `autonomous` via Task.
-- `@autonomous`: spec-driven executor. It requires `spec.md`, tracks progress with `[ ]` and `[x]` checkboxes in `progress.txt`, enforces full test coverage against the spec, and gates completion on passing verification commands.
+- `@prometheus` (Planning Specialist)
+  - Resolves ambiguity through targeted user interview.
+  - Produces detailed `spec.md` with acceptance criteria, constraints, and `[ ]` implementation plan.
 
-## Required Files In The Project You Run On
+- `@autonomous` (Spec-Driven Executor)
+  - Requires `spec.md` as source of truth.
+  - Tracks progress in `progress.txt` using `[ ]` / `[x]` checkboxes.
+  - Enforces automated backpressure: no `<promise>COMPLETE</promise>` until verification commands pass (`0`).
+  - On genuine blockers, writes blockers to `progress.txt` and emits `<promise>WORK_STUCK</promise>`.
 
-For `@karpathy` workflows:
-- `prepare.py` (immutable evaluator)
-- `train.py` (mutable training target)
-- `program.md` (loop strategy and constraints)
+- `@karpathy` (ML Research Orchestrator)
+  - Drives iterative train/eval loop strategy and metric comparisons.
+  - Can delegate implementation bursts to `@autonomous`.
 
-For `@autonomous` workflows:
-- `spec.md` (required source of truth)
-- `progress.txt` (created/updated by the agent)
-- project-specific verification commands (tests/build/lint as applicable)
+## Local Config Files (Gitignored)
 
-## Promise Semantics
-
-- `<promise>COMPLETE</promise>`: work is complete and verification passed.
-- `<promise>WORK_STUCK</promise>`: agent is blocked after genuine attempts and has documented blockers in `progress.txt`.
-
-## Path Override Strategy
-
-Override precedence:
-1. CLI flags
-2. Environment variables
-3. `.opencode-deploy.local.env`
-4. `opencode debug paths`
-5. Script defaults
-
-Supported environment variables:
-- `OPENCODE_DEPLOY_SOURCE_DIR`
-- `OPENCODE_DEPLOY_CONFIG_DIR`
-- `OPENCODE_DEPLOY_AGENTS_DIR`
-- `OPENCODE_DEPLOY_MODE`
-
-Create local overrides (gitignored):
+Optional deploy overrides:
 
 ```bash
 cp .opencode-deploy.local.env.example .opencode-deploy.local.env
 ```
+
+## Promise Semantics
+
+- `<promise>COMPLETE</promise>`: implementation complete and verification passes.
+- `<promise>WORK_STUCK</promise>`: blocked after genuine attempts; blockers documented in `progress.txt`.
