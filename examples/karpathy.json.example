@@ -1,0 +1,27 @@
+{
+  "_comment": "Copy to .opencode/karpathy.json in your project. Replace commands and paths with your project's specifics. See examples/ml-loop/.opencode/karpathy.json for a complete wired example.",
+
+  "strategy_doc": "program.md",
+  "log_file": "experiments.md",
+
+  "baseline_command": "<your measurement command here>",
+
+  "score_source": {
+    "type": "file",
+    "path": "<path/to/score.txt>",
+    "format": "float",
+    "direction": "minimize"
+  },
+
+  "noise_probe": {
+    "command": "<your measurement command here>",
+    "env_overrides": [
+      "SEED=1",
+      "SEED=2",
+      "SEED=3"
+    ]
+  },
+
+  "immutable_targets": ["<your frozen evaluator>"],
+  "mutable_targets": ["<your target file(s)>"]
+}

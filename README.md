@@ -1,15 +1,20 @@
 # Cuddly Winner | OpenCode Loop Agents
 
-This repo ships a multi-agent autonomous workflow for OpenCode:
-- `@prometheus`: planning specialist that writes `spec.md`
-- `@autonomous`: spec-driven implementation executor
-- `@karpathy`: iterative ML research loop orchestrator
+A multi-agent autonomous workflow for OpenCode.
+
+## Agents
+
+| Agent | Mode | Role |
+|---|---|---|
+| `@prometheus` | primary | Interviews you and writes `SPEC.md`. Nothing else. |
+| `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. |
+| `@karpathy` | primary | Structured iterative improvement: one change, measure, keep or revert. |
+| `@reviewer` | subagent (hidden) | Read-only critic. Returns `APPROVE` or `REQUEST_CHANGES` with evidence. |
 
 ## Assumptions
 
-- OpenCode is installed and already connected to a model provider.
-- You are running on macOS or Linux with a working shell.
-- Windows users: please figure out what a shell is before trying this setup.
+- OpenCode is installed and connected to a model provider.
+- macOS or Linux with a working shell. (Windows: use WSL.)
 
 ## Repository Layout
 
@@ -18,75 +23,180 @@ This repo ships a multi-agent autonomous workflow for OpenCode:
 |-- agents/
 |   |-- autonomous.md
 |   |-- karpathy.md
-|   `-- prometheus.md
+|   |-- prometheus.md
+|   `-- reviewer.md
+|-- plugins/
+|   `-- immutability.ts        Global plugin — enforces per-project file rules
+|-- examples/
+|   |-- immutable.json.example  Marker file template for the immutability plugin
+|   |-- karpathy.json.example   Deterministic loop config template for @karpathy
+|   `-- ml-loop/                Complete runnable @karpathy example (pure Python, no deps)
+|       |-- prepare.py          Frozen evaluator — do not edit
+|       |-- train.py            Mutable target — agent improves this
+|       |-- program.md          Loop objective, constraints, stop criteria
+|       `-- .opencode/          Per-project config (karpathy.json + immutable.json)
 |-- scripts/
 |   `-- deploy-opencode-agents.sh
-|-- prepare.py
-|-- train.py
 `-- .opencode-deploy.local.env.example
 ```
 
-## Install Agents Globally
+## Install
 
-`agents/` is the single source of truth for deployable agent definitions in this repo.
-
-Deploy all files in `agents/*.md` into your global OpenCode agents directory:
+Deploy agents globally (symlinked by default):
 
 ```bash
 ./scripts/deploy-opencode-agents.sh install
 ```
 
-Then verify deployment:
+Also install the immutability plugin:
+
+```bash
+./scripts/deploy-opencode-agents.sh install --with-plugins
+```
+
+Verify deployment:
 
 ```bash
 ./scripts/deploy-opencode-agents.sh status
+./scripts/deploy-opencode-agents.sh status --with-plugins
 ```
 
-## Pipeline: Prometheus -> Autonomous Loop
+Remove:
 
-1. Start in the target project and invoke `@prometheus`.
-2. Let it interview you and generate a complete `spec.md`.
-3. Invoke `@autonomous` in the same OpenCode session and let it execute against `spec.md`.
+```bash
+./scripts/deploy-opencode-agents.sh remove --with-plugins
+```
 
-`@autonomous` behavior is OpenCode-native (no external loop script):
-- Implements from `spec.md` and updates `progress.txt` checklist entries (`[ ]`, `[x]`).
-- Writes exhaustive tests for the spec and runs verification commands.
-- Must not emit `<promise>COMPLETE</promise>` until required verification commands pass with exit code `0`.
-- Emits `<promise>WORK_STUCK</promise>` only after documenting blockers in `progress.txt`.
+## Workflow: Prometheus → Autonomous
 
-## Karpathy Loop Baseline Files
+1. Open a project in OpenCode. Tab to `@prometheus` or type `@prometheus`.
+2. Prometheus interviews you (batched questions, 3–5 per turn) until it has
+   enough to write a complete, testable spec.
+3. It writes `SPEC.md` and stops. That is its entire job.
+4. Tab to `@autonomous` (or type `@autonomous`).
+5. Autonomous reads `SPEC.md`, implements the checklist, runs the verification
+   commands after each change, and loops until everything passes.
+6. Before declaring done, it spawns `@reviewer` with the spec and a change
+   summary. If the reviewer returns `REQUEST_CHANGES`, it keeps going.
+7. When `@reviewer` returns `APPROVE`, autonomous writes a completion summary
+   and stops.
 
-The repo includes sample baseline files for ML loop experiments:
-- `prepare.py`: frozen synthetic dataset + strict validation metrics.
-- `train.py`: intentionally sub-optimal NumPy classifier with hard wall-clock budget (5 minutes).
+If `SPEC.md` is missing when you invoke `@autonomous`, it will tell you to run
+`@prometheus` first.
 
-Use `@karpathy` on projects that follow the ML loop pattern (`prepare.py`, `train.py`, `program.md`).
+## Workflow: Karpathy Loop
 
-## Agent Roles
+Use `@karpathy` when you have a measurable target and want to iterate toward it
+with discipline — not flailing, not over-planning.
 
-- `@prometheus` (Planning Specialist)
-  - Resolves ambiguity through targeted user interview.
-  - Produces detailed `spec.md` with acceptance criteria, constraints, and `[ ]` implementation plan.
+Required: `program.md` in the project root with the loop objective, metric,
+constraints, and stop criteria.
 
-- `@autonomous` (Spec-Driven Executor)
-  - Requires `spec.md` as source of truth.
-  - Tracks progress in `progress.txt` using `[ ]` / `[x]` checkboxes.
-  - Enforces automated backpressure: no `<promise>COMPLETE</promise>` until verification commands pass (`0`).
-  - On genuine blockers, writes blockers to `progress.txt` and emits `<promise>WORK_STUCK</promise>`.
+Optional but recommended: `.opencode/karpathy.json` for deterministic, repeatable
+loop configuration (exact commands, score source, noise probe). Copy and adapt:
 
-- `@karpathy` (ML Research Orchestrator)
-  - Drives iterative train/eval loop strategy and metric comparisons.
-  - Can delegate implementation bursts to `@autonomous`.
+```bash
+cp examples/karpathy.json.example .opencode/karpathy.json
+```
 
-## Local Config Files (Gitignored)
+Karpathy's process:
+1. Reads `program.md` and `karpathy.json`. Restates objective and stop criteria.
+2. Establishes a baseline measurement.
+3. Measures the noise floor (3+ runs with varied seeds).
+4. Proposes exactly one change, states the hypothesis.
+5. Delegates implementation to `@autonomous` if non-trivial.
+6. Runs the measurement. Keeps if improvement > 2× noise floor; reverts otherwise.
+7. Calls `@reviewer` with loop rubric and measurement.
+8. Repeats until stop criteria are met or 3 consecutive runs with no KEEP.
 
-Optional deploy overrides:
+If `program.md` is missing, Karpathy will tell you to create it first.
+
+## Conventions
+
+**`SPEC.md` is uppercase.** The immutability plugin rejects lowercase variants
+(`spec.md`, `Spec.md`) when the marker declares `SPEC.md` as canonical. This
+prevents case-insensitive filesystem drift between contributors.
+
+**Status language.** No XML ceremony. Agents report completion with a plain
+summary. Blocked agents end their message with `STATUS: BLOCKED — <reason>`.
+
+**`@reviewer` is composable.** Both `@autonomous` and `@karpathy` spawn it.
+The caller passes the rubric as Task input — acceptance criteria for Autonomous,
+loop objectives + measurements for Karpathy. Reviewer adapts its grading to
+whatever rubric it receives.
+
+## Immutability Plugin
+
+The `plugins/immutability.ts` plugin enforces file-level rules per project.
+It is a no-op unless `.opencode/immutable.json` exists in the project.
+
+Copy and adapt the example:
+
+```bash
+mkdir -p .opencode
+cp examples/immutable.json.example .opencode/immutable.json
+```
+
+Supported rules:
+
+```json
+{
+  "readonly":          ["prepare.py"],   // no agent may edit
+  "prometheus_only":   ["SPEC.md"],      // only @prometheus may edit
+  "write_allowlist": {
+    "prometheus":      ["SPEC.md"]       // @prometheus may ONLY write this file
+  }
+}
+```
+
+The plugin also rejects case-variants of canonical filenames (e.g. `spec.md`
+when `SPEC.md` is declared).
+
+## Karpathy Loop Example
+
+`examples/ml-loop/` is a complete, runnable example of `@karpathy` applied to a
+small binary classification problem. No dependencies beyond Python stdlib.
+
+```bash
+cd examples/ml-loop
+opencode
+# then: @karpathy
+```
+
+The baseline logistic regression scores ~70–75%. The loop's goal is to reach
+≥85% accuracy by making one targeted change per iteration. See
+`examples/ml-loop/README.md` for the expected trajectory.
+
+The agent itself is domain-agnostic — the ML example just happens to have a
+clean frozen/mutable split and a scalar metric to optimize.
+
+## Verify
+
+Check that all agents, permissions, and the immutability plugin resolve correctly
+against a fresh OpenCode install — without touching your real `~/.config/opencode`:
+
+```bash
+python3 tests/verify_opencode.py
+```
+
+This downloads the latest OpenCode binary into a disposable temp directory, installs
+this repo's agents and plugin there, and asserts:
+
+- Every agent loads with the correct mode (`primary`, `subagent`, `all`).
+- Every declared permission rule is present in the resolved permission table.
+- The immutability plugin appears in OpenCode's startup logs.
+- The deploy script's install, status, and remove actions all behave correctly.
+
+If an API key is available in your environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+etc.), the script also makes one cheap LLM call to confirm the plugin's hook actually
+blocks forbidden file edits end-to-end. Skip it with `--skip-llm`.
+
+The sandbox is deleted on exit. Pass `--keep-sandbox` to inspect it on failure.
+
+## Local Config
 
 ```bash
 cp .opencode-deploy.local.env.example .opencode-deploy.local.env
 ```
 
-## Promise Semantics
-
-- `<promise>COMPLETE</promise>`: implementation complete and verification passes.
-- `<promise>WORK_STUCK</promise>`: blocked after genuine attempts; blockers documented in `progress.txt`.
+Override deploy paths without passing CLI flags every time.

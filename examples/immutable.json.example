@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy to .opencode/immutable.json in your project to activate the ImmutabilityGuard plugin. Replace filenames with the files you want to protect. See examples/ml-loop/.opencode/immutable.json for a minimal example.",
+
+  "readonly": [
+    "<frozen-file.py>"
+  ],
+
+  "prometheus_only": [
+    "SPEC.md"
+  ],
+
+  "write_allowlist": {
+    "prometheus": ["SPEC.md"]
+  }
+}

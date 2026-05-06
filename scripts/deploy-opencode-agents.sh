@@ -19,7 +19,11 @@ Options:
   --source-dir PATH   Source directory containing agent markdown files
   --config-dir PATH   OpenCode config directory
   --agents-dir PATH   OpenCode agents directory
+  --plugins-dir PATH  OpenCode plugins directory (used with --with-plugins)
+  --tools-dir PATH    OpenCode tools directory (used with --with-tools)
   --mode MODE         Install mode: symlink (default) or copy
+  --with-plugins      Also install files from plugins/ into OpenCode plugins directory
+  --with-tools        Also install files from tools/ into OpenCode tools directory
   -h, --help          Show this help
 
 Override precedence (highest to lowest):
@@ -33,6 +37,8 @@ Environment variables:
   OPENCODE_DEPLOY_SOURCE_DIR
   OPENCODE_DEPLOY_CONFIG_DIR
   OPENCODE_DEPLOY_AGENTS_DIR
+  OPENCODE_DEPLOY_PLUGINS_DIR
+  OPENCODE_DEPLOY_TOOLS_DIR
   OPENCODE_DEPLOY_MODE
 EOF
 }
@@ -99,10 +105,12 @@ read_local_env() {
     value="$(unquote "$value")"
 
     case "$key" in
-      OPENCODE_DEPLOY_SOURCE_DIR) FILE_SOURCE_DIR="$value" ;;
-      OPENCODE_DEPLOY_CONFIG_DIR) FILE_CONFIG_DIR="$value" ;;
-      OPENCODE_DEPLOY_AGENTS_DIR) FILE_AGENTS_DIR="$value" ;;
-      OPENCODE_DEPLOY_MODE) FILE_MODE="$value" ;;
+      OPENCODE_DEPLOY_SOURCE_DIR)  FILE_SOURCE_DIR="$value" ;;
+      OPENCODE_DEPLOY_CONFIG_DIR)  FILE_CONFIG_DIR="$value" ;;
+      OPENCODE_DEPLOY_AGENTS_DIR)  FILE_AGENTS_DIR="$value" ;;
+      OPENCODE_DEPLOY_PLUGINS_DIR) FILE_PLUGINS_DIR="$value" ;;
+      OPENCODE_DEPLOY_TOOLS_DIR)   FILE_TOOLS_DIR="$value" ;;
+      OPENCODE_DEPLOY_MODE)        FILE_MODE="$value" ;;
     esac
   done < "$LOCAL_ENV_FILE"
 }
@@ -139,11 +147,108 @@ path_or_default() {
   printf '%s' "$fallback"
 }
 
+# Install or remove a set of files (agents, plugins, or tools) into a target dir.
+# Usage: install_files <label> <source_dir> <dest_dir> <mode> <action> <glob>
+install_files() {
+  local label="$1"
+  local src_dir="$2"
+  local dst_dir="$3"
+  local mode="$4"
+  local action="$5"
+  local glob="$6"
+
+  if [[ ! -d "$src_dir" ]]; then
+    printf 'Skipping %s: source directory does not exist: %s\n' "$label" "$src_dir"
+    return
+  fi
+
+  shopt -s nullglob
+  local files=("$src_dir"/$glob)
+  shopt -u nullglob
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    printf 'Skipping %s: no files matching %s in %s\n' "$label" "$glob" "$src_dir"
+    return
+  fi
+
+  printf '%s dir: %s\n' "$label" "$dst_dir"
+  printf '%s files: %s\n' "$label" "${#files[@]}"
+
+  if [[ "$action" == "status" ]]; then
+    for src in "${files[@]}"; do
+      local base dst
+      base="$(basename "$src")"
+      dst="${dst_dir}/${base}"
+      if [[ -L "$dst" ]]; then
+        local target
+        target="$(readlink "$dst" || true)"
+        printf '  [link] %s -> %s\n' "$dst" "$target"
+      elif [[ -f "$dst" ]]; then
+        printf '  [file] %s\n' "$dst"
+      else
+        printf '  [none] %s\n' "$dst"
+      fi
+    done
+    return
+  fi
+
+  mkdir -p "$dst_dir"
+
+  if [[ "$action" == "remove" ]]; then
+    for src in "${files[@]}"; do
+      local base dst
+      base="$(basename "$src")"
+      dst="${dst_dir}/${base}"
+      if [[ -L "$dst" ]]; then
+        local target
+        target="$(readlink "$dst" || true)"
+        if [[ "$target" == "$src" ]]; then
+          rm -f "$dst"
+          printf 'Removed link: %s\n' "$dst"
+        else
+          printf 'Skipped link with different target: %s\n' "$dst"
+        fi
+      else
+        printf 'Skipped non-link: %s\n' "$dst"
+      fi
+    done
+    return
+  fi
+
+  # install
+  local timestamp
+  timestamp="$(date +%Y%m%d%H%M%S)"
+  for src in "${files[@]}"; do
+    local base dst
+    base="$(basename "$src")"
+    dst="${dst_dir}/${base}"
+
+    if [[ "$mode" == "symlink" ]]; then
+      if [[ -L "$dst" ]]; then
+        rm -f "$dst"
+      elif [[ -e "$dst" ]]; then
+        local backup="${dst}.bak.${timestamp}"
+        mv "$dst" "$backup"
+        printf 'Backed up existing file: %s -> %s\n' "$dst" "$backup"
+      fi
+      ln -s "$src" "$dst"
+      printf 'Linked: %s -> %s\n' "$dst" "$src"
+    else
+      cp "$src" "$dst"
+      printf 'Copied: %s -> %s\n' "$src" "$dst"
+    fi
+  done
+}
+
 ACTION="install"
 CLI_SOURCE_DIR=""
 CLI_CONFIG_DIR=""
 CLI_AGENTS_DIR=""
+CLI_PLUGINS_DIR=""
+CLI_TOOLS_DIR=""
 CLI_MODE=""
+WITH_PLUGINS=false
+WITH_TOOLS=false
 
 if [[ $# -gt 0 ]]; then
   case "$1" in
@@ -172,9 +277,25 @@ while [[ $# -gt 0 ]]; do
       CLI_AGENTS_DIR="${2:-}"
       shift 2
       ;;
+    --plugins-dir)
+      CLI_PLUGINS_DIR="${2:-}"
+      shift 2
+      ;;
+    --tools-dir)
+      CLI_TOOLS_DIR="${2:-}"
+      shift 2
+      ;;
     --mode)
       CLI_MODE="${2:-}"
       shift 2
+      ;;
+    --with-plugins)
+      WITH_PLUGINS=true
+      shift
+      ;;
+    --with-tools)
+      WITH_TOOLS=true
+      shift
       ;;
     -h|--help)
       usage
@@ -189,6 +310,8 @@ done
 FILE_SOURCE_DIR=""
 FILE_CONFIG_DIR=""
 FILE_AGENTS_DIR=""
+FILE_PLUGINS_DIR=""
+FILE_TOOLS_DIR=""
 FILE_MODE=""
 read_local_env
 
@@ -196,6 +319,8 @@ DEBUG_CONFIG_DIR="$(extract_debug_path config)"
 
 RAW_CONFIG_DIR="$(path_or_default "$CLI_CONFIG_DIR" "${OPENCODE_DEPLOY_CONFIG_DIR:-}" "$FILE_CONFIG_DIR" "$DEBUG_CONFIG_DIR")"
 RAW_AGENTS_DIR="$(path_or_default "$CLI_AGENTS_DIR" "${OPENCODE_DEPLOY_AGENTS_DIR:-}" "$FILE_AGENTS_DIR" "")"
+RAW_PLUGINS_DIR="$(path_or_default "$CLI_PLUGINS_DIR" "${OPENCODE_DEPLOY_PLUGINS_DIR:-}" "$FILE_PLUGINS_DIR" "")"
+RAW_TOOLS_DIR="$(path_or_default "$CLI_TOOLS_DIR" "${OPENCODE_DEPLOY_TOOLS_DIR:-}" "$FILE_TOOLS_DIR" "")"
 RAW_SOURCE_DIR="$(path_or_default "$CLI_SOURCE_DIR" "${OPENCODE_DEPLOY_SOURCE_DIR:-}" "$FILE_SOURCE_DIR" "${REPO_ROOT}/agents")"
 MODE="$(path_or_default "$CLI_MODE" "${OPENCODE_DEPLOY_MODE:-}" "$FILE_MODE" "symlink")"
 
@@ -204,10 +329,20 @@ if [[ -z "$RAW_CONFIG_DIR" ]]; then
 fi
 
 CONFIG_DIR="$(resolve_path "$RAW_CONFIG_DIR" "$REPO_ROOT")"
+
 if [[ -z "$RAW_AGENTS_DIR" ]]; then
   RAW_AGENTS_DIR="${CONFIG_DIR}/agents"
 fi
+if [[ -z "$RAW_PLUGINS_DIR" ]]; then
+  RAW_PLUGINS_DIR="${CONFIG_DIR}/plugins"
+fi
+if [[ -z "$RAW_TOOLS_DIR" ]]; then
+  RAW_TOOLS_DIR="${CONFIG_DIR}/tools"
+fi
+
 AGENTS_DIR="$(resolve_path "$RAW_AGENTS_DIR" "$REPO_ROOT")"
+PLUGINS_DIR="$(resolve_path "$RAW_PLUGINS_DIR" "$REPO_ROOT")"
+TOOLS_DIR="$(resolve_path "$RAW_TOOLS_DIR" "$REPO_ROOT")"
 SOURCE_DIR="$(resolve_path "$RAW_SOURCE_DIR" "$REPO_ROOT")"
 
 if [[ "$MODE" != "symlink" && "$MODE" != "copy" ]]; then
@@ -218,80 +353,32 @@ if ! command -v opencode >/dev/null 2>&1; then
   die "opencode not found in PATH"
 fi
 
-[[ -d "$SOURCE_DIR" ]] || die "Source directory does not exist: $SOURCE_DIR"
-
-shopt -s nullglob
-AGENT_FILES=("$SOURCE_DIR"/*.md)
-shopt -u nullglob
-
-if [[ ${#AGENT_FILES[@]} -eq 0 ]]; then
-  die "No .md agent files found in source directory: $SOURCE_DIR"
-fi
-
 printf 'Action: %s\n' "$ACTION"
 printf 'Mode: %s\n' "$MODE"
-printf 'Source dir: %s\n' "$SOURCE_DIR"
 printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
-printf 'OpenCode agents dir: %s\n' "$AGENTS_DIR"
-printf 'Agent files: %s\n' "${#AGENT_FILES[@]}"
+
+# --- Agents ---
+install_files "Agents" "$SOURCE_DIR" "$AGENTS_DIR" "$MODE" "$ACTION" "*.md"
+
+# --- Plugins (opt-in) ---
+if [[ "$WITH_PLUGINS" == true ]]; then
+  install_files "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION" "*.ts"
+fi
+
+# --- Tools (opt-in) ---
+if [[ "$WITH_TOOLS" == true ]]; then
+  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "*.ts"
+fi
 
 if [[ "$ACTION" == "status" ]]; then
-  for src in "${AGENT_FILES[@]}"; do
-    base="$(basename "$src")"
-    dst="${AGENTS_DIR}/${base}"
-    if [[ -L "$dst" ]]; then
-      target="$(readlink "$dst" || true)"
-      printf '  [link] %s -> %s\n' "$dst" "$target"
-    elif [[ -f "$dst" ]]; then
-      printf '  [file] %s\n' "$dst"
-    else
-      printf '  [none] %s\n' "$dst"
-    fi
-  done
   exit 0
 fi
-
-mkdir -p "$AGENTS_DIR"
 
 if [[ "$ACTION" == "remove" ]]; then
-  for src in "${AGENT_FILES[@]}"; do
-    base="$(basename "$src")"
-    dst="${AGENTS_DIR}/${base}"
-
-    if [[ -L "$dst" ]]; then
-      target="$(readlink "$dst" || true)"
-      if [[ "$target" == "$src" ]]; then
-        rm -f "$dst"
-        printf 'Removed link: %s\n' "$dst"
-      else
-        printf 'Skipped link with different target: %s\n' "$dst"
-      fi
-    else
-      printf 'Skipped non-link: %s\n' "$dst"
-    fi
-  done
   exit 0
 fi
 
-timestamp="$(date +%Y%m%d%H%M%S)"
-for src in "${AGENT_FILES[@]}"; do
-  base="$(basename "$src")"
-  dst="${AGENTS_DIR}/${base}"
-
-  if [[ "$MODE" == "symlink" ]]; then
-    if [[ -L "$dst" ]]; then
-      rm -f "$dst"
-    elif [[ -e "$dst" ]]; then
-      backup="${dst}.bak.${timestamp}"
-      mv "$dst" "$backup"
-      printf 'Backed up existing file: %s -> %s\n' "$dst" "$backup"
-    fi
-    ln -s "$src" "$dst"
-    printf 'Linked: %s -> %s\n' "$dst" "$src"
-  else
-    cp "$src" "$dst"
-    printf 'Copied: %s -> %s\n' "$src" "$dst"
-  fi
-done
-
-printf 'Done. Start OpenCode anywhere and invoke an agent by filename, e.g. @prometheus, @karpathy, or @autonomous\n'
+printf 'Done. Start OpenCode anywhere and invoke an agent by name, e.g. @prometheus, @autonomous, @karpathy\n'
+if [[ "$WITH_PLUGINS" == false || "$WITH_TOOLS" == false ]]; then
+  printf 'Tip: use --with-plugins and --with-tools to also install the immutability plugin and any custom tools.\n'
+fi
