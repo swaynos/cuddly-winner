@@ -1,0 +1,58 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "verify: full suite",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/verify_opencode.py",
+      "args": ["--verbose"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    },
+    {
+      "name": "verify: skip LLM",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/verify_opencode.py",
+      "args": ["--skip-llm", "--verbose"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    },
+    {
+      "name": "verify: keep sandbox",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tests/verify_opencode.py",
+      "args": ["--skip-llm", "--keep-sandbox", "--verbose"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    },
+    {
+      "name": "ml-loop: train (default seed)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/ml-loop/train.py",
+      "args": [],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/examples/ml-loop",
+      "justMyCode": false
+    },
+    {
+      "name": "ml-loop: train (seed probe 1/2/3)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/examples/ml-loop/train.py",
+      "args": [],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/examples/ml-loop",
+      "env": {
+        "TRAIN_SEED": "1"
+      },
+      "justMyCode": false
+    }
+  ]
+}
