@@ -187,9 +187,10 @@ this repo's agents and plugin there, and asserts:
 - The immutability plugin appears in OpenCode's startup logs.
 - The deploy script's install, status, and remove actions all behave correctly.
 
-If an API key is available in your environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-etc.), the script also makes one cheap LLM call to confirm the plugin's hook actually
-blocks forbidden file edits end-to-end. Skip it with `--skip-llm`.
+If `OPENAI_API_KEY` is available, the script also makes one cheap LLM call to
+confirm the plugin's hook actually blocks forbidden file edits end-to-end. The
+validator auto-loads `OPENAI_API_KEY` from `.env` or `.opencode-deploy.local.env`
+if it is not already exported in your shell. Skip this check with `--skip-llm`.
 
 The sandbox is deleted on exit. Pass `--keep-sandbox` to inspect it on failure.
 
