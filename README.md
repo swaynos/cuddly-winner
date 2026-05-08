@@ -26,7 +26,8 @@ A multi-agent autonomous workflow for OpenCode.
 |   |-- prometheus.md
 |   `-- reviewer.md
 |-- plugins/
-|   `-- immutability.ts        Global plugin — enforces per-project file rules
+|   |-- immutability.ts                 Global plugin — enforces per-project file rules
+|   `-- opencode-autonomous-gate/       Plugin package — enforces @autonomous promise contract
 |-- examples/
 |   |-- immutable.json.example  Marker file template for the immutability plugin
 |   |-- karpathy.json.example   Deterministic loop config template for @karpathy
@@ -151,6 +152,50 @@ Supported rules:
 
 The plugin also rejects case-variants of canonical filenames (e.g. `spec.md`
 when `SPEC.md` is declared).
+
+## Autonomous Gate Plugin
+
+`plugins/opencode-autonomous-gate/` is a global OpenCode plugin that enforces the
+@autonomous agent's promise contract. It activates automatically once deployed
+(`--with-plugins`) and is a no-op for any agent other than `@autonomous`.
+
+What it enforces:
+
+- `<promise>COMPLETE</promise>` is only accepted when:
+  - `SPEC.md` or `spec.md` is present in the project root
+  - The assistant message contains a fenced JSON evidence block with
+    `command` and `exit_code: 0`
+  - `@reviewer` has produced `APPROVE` in the same session
+- `<promise>WORK_STUCK</promise>` is only accepted when:
+  - A spec file is present
+  - `progress.txt` (or `PROGRESS.txt`) has been updated in this session
+
+If preconditions fail, the plugin posts a structured corrective user message
+back into the session telling the agent exactly what to fix.
+
+Feature flags (environment variables, defaults shown):
+
+- `OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER=true`
+- `OPENCODE_AUTONOMOUS_REQUIRE_EVIDENCE=true`
+- `OPENCODE_AUTONOMOUS_REQUIRE_PROGRESS_UPDATE=true`
+- `OPENCODE_AUTONOMOUS_AGENT_NAME=autonomous`
+
+Evidence block format (strict):
+
+```json
+{
+  "command": "python -m pytest -q",
+  "exit_code": 0,
+  "excerpt": "...tail of output..."
+}
+```
+
+Limitations:
+
+- The plugin cannot prevent the promise token from being emitted; it reacts
+  immediately after, forcing the agent to iterate until preconditions hold.
+- Reviewer detection matches a literal `APPROVE` token produced by `@reviewer`
+  in the same session.
 
 ## Karpathy Loop Example
 

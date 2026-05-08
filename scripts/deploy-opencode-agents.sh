@@ -240,6 +240,105 @@ install_files() {
   done
 }
 
+
+# Install or remove entries (files or directories) from a source dir into a target dir.
+# Each entry in the source is symlinked or copied as-is. Useful for plugin packages
+# where an entry is a directory containing package.json and index.(js|ts).
+# Usage: install_entries <label> <source_dir> <dest_dir> <mode> <action>
+install_entries() {
+  local label="$1"
+  local src_dir="$2"
+  local dst_dir="$3"
+  local mode="$4"
+  local action="$5"
+
+  if [[ ! -d "$src_dir" ]]; then
+    printf 'Skipping %s: source directory does not exist: %s\n' "$label" "$src_dir"
+    return
+  fi
+
+  shopt -s nullglob
+  local entries=("$src_dir"/*)
+  shopt -u nullglob
+
+  if [[ ${#entries[@]} -eq 0 ]]; then
+    printf 'Skipping %s: no entries in %s\n' "$label" "$src_dir"
+    return
+  fi
+
+  printf '%s dir: %s\n' "$label" "$dst_dir"
+  printf '%s entries: %s\n' "$label" "${#entries[@]}"
+
+  if [[ "$action" == "status" ]]; then
+    for src in "${entries[@]}"; do
+      local base dst
+      base="$(basename "$src")"
+      dst="${dst_dir}/${base}"
+      if [[ -L "$dst" ]]; then
+        local target
+        target="$(readlink "$dst" || true)"
+        printf '  [link] %s -> %s\n' "$dst" "$target"
+      elif [[ -e "$dst" ]]; then
+        printf '  [exists] %s\n' "$dst"
+      else
+        printf '  [none] %s\n' "$dst"
+      fi
+    done
+    return
+  fi
+
+  mkdir -p "$dst_dir"
+
+  if [[ "$action" == "remove" ]]; then
+    for src in "${entries[@]}"; do
+      local base dst
+      base="$(basename "$src")"
+      dst="${dst_dir}/${base}"
+      if [[ -L "$dst" ]]; then
+        local target
+        target="$(readlink "$dst" || true)"
+        if [[ "$target" == "$src" ]]; then
+          rm -f "$dst"
+          printf 'Removed link: %s\n' "$dst"
+        else
+          printf 'Skipped link with different target: %s\n' "$dst"
+        fi
+      else
+        printf 'Skipped non-link: %s\n' "$dst"
+      fi
+    done
+    return
+  fi
+
+  local timestamp
+  timestamp="$(date +%Y%m%d%H%M%S)"
+  for src in "${entries[@]}"; do
+    local base dst
+    base="$(basename "$src")"
+    dst="${dst_dir}/${base}"
+
+    if [[ "$mode" == "symlink" ]]; then
+      if [[ -L "$dst" ]]; then
+        rm -f "$dst"
+      elif [[ -e "$dst" ]]; then
+        local backup="${dst}.bak.${timestamp}"
+        mv "$dst" "$backup"
+        printf 'Backed up existing entry: %s -> %s\n' "$dst" "$backup"
+      fi
+      ln -s "$src" "$dst"
+      printf 'Linked: %s -> %s\n' "$dst" "$src"
+    else
+      if [[ -d "$src" ]]; then
+        rm -rf "$dst"
+        cp -R "$src" "$dst"
+      else
+        cp "$src" "$dst"
+      fi
+      printf 'Copied: %s -> %s\n' "$src" "$dst"
+    fi
+  done
+}
+
 ACTION="install"
 CLI_SOURCE_DIR=""
 CLI_CONFIG_DIR=""
@@ -362,7 +461,7 @@ install_files "Agents" "$SOURCE_DIR" "$AGENTS_DIR" "$MODE" "$ACTION" "*.md"
 
 # --- Plugins (opt-in) ---
 if [[ "$WITH_PLUGINS" == true ]]; then
-  install_files "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION" "*.ts"
+  install_entries "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION"
 fi
 
 # --- Tools (opt-in) ---
