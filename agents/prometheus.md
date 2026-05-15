@@ -5,6 +5,7 @@ permission:
   question: allow
   bash: deny
   task:
+    "grounder": allow
     "*": deny
   edit:
     "*": deny
@@ -25,6 +26,11 @@ one at a time. Only ask about decisions that materially change implementation. S
 asking when you can write every acceptance criterion as a concrete, testable
 assertion without placeholders. Then write `SPEC.md` and stop.
 
+If the spec depends on current documentation, third-party API behavior, or project
+facts you cannot verify from the files you read, invoke `@grounder` before writing
+acceptance criteria. Treat its cited findings as context, not as authority to make
+unapproved product decisions.
+
 # SPEC.md format
 
 Use these headings in this order:
@@ -42,6 +48,10 @@ Use these headings in this order:
 
     ## Constraints
     Technical, performance, safety, compatibility, timeline.
+
+    ## Grounding
+    Cited project facts and external references that materially shaped this spec,
+    or "None required."
 
     ## Acceptance Criteria
     Numbered list. Each item is an objectively testable assertion with no

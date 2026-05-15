@@ -48,7 +48,14 @@ AGENTS_DIR = REPO_ROOT / "agents"
 PLUGINS_DIR = REPO_ROOT / "plugins"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 
-EXPECTED_AGENT_FILES = ["prometheus.md", "autonomous.md", "karpathy.md", "reviewer.md"]
+EXPECTED_AGENT_FILES = [
+    "prometheus.md",
+    "router.md",
+    "autonomous.md",
+    "karpathy.md",
+    "grounder.md",
+    "reviewer.md",
+]
 EXPECTED_PLUGIN_FILES = ["immutability.ts"]
 
 # ---------------------------------------------------------------------------
@@ -71,9 +78,17 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",      "action": "deny",  "pattern": "*"},
         {"permission": "edit",      "action": "deny",  "pattern": "*"},
         {"permission": "edit",      "action": "allow", "pattern": "SPEC.md"},
+        {"permission": "task",      "action": "allow", "pattern": "grounder"},
         {"permission": "task",      "action": "deny",  "pattern": "*"},
         {"permission": "question",  "action": "allow", "pattern": "*"},
         {"permission": "webfetch",  "action": "allow", "pattern": "*"},
+    ],
+    "router": [
+        {"permission": "edit",      "action": "deny",  "pattern": "*"},
+        {"permission": "bash",      "action": "deny",  "pattern": "*"},
+        {"permission": "task",      "action": "allow", "pattern": "grounder"},
+        {"permission": "task",      "action": "deny",  "pattern": "*"},
+        {"permission": "question",  "action": "allow", "pattern": "*"},
     ],
     "autonomous": [
         {"permission": "bash",  "action": "ask",   "pattern": "*"},
@@ -92,6 +107,7 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "git status*"},
         {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
         {"permission": "bash",  "action": "allow", "pattern": "git log*"},
+        {"permission": "task",  "action": "allow", "pattern": "grounder"},
         {"permission": "task",  "action": "allow", "pattern": "reviewer"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
@@ -126,12 +142,23 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "cargo test*"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
+    "grounder": [
+        {"permission": "edit",      "action": "deny",  "pattern": "*"},
+        {"permission": "bash",      "action": "deny",  "pattern": "*"},
+        {"permission": "bash",      "action": "allow", "pattern": "rg *"},
+        {"permission": "bash",      "action": "allow", "pattern": "git status*"},
+        {"permission": "bash",      "action": "allow", "pattern": "git diff*"},
+        {"permission": "webfetch",  "action": "allow", "pattern": "*"},
+        {"permission": "task",      "action": "deny",  "pattern": "*"},
+    ],
 }
 
 EXPECTED_MODES: dict[str, str] = {
     "prometheus": "primary",
+    "router":     "primary",
     "autonomous": "all",
     "karpathy":   "primary",
+    "grounder":   "subagent",
     "reviewer":   "subagent",
 }
 

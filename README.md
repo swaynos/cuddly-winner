@@ -7,8 +7,10 @@ A multi-agent autonomous workflow for OpenCode.
 | Agent | Mode | Role |
 |---|---|---|
 | `@prometheus` | primary | Interviews you and writes `SPEC.md`. Nothing else. |
+| `@router` | primary | No-edit request classifier that routes to the right workflow. |
 | `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. |
 | `@karpathy` | primary | Structured iterative improvement: one change, measure, keep or revert. |
+| `@grounder` | subagent (hidden) | Read-only RAG/grounding researcher with cited local and external evidence. |
 | `@reviewer` | subagent (hidden) | Read-only critic. Returns `APPROVE` or `REQUEST_CHANGES` with evidence. |
 
 ## Assumptions
@@ -22,8 +24,10 @@ A multi-agent autonomous workflow for OpenCode.
 .
 |-- agents/
 |   |-- autonomous.md
+|   |-- grounder.md
 |   |-- karpathy.md
 |   |-- prometheus.md
+|   |-- router.md
 |   `-- reviewer.md
 |-- plugins/
 |   |-- immutability.ts                 Global plugin — enforces per-project file rules
@@ -85,6 +89,19 @@ Remove:
 If `SPEC.md` is missing when you invoke `@autonomous`, it will tell you to run
 `@prometheus` first.
 
+## Workflow: Router -> Specialist
+
+Use `@router` when you know what you want but not which workflow should handle it.
+Router never edits files. It classifies the request and hands you a concise next
+prompt for `@prometheus`, `@autonomous`, `@karpathy`, or `@grounder`.
+
+## Workflow: Grounding / RAG
+
+`@grounder` is a read-only subagent for evidence gathering. `@prometheus` and
+`@autonomous` can invoke it when requirements or implementation depend on current
+docs, third-party APIs, or uncertain project conventions. Its output separates
+local context, external context, risks, and a recommendation with citations.
+
 ## Workflow: Karpathy Loop
 
 Use `@karpathy` when you have a measurable target and want to iterate toward it
@@ -120,6 +137,10 @@ prevents case-insensitive filesystem drift between contributors.
 
 **Status language.** No XML ceremony. Agents report completion with a plain
 summary. Blocked agents end their message with `STATUS: BLOCKED — <reason>`.
+
+**Subagents are composable.** `@grounder` can support planning or implementation
+with cited evidence. `@reviewer` is spawned by `@autonomous` and `@karpathy` for
+reflection and final quality gates.
 
 **`@reviewer` is composable.** Both `@autonomous` and `@karpathy` spawn it.
 The caller passes the rubric as Task input — acceptance criteria for Autonomous,

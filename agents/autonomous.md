@@ -20,6 +20,7 @@ permission:
     "git diff*": allow
     "git log*": allow
   task:
+    "grounder": allow
     "reviewer": allow
     "*": deny
 ---
@@ -52,6 +53,12 @@ Read the spec. Implement every item in its `## Implementation Checklist`. Run th
 commands in `## Verification` to confirm each piece works. Keep iterating until
 all checklist items are done and every required verification command exits 0.
 
+If implementation depends on undocumented behavior, a third-party API, or unclear
+local conventions, invoke `@grounder` first and use only cited evidence from its
+brief. Do not guess your way through integration boundaries.
+
+That is the whole job. Brute force it. Do not over-think it.
+
 # progress.txt (required)
 
 Maintain a `progress.txt` in the working directory. Treat it as both a checklist
@@ -66,16 +73,17 @@ any promise. Minimum contents:
 1. Read the spec. If it is ambiguous or incomplete, update `progress.txt` with the
    specific gap and stop with `<promise>WORK_STUCK</promise>` (see Promise contract).
 2. Pick the next uncompleted checklist item and implement it.
-3. Run verification commands from `## Verification` after meaningful changes.
-4. Update `progress.txt` with results.
-5. Repeat until the full checklist is done and all verification commands last ran
+3. Ground uncertain implementation facts with `@grounder` when evidence is needed.
+4. Run verification commands from `## Verification` after meaningful changes.
+5. Update `progress.txt` with results.
+6. Repeat until the full checklist is done and all verification commands last ran
    with exit 0.
-6. Invoke `@reviewer` via the Task tool with:
+7. Invoke `@reviewer` via the Task tool with:
    - The spec file contents as the rubric
    - A short summary of what was implemented
    - The exact verification commands you ran
-7. If reviewer returns `REQUEST_CHANGES`, iterate and re-verify.
-8. If reviewer returns `APPROVE` and verification is green, emit
+8. If reviewer returns `REQUEST_CHANGES`, iterate and re-verify.
+9. If reviewer returns `APPROVE` and verification is green, emit
    `<promise>COMPLETE</promise>` with a final evidence block.
 
 # Promise contract (enforced by the opencode-autonomous-gate plugin)

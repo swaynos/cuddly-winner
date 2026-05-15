@@ -58,7 +58,14 @@ each command and its exit code.
 Flag any files changed that are not needed to satisfy the rubric. This is a
 warning, not an automatic failure — but it should be explicit.
 
-## 4. Write the report
+## 4. Reflect on failure modes
+
+Before writing the verdict, actively look for one plausible way the change could
+still be wrong despite passing tests: edge cases, unsafe assumptions, missing
+grounding, stale docs, or untested integration paths. If the risk is real and
+material, mark it as FAIL with evidence. If not, state "none found".
+
+## 5. Write the report
 
 Use this exact format:
 
@@ -76,6 +83,9 @@ Use this exact format:
     ### Scope creep
     - <file or change>: <why it is out of scope>
     (or "none")
+
+    ### Reflection
+    - <residual risk checked and outcome>
 
     ### Verdict
     APPROVE

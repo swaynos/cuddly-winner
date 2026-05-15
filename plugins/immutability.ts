@@ -98,8 +98,6 @@ export const ImmutabilityGuard = async ({
       output: { args?: Record<string, unknown> }
     ) => {
       if (!MUTATING_TOOLS.has(input.tool)) return;
-      appendFileSync(join(root, ".opencode", "immutability-debug.log"), `tool=${input.tool} agent=${input.agent ?? "unknown"}\n`);
-
       const maybeInput = input as { args?: Record<string, unknown>; input?: Record<string, unknown> };
       const maybeOutput = output as { args?: Record<string, unknown>; input?: Record<string, unknown> };
       const args = maybeOutput.args ?? maybeInput.args ?? maybeOutput.input ?? maybeInput.input ?? {};
