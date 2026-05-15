@@ -78,6 +78,8 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",      "action": "deny",  "pattern": "*"},
         {"permission": "edit",      "action": "deny",  "pattern": "*"},
         {"permission": "edit",      "action": "allow", "pattern": "SPEC.md"},
+        {"permission": "write",     "action": "deny",  "pattern": "*"},
+        {"permission": "write",     "action": "allow", "pattern": "SPEC.md"},
         {"permission": "task",      "action": "allow", "pattern": "grounder"},
         {"permission": "task",      "action": "deny",  "pattern": "*"},
         {"permission": "question",  "action": "allow", "pattern": "*"},
