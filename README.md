@@ -35,6 +35,7 @@ A multi-agent autonomous workflow for OpenCode.
 |-- examples/
 |   |-- immutable.json.example  Marker file template for the immutability plugin
 |   |-- karpathy.json.example   Deterministic loop config template for @karpathy
+|   |-- trusted-project.json.example  Pre-authorize agents for a trusted project
 |   `-- ml-loop/                Complete runnable @karpathy example (pure Python, no deps)
 |       |-- prepare.py          Frozen evaluator — do not edit
 |       |-- train.py            Mutable target — agent improves this
@@ -217,6 +218,43 @@ Limitations:
   immediately after, forcing the agent to iterate until preconditions hold.
 - Reviewer detection matches a literal `APPROVE` token produced by `@reviewer`
   in the same session.
+
+## Trusted Project Mode
+
+By default, agents prompt for permission before running shell commands, editing
+files, or fetching URLs. In projects where you trust the agent to run without
+interruption, you can pre-authorize everything at the project level.
+
+Copy the template:
+
+```bash
+mkdir -p .opencode
+cp examples/trusted-project.json.example .opencode/opencode.json
+```
+
+This creates a project-scoped `opencode.json` that pre-authorizes `bash`, `edit`,
+`write`, `read`, and `webfetch` without prompting. Paths outside the project still
+require confirmation (`external_directory: ask`).
+
+**Important interactions:**
+
+- **Per-agent permissions still win.** Agent files declare their own `permission:`
+  blocks that take precedence over this project config. `@prometheus` stays
+  `bash: deny`; `@reviewer` and `@grounder` stay read-only — regardless of what
+  the project config says.
+
+- **Immutability plugin still fires.** `.opencode/immutable.json` rules are enforced
+  by a plugin hook, not a permission rule. `edit: allow` in the project config does
+  not let an agent overwrite a `readonly` or `prometheus_only` file.
+
+- **Restart required.** opencode loads config at startup. Quit and restart after
+  creating the file.
+
+- **Sudo is unaffected.** `bash: allow` stops opencode from prompting. If a command
+  requires sudo, the OS still enforces its own password requirement.
+
+**Git hygiene:** Consider adding `.opencode/opencode.json` to `.gitignore` in shared
+repos so contributors can opt in individually rather than inheriting your trust level.
 
 ## Karpathy Loop Example
 
