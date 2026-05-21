@@ -6,6 +6,7 @@ A multi-agent autonomous workflow for OpenCode.
 
 | Agent | Mode | Role |
 |---|---|---|
+| `@ask` | primary | Quick questions and concise answers from session context first. |
 | `@prometheus` | primary | Interviews you and writes `SPEC.md`. Nothing else. |
 | `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. |
 | `@karpathy` | primary | Structured iterative improvement: one change, measure, keep or revert. |
@@ -22,6 +23,7 @@ A multi-agent autonomous workflow for OpenCode.
 ```text
 .
 |-- agents/
+|   |-- ask.md
 |   |-- autonomous.md
 |   |-- grounder.md
 |   |-- karpathy.md
@@ -87,6 +89,24 @@ Remove:
 
 If `SPEC.md` is missing when you invoke `@autonomous`, it will tell you to run
 `@prometheus` first.
+
+## Workflow: Quick Questions (`@ask`)
+
+Use `@ask` for short, contextual questions where you want a concise answer and
+do not want planning or implementation.
+
+- `@ask` uses session context first, then code context only when needed.
+- It avoids edits, bash, and implementation workflows.
+- If evidence is missing, it can invoke `@grounder` and return a compact summary.
+
+When to use `@ask` vs others:
+
+- Use `@ask` for “what does this mean?”, “did we already do X?”, and quick tradeoff checks.
+- Use `plan` (built-in) when you explicitly want an implementation plan.
+- Use `@prometheus` when you need a new or improved `SPEC.md`.
+- Use `@autonomous` when a `SPEC.md` exists and you want execution.
+- Use `@grounder` when the task is evidence gathering itself.
+- Use `@reviewer` for formal approve/request-changes review.
 
 ## Workflow: Grounding / RAG
 

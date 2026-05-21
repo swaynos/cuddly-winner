@@ -49,6 +49,7 @@ PLUGINS_DIR = REPO_ROOT / "plugins"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 
 EXPECTED_AGENT_FILES = [
+    "ask.md",
     "prometheus.md",
     "autonomous.md",
     "karpathy.md",
@@ -73,6 +74,16 @@ F2_KEY_ENV_NAME = "OPENAI_API_KEY"
 # ---------------------------------------------------------------------------
 
 EXPECTED_RULES: dict[str, list[dict]] = {
+    "ask": [
+        {"permission": "edit",  "action": "deny", "pattern": "*"},
+        {"permission": "bash",  "action": "deny", "pattern": "*"},
+        {"permission": "read",  "action": "ask",  "pattern": "*"},
+        {"permission": "grep",  "action": "ask",  "pattern": "*"},
+        {"permission": "glob",  "action": "ask",  "pattern": "*"},
+        {"permission": "list",  "action": "ask",  "pattern": "*"},
+        {"permission": "task",  "action": "allow", "pattern": "grounder"},
+        {"permission": "task",  "action": "deny", "pattern": "*"},
+    ],
     "prometheus": [
         {"permission": "bash",      "action": "deny",  "pattern": "*"},
         {"permission": "edit",      "action": "deny",  "pattern": "*"},
@@ -148,6 +159,7 @@ EXPECTED_RULES: dict[str, list[dict]] = {
 }
 
 EXPECTED_MODES: dict[str, str] = {
+    "ask":      "primary",
     "prometheus": "primary",
     "autonomous": "all",
     "karpathy":   "primary",
