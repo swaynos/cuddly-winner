@@ -7,7 +7,6 @@ A multi-agent autonomous workflow for OpenCode.
 | Agent | Mode | Role |
 |---|---|---|
 | `@prometheus` | primary | Interviews you and writes `SPEC.md`. Nothing else. |
-| `@router` | primary | No-edit request classifier that routes to the right workflow. |
 | `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. |
 | `@karpathy` | primary | Structured iterative improvement: one change, measure, keep or revert. |
 | `@grounder` | subagent (hidden) | Read-only RAG/grounding researcher with cited local and external evidence. |
@@ -27,7 +26,6 @@ A multi-agent autonomous workflow for OpenCode.
 |   |-- grounder.md
 |   |-- karpathy.md
 |   |-- prometheus.md
-|   |-- router.md
 |   `-- reviewer.md
 |-- plugins/
 |   |-- immutability.ts                 Global plugin — enforces per-project file rules
@@ -89,12 +87,6 @@ Remove:
 
 If `SPEC.md` is missing when you invoke `@autonomous`, it will tell you to run
 `@prometheus` first.
-
-## Workflow: Router -> Specialist
-
-Use `@router` when you know what you want but not which workflow should handle it.
-Router never edits files. It classifies the request and hands you a concise next
-prompt for `@prometheus`, `@autonomous`, `@karpathy`, or `@grounder`.
 
 ## Workflow: Grounding / RAG
 

@@ -50,7 +50,6 @@ DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 
 EXPECTED_AGENT_FILES = [
     "prometheus.md",
-    "router.md",
     "autonomous.md",
     "karpathy.md",
     "grounder.md",
@@ -84,13 +83,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "task",      "action": "deny",  "pattern": "*"},
         {"permission": "question",  "action": "allow", "pattern": "*"},
         {"permission": "webfetch",  "action": "allow", "pattern": "*"},
-    ],
-    "router": [
-        {"permission": "edit",      "action": "deny",  "pattern": "*"},
-        {"permission": "bash",      "action": "deny",  "pattern": "*"},
-        {"permission": "task",      "action": "allow", "pattern": "grounder"},
-        {"permission": "task",      "action": "deny",  "pattern": "*"},
-        {"permission": "question",  "action": "allow", "pattern": "*"},
     ],
     "autonomous": [
         {"permission": "bash",  "action": "ask",   "pattern": "*"},
@@ -157,7 +149,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
 
 EXPECTED_MODES: dict[str, str] = {
     "prometheus": "primary",
-    "router":     "primary",
     "autonomous": "all",
     "karpathy":   "primary",
     "grounder":   "subagent",
