@@ -7,7 +7,7 @@ A multi-agent autonomous workflow for OpenCode.
 | Agent | Mode | Role |
 |---|---|---|
 | `@ask` | primary | Quick questions and concise answers from session context first. |
-| `@prometheus` | primary | Interviews you and writes `SPEC.md`. Nothing else. |
+| `@prometheus` | primary | Front-door planner: interviews, chooses workflow, writes `SPEC.md` or Karpathy loop setup artifacts. |
 | `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. |
 | `@karpathy` | primary | Structured iterative improvement: one change, measure, keep or revert. |
 | `@grounder` | subagent (hidden) | Read-only RAG/grounding researcher with cited local and external evidence. |
@@ -73,12 +73,34 @@ Remove:
 ./scripts/deploy-opencode-agents.sh remove --with-plugins
 ```
 
-## Workflow: Prometheus → Autonomous
+## Workflow: Prometheus Intake
+
+Start with `@prometheus` when you are not sure whether work should be
+spec-driven execution or a metric optimization loop.
+
+Prometheus classifies and outputs one of two paths:
+
+1. **SPEC path** (implementation/refactor/bugfix):
+   - Writes `SPEC.md`
+   - Handoff: run `@autonomous`
+
+2. **Karpathy path** (iterative metric optimization):
+   - Writes `program.md`
+   - Writes `.opencode/karpathy.json`
+   - Writes `.opencode/immutable.json`
+   - Optional: initializes `experiments.md`
+   - Handoff: run `@karpathy`
+
+If Karpathy intent is clear but instrumentation is missing, Prometheus writes a
+`SPEC.md` for instrumentation and includes proposed code in markdown code blocks.
+It does not write executable source files itself; run `@autonomous` first.
+
+## Workflow: Prometheus -> Autonomous
 
 1. Open a project in OpenCode. Tab to `@prometheus` or type `@prometheus`.
 2. Prometheus interviews you (batched questions, 3–5 per turn) until it has
    enough to write a complete, testable spec.
-3. It writes `SPEC.md` and stops. That is its entire job.
+3. It writes `SPEC.md` and stops.
 4. Tab to `@autonomous` (or type `@autonomous`).
 5. Autonomous reads `SPEC.md`, implements the checklist, runs the verification
    commands after each change, and loops until everything passes.
@@ -89,6 +111,14 @@ Remove:
 
 If `SPEC.md` is missing when you invoke `@autonomous`, it will tell you to run
 `@prometheus` first.
+
+## Workflow: Prometheus -> Karpathy
+
+1. Start in the target project with `@prometheus`.
+2. Ask for optimization toward a measurable metric.
+3. Prometheus writes `program.md`, `.opencode/karpathy.json`, and
+   `.opencode/immutable.json`.
+4. Run `@karpathy` to execute the loop.
 
 ## Workflow: Quick Questions (`@ask`)
 

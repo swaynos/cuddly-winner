@@ -1,44 +1,102 @@
-# Ask Agent for Quick Contextual Questions
+# OpenCode Staff Engineer Skill Layer
 
-## Status
-Completed on 2026-05-21.
+## Problem
+The repository already defines an OpenCode agent suite for planning, execution, grounding, review, and iterative improvement, but it lacks a reusable skill layer that captures senior-engineering process discipline across sessions. Users of this agent suite need OpenCode-compatible skills that make verification, debugging, TDD, subagent delegation, and future skill authoring explicit, discoverable, and testable without depending on Claude-Code-only configuration.
 
-## Final Behavior
-- `@ask` is a **primary** foundational agent for quick Q&A.
-- It prioritizes **session context first** and avoids default file/code exploration.
-- It is concise by default (soft target: short answers unless user asks for depth).
-- It cannot edit files or run bash.
-- It follows an escalation ladder: session context first, clarify intent, minimal
-  direct evidence, then `@grounder` for broad/noisy evidence work.
-- It may use `webfetch` for lightweight web-evidence questions when user wording
-  implies this is required.
-- It may delegate to `@grounder` only when missing facts require broader evidence.
-- For local-state questions (for example, "have I installed this project?") it uses
-  session evidence first, then `@grounder`, and never guesses.
+## Goals
+- Add an initial OpenCode-compatible skill library under `.opencode/skills/`.
+- Encode the highest-value learned workflows as reusable skills: verification before completion, systematic debugging, test-driven development, subagent-driven development, and writing skills.
+- Keep each skill concise, trigger-focused, and compatible with OpenCode's `SKILL.md` frontmatter rules.
+- Document how skills complement the existing `@ask`, `@prometheus`, `@autonomous`, `@karpathy`, `@grounder`, and `@reviewer` agents.
+- Extend repository verification so missing or malformed skill definitions fail deterministically.
 
-## Implemented Artifacts
-- `agents/ask.md` (new)
-- `README.md` updated with `@ask` listing, layout entry, and usage guidance
-- `tests/verify_opencode.py` updated with expected file, mode, and permissions
+## Non-goals
+- Do not add Claude-Code-only hooks, Claude-only skill frontmatter, or Claude plugin packaging.
+- Do not change existing agent behavior except where documentation references the new skills.
+- Do not add visual companion/browser whiteboarding infrastructure.
+- Do not add automatic git commits, pull request creation, or release automation.
+- Do not implement persistent memory, inter-agent messaging, cost tracking, or nightly regression pressure tests in this change.
 
-## Verification Snapshot
-The following checks passed during implementation:
+## Constraints
+- Skills must use OpenCode's supported skill frontmatter only: `name`, `description`, and optional `license`, `compatibility`, `metadata`.
+- Each skill must live at `.opencode/skills/<skill-name>/SKILL.md`, and each `name` must exactly match its containing directory.
+- Skill names must match `^[a-z0-9]+(-[a-z0-9]+)*$` and be no longer than 64 characters.
+- Each skill description must be 1–1024 characters and describe when to use the skill, not summarize the full workflow.
+- Each `SKILL.md` body must be concise enough to fit within 500 non-empty, non-frontmatter lines.
+- All verification must run without requiring model API keys.
+- The implementation must preserve existing agent files, plugins, examples, and deploy behavior unless tests require adding skill installation support.
 
+## Grounding
+- `README.md` documents the current suite as an OpenCode multi-agent workflow and lists `@ask`, `@prometheus`, `@autonomous`, `@karpathy`, `@grounder`, and `@reviewer` as the existing agents. - `README.md:1-15`
+- The repository currently documents `@prometheus` as the spec writer and `@autonomous` as the spec executor with reviewer gating. - `README.md:76-91`
+- The current deploy script installs agents from `agents/`, and optionally plugins and tools, but does not install skills. - `scripts/deploy-opencode-agents.sh:459-470`
+- The current validator asserts expected agents, permissions, deploy behavior, and plugin loading, but has no expected skills list. - `tests/verify_opencode.py:51-60`
+- OpenCode documents skills as `.opencode/skills/<name>/SKILL.md`, `~/.config/opencode/skills/<name>/SKILL.md`, and Claude/Agents-compatible `skills/<name>/SKILL.md` locations. - `https://opencode.ai/docs/skills/`
+- OpenCode documents skill frontmatter as `name` and `description` required, with optional `license`, `compatibility`, and `metadata`; unknown frontmatter fields are ignored. - `https://opencode.ai/docs/skills/`
+- OpenCode's published config schema includes `skills.paths` and `skills.urls`, and includes `skill` as a permission key. - `https://opencode.ai/config.json`
+- The supplied staff-engineer article extract argues that agents are the team roster and skills are the employee handbook that encode reusable discipline. - `/Users/jpswaynos/Downloads/message.txt:84-89`
+- The supplied staff-engineer article extract identifies verification-before-completion, systematic debugging, TDD, subagent-driven development, and writing-skills as core process modules. - `/Users/jpswaynos/Downloads/message.txt:75-82`, `/Users/jpswaynos/Downloads/message.txt:987-1004`, `/Users/jpswaynos/Downloads/message.txt:1173-1185`, `/Users/jpswaynos/Downloads/message.txt:1329-1356`, `/Users/jpswaynos/Downloads/message.txt:1859-1888`
+- The supplied skills article extract frames skills as reusable instructions for standards, workflows, formatting, and repeatable outputs. - `/Users/jpswaynos/Downloads/message (1).txt:13-18`
+
+## Acceptance Criteria
+1. `.opencode/skills/verification-before-completion/SKILL.md` exists with `name: verification-before-completion`, a non-empty `description`, and instructions requiring fresh command evidence before any completion claim.
+2. `.opencode/skills/systematic-debugging/SKILL.md` exists with `name: systematic-debugging`, a non-empty `description`, and instructions requiring root-cause investigation before fixes.
+3. `.opencode/skills/test-driven-development/SKILL.md` exists with `name: test-driven-development`, a non-empty `description`, and instructions requiring a failing test before production code changes when the task is testable.
+4. `.opencode/skills/subagent-driven-development/SKILL.md` exists with `name: subagent-driven-development`, a non-empty `description`, and instructions for dispatching focused subagents with explicit task context and independent review.
+5. `.opencode/skills/writing-skills/SKILL.md` exists with `name: writing-skills`, a non-empty `description`, and instructions requiring pressure scenarios or concrete validation before considering a new or edited skill complete.
+6. Every added `SKILL.md` uses only OpenCode-supported frontmatter keys: `name`, `description`, `license`, `compatibility`, and `metadata`.
+7. Every added skill directory name exactly matches the `name` value in its `SKILL.md` frontmatter.
+8. Every added skill description is written as trigger guidance beginning with `Use when` or `Use ONLY when`, and no description exceeds 1024 characters.
+9. No added `SKILL.md` contains Claude-Code-only frontmatter keys including `allowed-tools`, `disable-model-invocation`, `user-invocable`, `context`, `agent`, `hooks`, `paths`, `model`, `effort`, `argument-hint`, or `arguments`.
+10. `README.md` contains an `Agent Skills` section that lists all five new skills and explains that skills are reusable process guidance while agents are orchestration roles.
+11. `README.md` documents that OpenCode must be restarted after adding or changing agents, skills, plugins, or config files.
+12. `tests/verify_opencode.py` includes deterministic validation for the five expected skill files, their directory/name match, their supported frontmatter keys, and their trigger-style descriptions.
+13. `python3 tests/verify_opencode.py --skip-llm` exits 0 after the implementation is complete.
+
+## Verification
 ```bash
-test -f agents/ask.md
-grep -q '^mode: primary$' agents/ask.md
-grep -q 'edit: deny' agents/ask.md
-grep -q 'bash: deny' agents/ask.md
-grep -q '"grounder": allow' agents/ask.md
-grep -q '@ask' README.md
-grep -q 'ask.md' README.md
-grep -q '"ask.md"' tests/verify_opencode.py
-grep -q '"ask"' tests/verify_opencode.py
-./scripts/deploy-opencode-agents.sh status | grep -q 'ask.md'
+test -f .opencode/skills/verification-before-completion/SKILL.md
+test -f .opencode/skills/systematic-debugging/SKILL.md
+test -f .opencode/skills/test-driven-development/SKILL.md
+test -f .opencode/skills/subagent-driven-development/SKILL.md
+test -f .opencode/skills/writing-skills/SKILL.md
+grep -q '^name: verification-before-completion$' .opencode/skills/verification-before-completion/SKILL.md
+grep -q '^name: systematic-debugging$' .opencode/skills/systematic-debugging/SKILL.md
+grep -q '^name: test-driven-development$' .opencode/skills/test-driven-development/SKILL.md
+grep -q '^name: subagent-driven-development$' .opencode/skills/subagent-driven-development/SKILL.md
+grep -q '^name: writing-skills$' .opencode/skills/writing-skills/SKILL.md
+grep -q 'fresh.*evidence\|evidence.*fresh' .opencode/skills/verification-before-completion/SKILL.md
+grep -q 'root cause' .opencode/skills/systematic-debugging/SKILL.md
+grep -q 'failing test' .opencode/skills/test-driven-development/SKILL.md
+grep -q 'subagent' .opencode/skills/subagent-driven-development/SKILL.md
+grep -q 'pressure scenario\|validation' .opencode/skills/writing-skills/SKILL.md
+grep -q 'Agent Skills' README.md
+grep -q 'verification-before-completion' README.md
+grep -q 'systematic-debugging' README.md
+grep -q 'test-driven-development' README.md
+grep -q 'subagent-driven-development' README.md
+grep -q 'writing-skills' README.md
+grep -q 'restart' README.md
+grep -q 'EXPECTED_SKILL_FILES' tests/verify_opencode.py
+grep -q 'verification-before-completion' tests/verify_opencode.py
+grep -q 'systematic-debugging' tests/verify_opencode.py
+grep -q 'test-driven-development' tests/verify_opencode.py
+grep -q 'subagent-driven-development' tests/verify_opencode.py
+grep -q 'writing-skills' tests/verify_opencode.py
 python3 tests/verify_opencode.py --skip-llm
 ```
 
-## Notes
-- Sandbox verification succeeded with all checks passing.
-- Environment warnings about Python `hashlib` (`blake2*`) were observed but did
-  not fail the validator run.
+## Implementation Checklist
+- [ ] Create `.opencode/skills/verification-before-completion/SKILL.md` with OpenCode-valid frontmatter and concise evidence-before-claims instructions.
+- [ ] Create `.opencode/skills/systematic-debugging/SKILL.md` with OpenCode-valid frontmatter and a root-cause-first debugging workflow.
+- [ ] Create `.opencode/skills/test-driven-development/SKILL.md` with OpenCode-valid frontmatter and red-green-refactor discipline for testable production changes.
+- [ ] Create `.opencode/skills/subagent-driven-development/SKILL.md` with OpenCode-valid frontmatter and guidance for focused delegation, escalation, and independent review.
+- [ ] Create `.opencode/skills/writing-skills/SKILL.md` with OpenCode-valid frontmatter and validation requirements for new or revised skills.
+- [ ] Add an `Agent Skills` section to `README.md` listing the five skills and explaining how skills differ from agents.
+- [ ] Add restart guidance to `README.md` for agent, skill, plugin, and config changes.
+- [ ] Extend `tests/verify_opencode.py` with `EXPECTED_SKILL_FILES` and validation for expected skill paths.
+- [ ] Extend `tests/verify_opencode.py` to parse skill frontmatter and fail on unsupported keys, missing `name`, missing `description`, directory/name mismatch, invalid names, or non-trigger-style descriptions.
+- [ ] Run every command in `## Verification` and fix failures until all commands exit 0.
+
+## Change Log
+- 2026-05-22: Replaced completed `@ask` implementation notes with a new spec for adding an OpenCode-compatible senior-engineering skill layer based on supplied agent-team and skill-system learnings.

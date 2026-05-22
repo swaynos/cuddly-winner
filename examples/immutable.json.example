@@ -6,10 +6,19 @@
   ],
 
   "prometheus_only": [
-    "SPEC.md"
+    "SPEC.md",
+    "program.md",
+    ".opencode/karpathy.json",
+    ".opencode/immutable.json"
   ],
 
   "write_allowlist": {
-    "prometheus": ["SPEC.md"]
+    "prometheus": [
+      "SPEC.md",
+      "program.md",
+      ".opencode/karpathy.json",
+      ".opencode/immutable.json",
+      "experiments.md"
+    ]
   }
 }
