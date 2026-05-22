@@ -97,6 +97,10 @@ do not want planning or implementation.
 
 - `@ask` uses session context first, then code context only when needed.
 - It avoids edits, bash, and implementation workflows.
+- It uses a tool-escalation ladder: session context -> clarify intent -> minimal
+  direct evidence -> `@grounder` for broad/noisy research.
+- It is tool-light by default (not tool-never): web/local evidence is used only
+  when the wording implies it.
 - If evidence is missing, it can invoke `@grounder` and return a compact summary.
 
 When to use `@ask` vs others:

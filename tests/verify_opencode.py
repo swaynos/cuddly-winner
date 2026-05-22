@@ -81,6 +81,7 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "grep",  "action": "ask",  "pattern": "*"},
         {"permission": "glob",  "action": "ask",  "pattern": "*"},
         {"permission": "list",  "action": "ask",  "pattern": "*"},
+        {"permission": "webfetch", "action": "ask", "pattern": "*"},
         {"permission": "task",  "action": "allow", "pattern": "grounder"},
         {"permission": "task",  "action": "deny", "pattern": "*"},
     ],
