@@ -20,9 +20,11 @@ Options:
   --config-dir PATH   OpenCode config directory
   --agents-dir PATH   OpenCode agents directory
   --plugins-dir PATH  OpenCode plugins directory (used with --with-plugins)
+  --skills-dir PATH   OpenCode skills directory (used with --with-skills)
   --tools-dir PATH    OpenCode tools directory (used with --with-tools)
   --mode MODE         Install mode: symlink (default) or copy
   --with-plugins      Also install files from plugins/ into OpenCode plugins directory
+  --with-skills       Also install skill directories from .opencode/skills/ into OpenCode skills directory
   --with-tools        Also install files from tools/ into OpenCode tools directory
   -h, --help          Show this help
 
@@ -38,6 +40,7 @@ Environment variables:
   OPENCODE_DEPLOY_CONFIG_DIR
   OPENCODE_DEPLOY_AGENTS_DIR
   OPENCODE_DEPLOY_PLUGINS_DIR
+  OPENCODE_DEPLOY_SKILLS_DIR
   OPENCODE_DEPLOY_TOOLS_DIR
   OPENCODE_DEPLOY_MODE
 EOF
@@ -109,6 +112,7 @@ read_local_env() {
       OPENCODE_DEPLOY_CONFIG_DIR)  FILE_CONFIG_DIR="$value" ;;
       OPENCODE_DEPLOY_AGENTS_DIR)  FILE_AGENTS_DIR="$value" ;;
       OPENCODE_DEPLOY_PLUGINS_DIR) FILE_PLUGINS_DIR="$value" ;;
+      OPENCODE_DEPLOY_SKILLS_DIR)  FILE_SKILLS_DIR="$value" ;;
       OPENCODE_DEPLOY_TOOLS_DIR)   FILE_TOOLS_DIR="$value" ;;
       OPENCODE_DEPLOY_MODE)        FILE_MODE="$value" ;;
     esac
@@ -344,9 +348,11 @@ CLI_SOURCE_DIR=""
 CLI_CONFIG_DIR=""
 CLI_AGENTS_DIR=""
 CLI_PLUGINS_DIR=""
+CLI_SKILLS_DIR=""
 CLI_TOOLS_DIR=""
 CLI_MODE=""
 WITH_PLUGINS=false
+WITH_SKILLS=false
 WITH_TOOLS=false
 
 if [[ $# -gt 0 ]]; then
@@ -380,6 +386,10 @@ while [[ $# -gt 0 ]]; do
       CLI_PLUGINS_DIR="${2:-}"
       shift 2
       ;;
+    --skills-dir)
+      CLI_SKILLS_DIR="${2:-}"
+      shift 2
+      ;;
     --tools-dir)
       CLI_TOOLS_DIR="${2:-}"
       shift 2
@@ -390,6 +400,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --with-plugins)
       WITH_PLUGINS=true
+      shift
+      ;;
+    --with-skills)
+      WITH_SKILLS=true
       shift
       ;;
     --with-tools)
@@ -410,6 +424,7 @@ FILE_SOURCE_DIR=""
 FILE_CONFIG_DIR=""
 FILE_AGENTS_DIR=""
 FILE_PLUGINS_DIR=""
+FILE_SKILLS_DIR=""
 FILE_TOOLS_DIR=""
 FILE_MODE=""
 read_local_env
@@ -419,6 +434,7 @@ DEBUG_CONFIG_DIR="$(extract_debug_path config)"
 RAW_CONFIG_DIR="$(path_or_default "$CLI_CONFIG_DIR" "${OPENCODE_DEPLOY_CONFIG_DIR:-}" "$FILE_CONFIG_DIR" "$DEBUG_CONFIG_DIR")"
 RAW_AGENTS_DIR="$(path_or_default "$CLI_AGENTS_DIR" "${OPENCODE_DEPLOY_AGENTS_DIR:-}" "$FILE_AGENTS_DIR" "")"
 RAW_PLUGINS_DIR="$(path_or_default "$CLI_PLUGINS_DIR" "${OPENCODE_DEPLOY_PLUGINS_DIR:-}" "$FILE_PLUGINS_DIR" "")"
+RAW_SKILLS_DIR="$(path_or_default "$CLI_SKILLS_DIR" "${OPENCODE_DEPLOY_SKILLS_DIR:-}" "$FILE_SKILLS_DIR" "")"
 RAW_TOOLS_DIR="$(path_or_default "$CLI_TOOLS_DIR" "${OPENCODE_DEPLOY_TOOLS_DIR:-}" "$FILE_TOOLS_DIR" "")"
 RAW_SOURCE_DIR="$(path_or_default "$CLI_SOURCE_DIR" "${OPENCODE_DEPLOY_SOURCE_DIR:-}" "$FILE_SOURCE_DIR" "${REPO_ROOT}/agents")"
 MODE="$(path_or_default "$CLI_MODE" "${OPENCODE_DEPLOY_MODE:-}" "$FILE_MODE" "symlink")"
@@ -435,12 +451,16 @@ fi
 if [[ -z "$RAW_PLUGINS_DIR" ]]; then
   RAW_PLUGINS_DIR="${CONFIG_DIR}/plugins"
 fi
+if [[ -z "$RAW_SKILLS_DIR" ]]; then
+  RAW_SKILLS_DIR="${CONFIG_DIR}/skills"
+fi
 if [[ -z "$RAW_TOOLS_DIR" ]]; then
   RAW_TOOLS_DIR="${CONFIG_DIR}/tools"
 fi
 
 AGENTS_DIR="$(resolve_path "$RAW_AGENTS_DIR" "$REPO_ROOT")"
 PLUGINS_DIR="$(resolve_path "$RAW_PLUGINS_DIR" "$REPO_ROOT")"
+SKILLS_DIR="$(resolve_path "$RAW_SKILLS_DIR" "$REPO_ROOT")"
 TOOLS_DIR="$(resolve_path "$RAW_TOOLS_DIR" "$REPO_ROOT")"
 SOURCE_DIR="$(resolve_path "$RAW_SOURCE_DIR" "$REPO_ROOT")"
 
@@ -464,6 +484,11 @@ if [[ "$WITH_PLUGINS" == true ]]; then
   install_entries "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION"
 fi
 
+# --- Skills (opt-in) ---
+if [[ "$WITH_SKILLS" == true ]]; then
+  install_entries "Skills" "${REPO_ROOT}/.opencode/skills" "$SKILLS_DIR" "$MODE" "$ACTION"
+fi
+
 # --- Tools (opt-in) ---
 if [[ "$WITH_TOOLS" == true ]]; then
   install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "*.ts"
@@ -478,6 +503,6 @@ if [[ "$ACTION" == "remove" ]]; then
 fi
 
 printf 'Done. Start OpenCode anywhere and invoke an agent by name, e.g. @prometheus, @autonomous, @karpathy\n'
-if [[ "$WITH_PLUGINS" == false || "$WITH_TOOLS" == false ]]; then
-  printf 'Tip: use --with-plugins and --with-tools to also install the immutability plugin and any custom tools.\n'
+if [[ "$WITH_PLUGINS" == false || "$WITH_SKILLS" == false || "$WITH_TOOLS" == false ]]; then
+  printf 'Tip: use --with-plugins, --with-skills, and --with-tools to also install plugins, skills, and any custom tools.\n'
 fi

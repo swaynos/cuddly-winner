@@ -26,6 +26,7 @@ import difflib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,7 @@ from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = REPO_ROOT / "agents"
+SKILLS_DIR = REPO_ROOT / ".opencode" / "skills"
 PLUGINS_DIR = REPO_ROOT / "plugins"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 
@@ -56,7 +58,17 @@ EXPECTED_AGENT_FILES = [
     "grounder.md",
     "reviewer.md",
 ]
+EXPECTED_SKILL_FILES = [
+    "project-agent-scaffolding/SKILL.md",
+    "verification-before-completion/SKILL.md",
+    "systematic-debugging/SKILL.md",
+    "test-driven-development/SKILL.md",
+    "subagent-driven-development/SKILL.md",
+    "writing-skills/SKILL.md",
+]
 EXPECTED_PLUGIN_FILES = ["immutability.ts"]
+SUPPORTED_SKILL_FRONTMATTER = {"name", "description", "license", "compatibility", "metadata"}
+SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 # ---------------------------------------------------------------------------
 # F2 defaults
@@ -308,6 +320,74 @@ def _print_header(msg: str) -> None:
     print(f"\n\033[1m{msg}\033[0m")
 
 
+def _parse_simple_frontmatter(path: Path) -> tuple[dict[str, str], list[str]]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, []
+
+    frontmatter_lines = []
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        frontmatter_lines.append(line)
+    else:
+        return {}, frontmatter_lines
+
+    data: dict[str, str] = {}
+    for line in frontmatter_lines:
+        if not line.strip() or line.startswith(" "):
+            continue
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        data[key.strip()] = value.strip().strip('"\'')
+    return data, frontmatter_lines
+
+
+def _validate_skill_file(rel_path: str) -> list[Failure]:
+    failures = []
+    path = SKILLS_DIR / rel_path
+    expected_name = Path(rel_path).parts[0]
+
+    if not path.exists():
+        return [Failure("skills", f"Missing skill file: .opencode/skills/{rel_path}")]
+
+    data, raw_frontmatter = _parse_simple_frontmatter(path)
+    if not data:
+        failures.append(Failure("skills", f".opencode/skills/{rel_path}: missing or invalid frontmatter"))
+        return failures
+
+    keys = {line.split(":", 1)[0].strip() for line in raw_frontmatter if line.strip() and not line.startswith(" ") and ":" in line}
+    unsupported = sorted(keys - SUPPORTED_SKILL_FRONTMATTER)
+    if unsupported:
+        failures.append(Failure(
+            "skills",
+            f".opencode/skills/{rel_path}: unsupported frontmatter keys",
+            diff=[f"  {key}" for key in unsupported],
+        ))
+
+    name = data.get("name", "")
+    description = data.get("description", "")
+
+    if name != expected_name:
+        failures.append(Failure("skills", f".opencode/skills/{rel_path}: name '{name}' does not match directory '{expected_name}'"))
+    if not SKILL_NAME_RE.match(name) or len(name) > 64:
+        failures.append(Failure("skills", f".opencode/skills/{rel_path}: invalid skill name '{name}'"))
+    if not description:
+        failures.append(Failure("skills", f".opencode/skills/{rel_path}: missing description"))
+    elif len(description) > 1024:
+        failures.append(Failure("skills", f".opencode/skills/{rel_path}: description exceeds 1024 characters"))
+    elif not (description.startswith("Use when") or description.startswith("Use ONLY when")):
+        failures.append(Failure("skills", f".opencode/skills/{rel_path}: description must begin with 'Use when' or 'Use ONLY when'"))
+
+    body_lines = path.read_text(encoding="utf-8").split("---", 2)[-1].splitlines()
+    non_empty_body_lines = [line for line in body_lines if line.strip()]
+    if len(non_empty_body_lines) > 500:
+        failures.append(Failure("skills", f".opencode/skills/{rel_path}: body exceeds 500 non-empty lines"))
+
+    return failures
+
+
 # ---------------------------------------------------------------------------
 # A. Preflight
 # ---------------------------------------------------------------------------
@@ -339,6 +419,14 @@ def check_preflight() -> list[Failure]:
             _print_fail(f"plugins/{name}")
         else:
             _print_pass(f"plugins/{name}")
+
+    for name in EXPECTED_SKILL_FILES:
+        skill_failures = _validate_skill_file(name)
+        if skill_failures:
+            failures.extend(skill_failures)
+            _print_fail(f".opencode/skills/{name}")
+        else:
+            _print_pass(f".opencode/skills/{name}")
 
     if not DEPLOY_SCRIPT.exists():
         failures.append(Failure("preflight", f"Deploy script missing: {DEPLOY_SCRIPT}"))
@@ -501,8 +589,10 @@ def check_deploy(sandbox: Sandbox) -> list[Failure]:
                 "--config-dir", str(sandbox.config_dir),
                 "--agents-dir", str(sandbox.config_dir / "agents"),
                 "--plugins-dir", str(sandbox.config_dir / "plugins"),
+                "--skills-dir", str(sandbox.config_dir / "skills"),
                 "--mode", "copy",
                 "--with-plugins",
+                "--with-skills",
             ],
             capture_output=True,
             text=True,
@@ -515,6 +605,7 @@ def check_deploy(sandbox: Sandbox) -> list[Failure]:
         # Verify files landed
         agents_dir = sandbox.config_dir / "agents"
         plugins_dir = sandbox.config_dir / "plugins"
+        skills_dir = sandbox.config_dir / "skills"
 
         missing_agents = [
             name for name in EXPECTED_AGENT_FILES
@@ -524,16 +615,22 @@ def check_deploy(sandbox: Sandbox) -> list[Failure]:
             name for name in EXPECTED_PLUGIN_FILES
             if not (plugins_dir / name).exists()
         ]
+        missing_skills = [
+            name for name in EXPECTED_SKILL_FILES
+            if not (skills_dir / name).exists()
+        ]
 
-        if missing_agents or missing_plugins:
+        if missing_agents or missing_plugins or missing_skills:
             msg_parts = []
             if missing_agents:
                 msg_parts.append(f"Missing agents: {missing_agents}")
             if missing_plugins:
                 msg_parts.append(f"Missing plugins: {missing_plugins}")
+            if missing_skills:
+                msg_parts.append(f"Missing skills: {missing_skills}")
             raise RuntimeError("; ".join(msg_parts))
 
-        _print_pass(f"Install: {len(EXPECTED_AGENT_FILES)} agents + {len(EXPECTED_PLUGIN_FILES)} plugin(s)")
+        _print_pass(f"Install: {len(EXPECTED_AGENT_FILES)} agents + {len(EXPECTED_PLUGIN_FILES)} plugin(s) + {len(EXPECTED_SKILL_FILES)} skill(s)")
 
     except Exception as exc:
         failures.append(Failure("deploy:install", str(exc)))
@@ -548,7 +645,9 @@ def check_deploy(sandbox: Sandbox) -> list[Failure]:
                 "--config-dir", str(sandbox.config_dir),
                 "--agents-dir", str(sandbox.config_dir / "agents"),
                 "--plugins-dir", str(sandbox.config_dir / "plugins"),
+                "--skills-dir", str(sandbox.config_dir / "skills"),
                 "--with-plugins",
+                "--with-skills",
             ],
             capture_output=True,
             text=True,
@@ -575,7 +674,9 @@ def check_deploy(sandbox: Sandbox) -> list[Failure]:
                 "--config-dir", str(sandbox.config_dir),
                 "--agents-dir", str(sandbox.config_dir / "agents"),
                 "--plugins-dir", str(sandbox.config_dir / "plugins"),
+                "--skills-dir", str(sandbox.config_dir / "skills"),
                 "--with-plugins",
+                "--with-skills",
             ],
             capture_output=True,
             text=True,

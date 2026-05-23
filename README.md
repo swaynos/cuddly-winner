@@ -29,6 +29,8 @@ A multi-agent autonomous workflow for OpenCode.
 |   |-- karpathy.md
 |   |-- prometheus.md
 |   `-- reviewer.md
+|-- .opencode/
+|   `-- skills/                       Core OpenCode skills distributed by this repo
 |-- plugins/
 |   |-- immutability.ts                 Global plugin — enforces per-project file rules
 |   `-- opencode-autonomous-gate/       Plugin package — enforces @autonomous promise contract
@@ -54,23 +56,23 @@ Deploy agents globally (symlinked by default):
 ./scripts/deploy-opencode-agents.sh install
 ```
 
-Also install the immutability plugin:
+Also install core skills and the immutability plugin:
 
 ```bash
-./scripts/deploy-opencode-agents.sh install --with-plugins
+./scripts/deploy-opencode-agents.sh install --with-skills --with-plugins
 ```
 
 Verify deployment:
 
 ```bash
 ./scripts/deploy-opencode-agents.sh status
-./scripts/deploy-opencode-agents.sh status --with-plugins
+./scripts/deploy-opencode-agents.sh status --with-skills --with-plugins
 ```
 
 Remove:
 
 ```bash
-./scripts/deploy-opencode-agents.sh remove --with-plugins
+./scripts/deploy-opencode-agents.sh remove --with-skills --with-plugins
 ```
 
 ## Workflow: Prometheus Intake
@@ -137,10 +139,65 @@ When to use `@ask` vs others:
 
 - Use `@ask` for “what does this mean?”, “did we already do X?”, and quick tradeoff checks.
 - Use `plan` (built-in) when you explicitly want an implementation plan.
+- Use `plan` with the `project-agent-scaffolding` skill when you want project-local agents or skills for the current repo.
 - Use `@prometheus` when you need a new or improved `SPEC.md`.
 - Use `@autonomous` when a `SPEC.md` exists and you want execution.
 - Use `@grounder` when the task is evidence gathering itself.
 - Use `@reviewer` for formal approve/request-changes review.
+
+## Workflow: Project Agent Scaffolding
+
+Use `plan` with the `project-agent-scaffolding` skill when you want local
+OpenCode support tailored to a target repo's stack, risks, and recurring
+workflows.
+
+This keeps a **core + project pack** model:
+
+- This repo provides the stable global core agents and skills.
+- Target repos can add project-local definitions under `.opencode/agents/` and
+  `.opencode/skills/`.
+- Project-local definitions capture domain, stack, team, or repo-specific needs.
+- Proven project-local definitions can become promotion candidates, but only with
+  explicit user approval.
+- Do not add a global `@project-curator` by default; if a repo needs guided
+  curation, add a curator/bootstrap agent to that repo's `.opencode/agents/`
+  only after approval.
+
+Typical use cases:
+
+- Create a `@billing-reviewer` for a SaaS repo with risky Stripe webhook logic.
+- Add an `@a11y-reviewer` for a frontend repo where accessibility is often missed.
+- Archive an obsolete project-local agent with broad permissions.
+- Generate `.opencode/agents/README.md` so humans know which local agent to invoke.
+
+Scaffolding rules:
+
+- It inventories project context and existing `.opencode/` definitions first.
+- It proposes `add`, `update`, `keep`, `archive`, `delete`, and
+  `promote-candidate` classifications before editing.
+- It asks approval before creating, updating, archiving, or deleting files.
+- It archives by default; deletion requires explicit confirmation.
+- It writes routing guidance in `.opencode/AGENTS.md` or
+  `.opencode/agents/README.md`.
+- It reminds you to restart OpenCode after agent, skill, plugin, or config changes.
+
+## Agent Skills
+
+Agents are the team roster; skills are the reusable process handbook. The core
+skills in `.opencode/skills/` encode discipline that agents can load when a task
+matches the trigger.
+
+| Skill | Use |
+|---|---|
+| `project-agent-scaffolding` | Derive project-local agents or skills from requirements, architecture, risks, or recurring workflows. |
+| `verification-before-completion` | Require fresh command or inspection evidence before completion claims. |
+| `systematic-debugging` | Diagnose failures with root-cause-first debugging before fixes. |
+| `test-driven-development` | Enforce failing-test-first discipline for testable production changes. |
+| `subagent-driven-development` | Dispatch focused subagents with explicit briefs, escalation, and review. |
+| `writing-skills` | Create or revise skills with validation and pressure scenarios. |
+
+OpenCode loads agents, skills, plugins, and config at startup. Quit and restart
+OpenCode after changing any of these files.
 
 ## Workflow: Grounding / RAG
 
