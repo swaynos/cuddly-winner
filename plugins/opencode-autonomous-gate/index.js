@@ -154,8 +154,8 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     }
   }
 
-  async function postCorrective(sessionId, reason, details) {
-    const body = [
+  async function postCorrective(sessionId, reason, details, isStuck = false) {
+    const commonPreconditions = [
       "AUTONOMOUS GATE: promise rejected.",
       `Reason: ${reason}`,
       details ? `Details: ${details}` : null,
@@ -169,9 +169,26 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       FLAG_REVIEWER
         ? "- @reviewer has produced an APPROVE verdict in this session before emitting <promise>COMPLETE</promise>."
         : null,
-      "",
-      "Iterate, fix verification, update progress, and try again.",
-    ]
+    ];
+
+    const stuckGuidance = isStuck
+      ? [
+          "",
+          "WORK_STUCK requires evidence that you exhausted your options.",
+          "Before emitting WORK_STUCK again, you MUST rotate through these strategies:",
+          "1. RE-READ: Go back to the spec and progress.txt for missed context.",
+          "2. SEARCH: Search the codebase for similar patterns, solutions, or error messages.",
+          "3. RESEARCH: Invoke @grounder to look up the error, API, or framework behavior.",
+          "4. PIVOT: Try a fundamentally different implementation approach.",
+          "5. DECOMPOSE: Break the failing step into smaller, independently verifiable sub-steps.",
+          "6. WIDEN: Change WHAT you are doing, not just HOW.",
+          "",
+          "Your message must document at least 3 distinct approaches you tried.",
+          "Stopping is a last resort. Keep going.",
+        ]
+      : ["", "Iterate, fix verification, update progress, and try again."];
+
+    const body = [...commonPreconditions, ...stuckGuidance]
       .filter(Boolean)
       .join("\n");
 
@@ -259,6 +276,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
           sessionId,
           "WORK_STUCK preconditions not met",
           reasons.join("; "),
+          true,
         );
       } else {
         await log("info", "WORK_STUCK accepted", {});
