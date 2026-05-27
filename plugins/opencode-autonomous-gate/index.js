@@ -23,6 +23,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { evidencePasses, findAllEvidenceBlocks } from "../shared/evidence.js";
 
 const FLAG_REVIEWER = flag("OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER", true);
 const FLAG_EVIDENCE = flag("OPENCODE_AUTONOMOUS_REQUIRE_EVIDENCE", true);
@@ -32,37 +33,11 @@ const AGENT_NAME = process.env.OPENCODE_AUTONOMOUS_AGENT_NAME || "autonomous";
 const COMPLETE_TOKEN = "<promise>COMPLETE</promise>";
 const STUCK_TOKEN = "<promise>WORK_STUCK</promise>";
 const REVIEWER_APPROVE_PATTERN = /\bAPPROVE\b/;
-const EVIDENCE_BLOCK_PATTERN =
-  /```(?:json|evidence)?\s*(\{[\s\S]*?\})\s*```/gi;
 
 function flag(name, def) {
   const v = process.env[name];
   if (v == null) return def;
   return !/^(0|false|off|no)$/i.test(v.trim());
-}
-
-function findAllEvidenceBlocks(text) {
-  const out = [];
-  if (!text) return out;
-  const re = new RegExp(EVIDENCE_BLOCK_PATTERN);
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    try {
-      const obj = JSON.parse(m[1]);
-      out.push(obj);
-    } catch {
-      /* ignore non-JSON fences */
-    }
-  }
-  return out;
-}
-
-function evidencePasses(evidenceBlocks) {
-  if (!evidenceBlocks.length) return false;
-  const last = evidenceBlocks[evidenceBlocks.length - 1];
-  if (last == null || typeof last !== "object") return false;
-  if (!("command" in last) || !("exit_code" in last)) return false;
-  return Number(last.exit_code) === 0;
 }
 
 async function fileExists(p) {

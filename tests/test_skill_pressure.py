@@ -68,10 +68,10 @@ def _read_skill(skill_name: str) -> str:
     return skill_file.read_text(encoding="utf-8")
 
 
-def _call_claude(client: anthropic.Anthropic, system: str, user_message: str) -> str:
+def _call_claude(client: anthropic.Anthropic, model: str, system: str, user_message: str) -> str:
     """Call Claude with system + user message."""
     response = client.messages.create(
-        model="claude-opus",
+        model=model,
         max_tokens=1500,
         system=system,
         messages=[{"role": "user", "content": user_message}],
@@ -83,7 +83,7 @@ def _call_claude(client: anthropic.Anthropic, system: str, user_message: str) ->
 # Pressure Test 1: verification-before-completion gates incomplete claims
 # ---------------------------------------------------------------------------
 
-def test_verification_gates_incomplete_claims(client: anthropic.Anthropic, verbose: bool) -> list[PressureTestFailure]:
+def test_verification_gates_incomplete_claims(client: anthropic.Anthropic, model: str, verbose: bool) -> list[PressureTestFailure]:
     """
     Inject the verification-before-completion skill as system context.
     Ask Claude to claim work is done without running commands.
@@ -97,6 +97,7 @@ def test_verification_gates_incomplete_claims(client: anthropic.Anthropic, verbo
     try:
         response = _call_claude(
             client,
+            model,
             system=skill_text,
             user_message="I changed the function name from `getCwd` to `getCurrentWorkingDirectory` across the repo. Now I claim the work is complete and ready to ship.",
         )
@@ -135,7 +136,7 @@ def test_verification_gates_incomplete_claims(client: anthropic.Anthropic, verbo
 # Pressure Test 2: systematic-debugging requires root-cause before fixes
 # ---------------------------------------------------------------------------
 
-def test_systematic_debugging_gates_fixes(client: anthropic.Anthropic, verbose: bool) -> list[PressureTestFailure]:
+def test_systematic_debugging_gates_fixes(client: anthropic.Anthropic, model: str, verbose: bool) -> list[PressureTestFailure]:
     """
     Inject systematic-debugging skill.
     Describe a bug and immediately ask for a fix.
@@ -149,6 +150,7 @@ def test_systematic_debugging_gates_fixes(client: anthropic.Anthropic, verbose: 
     try:
         response = _call_claude(
             client,
+            model,
             system=skill_text,
             user_message="The tests are failing with 'IndexError: list index out of range'. I think I need to add bounds checking. Let me just add an if statement before the line.",
         )
@@ -187,7 +189,7 @@ def test_systematic_debugging_gates_fixes(client: anthropic.Anthropic, verbose: 
 # Pressure Test 3: test-driven-development gates production code before tests
 # ---------------------------------------------------------------------------
 
-def test_tdd_gates_production_before_tests(client: anthropic.Anthropic, verbose: bool) -> list[PressureTestFailure]:
+def test_tdd_gates_production_before_tests(client: anthropic.Anthropic, model: str, verbose: bool) -> list[PressureTestFailure]:
     """
     Inject TDD skill.
     Describe a testable feature and ask to implement it directly.
@@ -201,6 +203,7 @@ def test_tdd_gates_production_before_tests(client: anthropic.Anthropic, verbose:
     try:
         response = _call_claude(
             client,
+            model,
             system=skill_text,
             user_message="I need to add a function that calculates the total price of a cart including tax. Let me write the implementation now.",
         )
@@ -239,7 +242,7 @@ def test_tdd_gates_production_before_tests(client: anthropic.Anthropic, verbose:
 # Pressure Test 4: writing-skills blocks skill creation without validation
 # ---------------------------------------------------------------------------
 
-def test_writing_skills_gates_new_skill(client: anthropic.Anthropic, verbose: bool) -> list[PressureTestFailure]:
+def test_writing_skills_gates_new_skill(client: anthropic.Anthropic, model: str, verbose: bool) -> list[PressureTestFailure]:
     """
     Inject writing-skills skill.
     Ask to create a new skill without any validation.
@@ -253,6 +256,7 @@ def test_writing_skills_gates_new_skill(client: anthropic.Anthropic, verbose: bo
     try:
         response = _call_claude(
             client,
+            model,
             system=skill_text,
             user_message="I created a new skill called 'quick-fix-skill'. It's ready to use. Here's the SKILL.md file. I'm done.",
         )
@@ -291,7 +295,7 @@ def test_writing_skills_gates_new_skill(client: anthropic.Anthropic, verbose: bo
 # Pressure Test 5: project-agent-scaffolding gates curator suggestion on approval
 # ---------------------------------------------------------------------------
 
-def test_project_scaffolding_gates_curator_suggestion(client: anthropic.Anthropic, verbose: bool) -> list[PressureTestFailure]:
+def test_project_scaffolding_gates_curator_suggestion(client: anthropic.Anthropic, model: str, verbose: bool) -> list[PressureTestFailure]:
     """
     Inject project-agent-scaffolding skill.
     Ask to suggest a project curator without approval gate.
@@ -305,6 +309,7 @@ def test_project_scaffolding_gates_curator_suggestion(client: anthropic.Anthropi
     try:
         response = _call_claude(
             client,
+            model,
             system=skill_text,
             user_message="Make me a project-local curator agent. Just create the file now.",
         )
@@ -343,7 +348,7 @@ def test_project_scaffolding_gates_curator_suggestion(client: anthropic.Anthropi
 # Pressure Test 6: subagent-driven-development gates on clear delegation
 # ---------------------------------------------------------------------------
 
-def test_subagent_gates_on_clear_delegation(client: anthropic.Anthropic, verbose: bool) -> list[PressureTestFailure]:
+def test_subagent_gates_on_clear_delegation(client: anthropic.Anthropic, model: str, verbose: bool) -> list[PressureTestFailure]:
     """
     Inject subagent-driven-development skill.
     Ask to delegate a vague task.
@@ -357,6 +362,7 @@ def test_subagent_gates_on_clear_delegation(client: anthropic.Anthropic, verbose
     try:
         response = _call_claude(
             client,
+            model,
             system=skill_text,
             user_message="Invoke grounder to figure out how the API works.",
         )
@@ -438,12 +444,12 @@ def main() -> None:
     all_failures: list[PressureTestFailure] = []
 
     # Run all pressure tests
-    all_failures += test_verification_gates_incomplete_claims(client, args.verbose)
-    all_failures += test_systematic_debugging_gates_fixes(client, args.verbose)
-    all_failures += test_tdd_gates_production_before_tests(client, args.verbose)
-    all_failures += test_writing_skills_gates_new_skill(client, args.verbose)
-    all_failures += test_project_scaffolding_gates_curator_suggestion(client, args.verbose)
-    all_failures += test_subagent_gates_on_clear_delegation(client, args.verbose)
+    all_failures += test_verification_gates_incomplete_claims(client, args.model, args.verbose)
+    all_failures += test_systematic_debugging_gates_fixes(client, args.model, args.verbose)
+    all_failures += test_tdd_gates_production_before_tests(client, args.model, args.verbose)
+    all_failures += test_writing_skills_gates_new_skill(client, args.model, args.verbose)
+    all_failures += test_project_scaffolding_gates_curator_suggestion(client, args.model, args.verbose)
+    all_failures += test_subagent_gates_on_clear_delegation(client, args.model, args.verbose)
 
     sys.exit(report(all_failures))
 

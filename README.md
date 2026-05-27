@@ -278,7 +278,15 @@ Supported rules:
 The plugin also rejects case-variants of canonical filenames (e.g. `spec.md`
 when `SPEC.md` is declared).
 
-## Autonomous Gate Plugin
+## Autonomous Plugins
+
+This repo ships two autonomous-related plugins under `plugins/`:
+
+- `immutability.ts` enforces per-project file mutation rules.
+- `opencode-autonomous-gate/` enforces `@autonomous` promise semantics.
+- `opencode-autonomous-loop/` persists run state across bounded autonomous sessions.
+
+### Autonomous Gate Plugin
 
 `plugins/opencode-autonomous-gate/` is a global OpenCode plugin that enforces the
 @autonomous agent's promise contract. It activates automatically once deployed
@@ -321,6 +329,45 @@ Limitations:
   immediately after, forcing the agent to iterate until preconditions hold.
 - Reviewer detection matches a literal `APPROVE` token produced by `@reviewer`
   in the same session.
+
+### Autonomous Loop Plugin
+
+`plugins/opencode-autonomous-loop/` is a companion plugin that treats each
+`@autonomous` session as a bounded worker and persists supervisor-style state in
+project files.
+
+Persisted files:
+
+- `.opencode/autonomous-loop/runs.json` (durable per-run/session state)
+- `.opencode/autonomous-loop/status.json` (machine-readable status snapshot)
+
+What it tracks:
+
+- Run lifecycle (`running`, `blocked`, `complete`)
+- Iteration counts per session/run id
+- Spec presence/hash (`SPEC.md`, `spec.md`, `docs/SPEC.md`, `docs/spec.md`)
+- `progress.txt` touch events and promise emissions
+- Last evidence block metadata when `COMPLETE` is emitted
+
+This gives a durable orchestration surface without turning `@autonomous` itself
+into an infinite process. The agent remains the bounded implementation engine;
+the plugin acts as lightweight supervisor state.
+
+Durability rules (operational contract):
+
+- Treat each autonomous session as a disposable worker, never a forever process.
+- Use deterministic run keys (`run_id` + sequence/iteration) so retries are idempotent.
+- Checkpoint progress after each successful step instead of batching updates.
+- Keep short activity leases and detect stale runs with heartbeat-style inactivity checks.
+- Requeue retryable failures with exponential backoff + jitter; cap retries per item.
+- Use a circuit-breaker pause for repeated systemic failures before resuming.
+
+Practical "unlimited" means:
+
+- Restarting OpenCode does not lose progress.
+- Stalled sessions are detected and resumed.
+- Retryable failures recover automatically later.
+- Duplicate work is minimized by durable run keys and persisted state.
 
 ## Trusted Project Mode
 
@@ -379,10 +426,12 @@ clean frozen/mutable split and a scalar metric to optimize.
 
 ## Verify
 
-Check that all agents, permissions, and the immutability plugin resolve correctly
+Check that all agents, permissions, and plugins resolve correctly
 against a fresh OpenCode install — without touching your real `~/.config/opencode`:
 
 ```bash
+node --test tests/plugins/*.test.mjs
+python3 tests/test_skill_coverage.py --skip-llm
 python3 tests/verify_opencode.py
 ```
 
@@ -391,7 +440,7 @@ this repo's agents and plugin there, and asserts:
 
 - Every agent loads with the correct mode (`primary`, `subagent`, `all`).
 - Every declared permission rule is present in the resolved permission table.
-- The immutability plugin appears in OpenCode's startup logs.
+- All expected plugins appear in OpenCode's startup logs.
 - The deploy script's install, status, and remove actions all behave correctly.
 
 If `OPENAI_API_KEY` is available, the script also makes one cheap LLM call to

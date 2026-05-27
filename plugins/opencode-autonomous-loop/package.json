@@ -1,0 +1,8 @@
+{
+  "name": "opencode-autonomous-loop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenCode plugin that tracks durable autonomous run state across bounded sessions.",
+  "main": "index.js"
+}

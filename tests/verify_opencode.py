@@ -66,7 +66,11 @@ EXPECTED_SKILL_FILES = [
     "subagent-driven-development/SKILL.md",
     "writing-skills/SKILL.md",
 ]
-EXPECTED_PLUGIN_FILES = ["immutability.ts"]
+EXPECTED_PLUGIN_FILES = [
+    "immutability.ts",
+    "opencode-autonomous-gate",
+    "opencode-autonomous-loop",
+]
 SUPPORTED_SKILL_FRONTMATTER = {"name", "description", "license", "compatibility", "metadata"}
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -821,11 +825,18 @@ def check_plugin_loads(sandbox: Sandbox) -> list[Failure]:
     _print_header("G. Plugin load (startup log)")
 
     plugins_dir = sandbox.config_dir / "plugins"
-    plugin_path = plugins_dir / "immutability.ts"
-
-    if not plugin_path.exists():
-        failures.append(Failure("plugin_load", "immutability.ts not in sandbox plugins dir (deploy step may have failed)"))
-        _print_fail("Plugin file absent from sandbox")
+    missing_plugins = [
+        name for name in EXPECTED_PLUGIN_FILES if not (plugins_dir / name).exists()
+    ]
+    if missing_plugins:
+        failures.append(
+            Failure(
+                "plugin_load",
+                "plugin(s) missing from sandbox plugins dir (deploy step may have failed)",
+                diff=[f"  missing: {name}" for name in missing_plugins],
+            )
+        )
+        _print_fail("Plugin file(s) absent from sandbox")
         return failures
 
     try:
@@ -838,19 +849,33 @@ def check_plugin_loads(sandbox: Sandbox) -> list[Failure]:
         )
         logs = result.stderr
 
-        # Expected log line:
-        #   INFO ... service=plugin path=file:///.../immutability.ts loading plugin
-        if "immutability.ts" in logs and "loading plugin" in logs:
-            _print_pass("immutability.ts loaded (found in startup logs)")
-        else:
-            # Grab relevant plugin lines for diagnostics
+        missing_in_logs = []
+        for plugin_name in EXPECTED_PLUGIN_FILES:
+            plugin_entry = plugins_dir / plugin_name
+            if plugin_name in logs and "loading plugin" in logs:
+                _print_pass(f"{plugin_name} loaded (found in startup logs)")
+                continue
+
+            if plugin_entry.is_dir():
+                _print_dim(
+                    f"  Plugin package {plugin_name} did not appear in startup logs; "
+                    "OpenCode may only log top-level file plugins in this mode."
+                )
+                continue
+
+            missing_in_logs.append(plugin_name)
+
+        if missing_in_logs:
             plugin_lines = [l for l in logs.splitlines() if "plugin" in l.lower()]
-            failures.append(Failure(
-                "plugin_load",
-                "immutability.ts did not appear in startup logs",
-                diff=plugin_lines[-20:] if plugin_lines else ["(no plugin log lines found)"],
-            ))
-            _print_fail("Plugin not found in startup logs")
+            failures.append(
+                Failure(
+                    "plugin_load",
+                    f"{len(missing_in_logs)} plugin(s) did not appear in startup logs",
+                    diff=[f"  missing in logs: {name}" for name in missing_in_logs]
+                    + (plugin_lines[-20:] if plugin_lines else ["(no plugin log lines found)"]),
+                )
+            )
+            _print_fail("Plugin(s) not found in startup logs")
 
     except Exception as exc:
         failures.append(Failure("plugin_load", str(exc)))
