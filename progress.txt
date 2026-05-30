@@ -1,4 +1,65 @@
-# OpenCode Skill Layer — Testing Progress
+# OpenCode Skill Layer + Immutability Plugin Fix — Progress
+
+## SPEC: Immutability Plugin Agent-Identity Fix
+
+### Root Cause (Confirmed by Runtime Inspection)
+`tool.execute.before` input only has: `{ tool, sessionID, callID }`.
+No `agent` field. Plugin defaulted to `"unknown"` via `input.agent ?? "unknown"`.
+Confirmed by writing a diagnostic plugin that dumped the full input shape to /tmp.
+
+### Fix
+- `chat.params` hook (fires before each LLM turn, HAS `agent` in input) populates
+  a `sessionID→agent` Map cache.
+- `tool.execute.before` reads from that cache.
+- `client.session.messages()` fallback for first-call-before-LLM-turn edge case.
+- Fail closed: if identity unresolvable AND agent-scoped rules exist, deny the write.
+- Removed `?? "unknown"` fallback entirely.
+
+### Regression Test Added (Section I in verify_opencode.py)
+- `check_prometheus_identity(sandbox)` runs two `opencode run` invocations:
+  1. `--agent prometheus` writes SPEC.md (prometheus_only) → must succeed
+  2. `--agent build` writes SPEC.md (prometheus_only) → must be blocked
+- AWS Bedrock auto-detected via `aws sts get-caller-identity --profile cc`
+- No OPENAI_API_KEY required
+
+## Verification Results (Final Run)
+
+Command: `python3 tests/verify_opencode.py` (FULL, no --skip-llm)
+Exit Code: 0
+Checks: 42/42
+
+A. Preflight: ✓ (6 agents, 6 skills, 1 plugin, deploy script)
+B. Binary: ✓ (opencode 1.15.12)
+C. Isolation: ✓
+D. Deploy: ✓ (install + status + remove)
+E. Agent list: ✓ (6 agents, correct modes)
+F. Permissions: ✓ (79 rules across 6 agents)
+G. Plugin load: ✓
+H. F2 readonly check: ✓ (locked.txt unchanged, ImmutabilityGuard in transcript)
+I. Prometheus identity: ✓ (prometheus allowed, build blocked)
+
+Static checks:
+- ✓ no JSON.stringify(input)
+- ✓ no console.log
+- ✓ no ?? "unknown" fallback
+- ✓ prometheus_only present
+- ✓ write_allowlist present
+- ✓ readonly present
+
+Skill coverage: ✓ All tests pass (test_skill_coverage.py --skip-llm)
+
+## Files Changed
+- `plugins/immutability.ts`: Fixed agent identity; added chat.params cache hook
+- `tests/verify_opencode.py`: Added section I (check_prometheus_identity),
+  updated section H to support AWS Bedrock auto-detection,
+  added _detect_bedrock_profile() helper
+
+## Last Run
+Command: `python3 tests/verify_opencode.py`
+Exit Code: 0
+Platform: darwin (arm64)
+OpenCode: 1.15.12
+Date: 2026-05-29
 
 ## Goal
 Verify that the implemented skill layer (6 skills + validator + deploy) works correctly

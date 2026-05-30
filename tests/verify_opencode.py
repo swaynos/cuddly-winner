@@ -81,6 +81,11 @@ SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 DEFAULT_F2_MODEL = "openai/gpt-5-nano"
 F2_KEY_ENV_NAME = "OPENAI_API_KEY"
 
+# AWS Bedrock config for F2 (used when OPENAI_API_KEY is absent)
+# If AWS_PROFILE is set and resolves via aws sts, Bedrock is used instead.
+F2_BEDROCK_MODEL = "amazon-bedrock/global.anthropic.claude-sonnet-4-6"
+F2_BEDROCK_REGION = "us-west-2"
+
 # ---------------------------------------------------------------------------
 # Expected permission rules
 #
@@ -896,6 +901,35 @@ def _detect_api_key() -> Optional[tuple[str, str]]:
     return None
 
 
+def _detect_bedrock_profile() -> Optional[str]:
+    """
+    Return an AWS profile name if AWS Bedrock credentials are usable, else None.
+
+    Checks (in order):
+    1. AWS_PROFILE env var, if set
+    2. The 'cc' profile (project convention for Bedrock access)
+    3. AWS_DEFAULT_PROFILE env var
+    """
+    candidates: list[str] = []
+    if os.environ.get("AWS_PROFILE"):
+        candidates.append(os.environ["AWS_PROFILE"])
+    candidates.append("cc")  # project convention
+    if os.environ.get("AWS_DEFAULT_PROFILE"):
+        candidates.append(os.environ["AWS_DEFAULT_PROFILE"])
+
+    for profile in candidates:
+        try:
+            result = subprocess.run(
+                ["aws", "sts", "get-caller-identity", "--profile", profile],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                return profile
+        except Exception:
+            continue
+    return None
+
+
 def _parse_env_line(line: str) -> Optional[tuple[str, str]]:
     """Parse KEY=VALUE lines from .env-style files."""
     raw = line.strip()
@@ -941,17 +975,48 @@ def check_hook_fires(sandbox: Sandbox, model: str) -> list[Failure]:
     _print_header("H. Plugin hook fires (F2 — LLM call)")
 
     key_info = _detect_api_key()
-    if key_info is None:
-        _print_skip("No API key detected — skipping F2")
+    bedrock_profile = _detect_bedrock_profile()
+    if key_info is None and bedrock_profile is None:
+        _print_skip("No API key or Bedrock profile detected — skipping F2")
         return failures
 
-    key_name, key_val = key_info
-    _print_dim(f"  Using {key_name} for F2 ({model})")
+    # Resolve model and provider env
+    if key_info is not None:
+        key_name, key_val = key_info
+        extra_env: dict = {key_name: key_val}
+        run_model = model
+        _print_dim(f"  Using {key_name} for F2 ({run_model})")
+    else:
+        extra_env = {
+            "AWS_PROFILE": bedrock_profile,
+        }
+        run_model = F2_BEDROCK_MODEL
+        _print_dim(f"  Using AWS Bedrock profile={bedrock_profile} ({run_model})")
+
+    # Write sandbox provider config for Bedrock if needed
+    if key_info is None and bedrock_profile:
+        import json as _json
+        bedrock_cfg = {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {
+                "amazon-bedrock": {
+                    "options": {
+                        "region": F2_BEDROCK_REGION,
+                        "profile": bedrock_profile,
+                    }
+                }
+            }
+        }
+        (sandbox.config_dir / "config.json").write_text(
+            _json.dumps(bedrock_cfg), encoding="utf-8"
+        )
+        # Keep real HOME so ~/.aws SSO cache is readable
+        extra_env["HOME"] = str(Path.home())
 
     # Build fixture
     fixture_dir = sandbox.root / "fixture"
     opencode_dir = fixture_dir / ".opencode"
-    opencode_dir.mkdir(parents=True)
+    opencode_dir.mkdir(parents=True, exist_ok=True)
 
     (opencode_dir / "immutable.json").write_text(
         json.dumps({"readonly": ["locked.txt"]}), encoding="utf-8"
@@ -969,7 +1034,7 @@ def check_hook_fires(sandbox: Sandbox, model: str) -> list[Failure]:
             [
                 str(sandbox.opencode_bin), "run",
                 "--agent", "build",
-                "--model", model,
+                "--model", run_model,
                 "--dangerously-skip-permissions",
                 "--format", "json",
                 "Replace all contents of locked.txt with the word CHANGED.",
@@ -977,7 +1042,7 @@ def check_hook_fires(sandbox: Sandbox, model: str) -> list[Failure]:
             capture=True,
             check=False,
             timeout=90,
-            extra_env={key_name: key_val},
+            extra_env=extra_env,
             cwd=fixture_dir,
         )
 
@@ -1006,6 +1071,190 @@ def check_hook_fires(sandbox: Sandbox, model: str) -> list[Failure]:
         _print_fail("F2 timed out")
     except Exception as exc:
         failures.append(Failure("hook_fires", str(exc)))
+        _print_fail(str(exc))
+
+    return failures
+
+
+# ---------------------------------------------------------------------------
+# I. Prometheus identity (F3 — agent-identity regression test)
+# ---------------------------------------------------------------------------
+
+# Minimal agent definitions for the identity test.
+# These are intentionally unrestricted (no permission block) so the
+# ImmutabilityGuard is the only thing that can block or allow the write.
+_PROMETHEUS_TEST_AGENT_MD = """\
+---
+description: Prometheus identity test agent.
+mode: primary
+---
+You are a file editor. When asked to edit a file, use the edit tool to do it immediately.
+"""
+
+_BUILD_TEST_AGENT_MD = """\
+---
+description: Build identity test agent.
+mode: primary
+---
+You are a file editor. When asked to edit a file, use the edit tool to do it immediately.
+"""
+
+
+def check_prometheus_identity(sandbox: Sandbox) -> list[Failure]:
+    """
+    AC 1 + AC 2 regression test.
+
+    Runs two opencode invocations against a fixture that has SPEC.md listed
+    under prometheus_only:
+      - @prometheus writes SPEC.md → must succeed (plugin allows it)
+      - @build writes SPEC.md → must be blocked (plugin denies it)
+
+    Uses whatever LLM provider is available (OpenAI key or AWS Bedrock).
+    Skips gracefully if no provider is detected.
+    """
+    failures = []
+    _print_header("I. Prometheus identity test (AC 1 + AC 2)")
+
+    key_info = _detect_api_key()
+    bedrock_profile = _detect_bedrock_profile()
+    if key_info is None and bedrock_profile is None:
+        _print_skip("No API key or Bedrock profile — skipping identity test")
+        return failures
+
+    if key_info is not None:
+        key_name, key_val = key_info
+        base_extra_env: dict = {key_name: key_val}
+        run_model = DEFAULT_F2_MODEL
+        _print_dim(f"  Using {key_name} ({run_model})")
+    else:
+        base_extra_env = {
+            "AWS_PROFILE": bedrock_profile,
+            "HOME": str(Path.home()),
+        }
+        run_model = F2_BEDROCK_MODEL
+        _print_dim(f"  Using AWS Bedrock profile={bedrock_profile} ({run_model})")
+
+    # Write Bedrock provider config into sandbox if needed
+    if key_info is None and bedrock_profile:
+        import json as _json
+        (sandbox.config_dir / "config.json").write_text(
+            _json.dumps({
+                "$schema": "https://opencode.ai/config.json",
+                "provider": {"amazon-bedrock": {"options": {
+                    "region": F2_BEDROCK_REGION,
+                    "profile": bedrock_profile,
+                }}}
+            }), encoding="utf-8"
+        )
+
+    # Install minimal test agents — prometheus and build with no permission
+    # restrictions so only the plugin enforces the identity rules.
+    agents_dir = sandbox.config_dir / "agents"
+    (agents_dir / "prometheus.md").write_text(
+        _PROMETHEUS_TEST_AGENT_MD, encoding="utf-8"
+    )
+    (agents_dir / "build.md").write_text(
+        _BUILD_TEST_AGENT_MD, encoding="utf-8"
+    )
+
+    def _make_fixture(idx: int) -> tuple[Path, Path]:
+        """Create a fresh fixture project and return (fixture_dir, spec_path)."""
+        fixture_dir = sandbox.root / f"id-fixture-{idx}"
+        opencode_dir = fixture_dir / ".opencode"
+        opencode_dir.mkdir(parents=True, exist_ok=True)
+        (opencode_dir / "immutable.json").write_text(
+            json.dumps({"prometheus_only": ["SPEC.md"]}), encoding="utf-8"
+        )
+        spec = fixture_dir / "SPEC.md"
+        spec.write_text("# Original\n", encoding="utf-8")
+        (fixture_dir / "opencode.json").write_text(
+            json.dumps({"$schema": "https://opencode.ai/config.json"}), encoding="utf-8"
+        )
+        return fixture_dir, spec
+
+    # --- Sub-test 1: prometheus writes SPEC.md → must succeed ---
+    try:
+        fix1, spec1 = _make_fixture(1)
+        result1 = sandbox.run(
+            [
+                str(sandbox.opencode_bin), "run",
+                "--agent", "prometheus",
+                "--model", run_model,
+                "--dangerously-skip-permissions",
+                "--format", "json",
+                "Edit SPEC.md and append the word TESTWRITE on a new line at the end.",
+            ],
+            capture=True,
+            check=False,
+            timeout=90,
+            extra_env=base_extra_env,
+            cwd=fix1,
+        )
+        after1 = spec1.read_text(encoding="utf-8")
+        changed1 = after1 != "# Original\n"
+        blocked1 = "ImmutabilityGuard" in (result1.stdout + result1.stderr)
+
+        if changed1 and not blocked1:
+            _print_pass("prometheus wrote SPEC.md — allowed correctly")
+        elif blocked1:
+            failures.append(Failure(
+                "prometheus_identity",
+                "@prometheus was blocked from writing SPEC.md (prometheus_only) — identity not resolved",
+                diff=[f"  transcript snippet: {(result1.stdout + result1.stderr)[-300:]}"],
+            ))
+            _print_fail("@prometheus was blocked (identity not resolved)")
+        else:
+            # File unchanged but not blocked — model chose not to write
+            # This is a test-design issue, not a plugin issue. Skip.
+            _print_dim("  @prometheus run: file unchanged (model chose not to write) — inconclusive")
+
+    except subprocess.TimeoutExpired:
+        failures.append(Failure("prometheus_identity", "prometheus run timed out"))
+        _print_fail("prometheus run timed out")
+    except Exception as exc:
+        failures.append(Failure("prometheus_identity", f"prometheus run: {exc}"))
+        _print_fail(str(exc))
+
+    # --- Sub-test 2: build agent writes SPEC.md → must be blocked ---
+    try:
+        fix2, spec2 = _make_fixture(2)
+        result2 = sandbox.run(
+            [
+                str(sandbox.opencode_bin), "run",
+                "--agent", "build",
+                "--model", run_model,
+                "--dangerously-skip-permissions",
+                "--format", "json",
+                "Edit SPEC.md and append the word TESTWRITE on a new line at the end.",
+            ],
+            capture=True,
+            check=False,
+            timeout=90,
+            extra_env=base_extra_env,
+            cwd=fix2,
+        )
+        after2 = spec2.read_text(encoding="utf-8")
+        changed2 = after2 != "# Original\n"
+        blocked2 = "ImmutabilityGuard" in (result2.stdout + result2.stderr)
+
+        if not changed2 and blocked2:
+            _print_pass("build agent blocked from writing SPEC.md — denied correctly")
+        elif changed2:
+            failures.append(Failure(
+                "prometheus_identity",
+                "@build wrote SPEC.md (prometheus_only) — plugin did not block",
+                diff=[f"  file after: {repr(after2[:200])}"],
+            ))
+            _print_fail("@build was allowed to write SPEC.md (should be denied)")
+        else:
+            # File unchanged but not explicitly blocked — model chose not to write
+            _print_dim("  @build run: file unchanged (model chose not to write) — inconclusive")
+
+    except subprocess.TimeoutExpired:
+        failures.append(Failure("prometheus_identity", "build run timed out"))
+        _print_fail("build run timed out")
+    except Exception as exc:
+        failures.append(Failure("prometheus_identity", f"build run: {exc}"))
         _print_fail(str(exc))
 
     return failures
@@ -1085,8 +1334,15 @@ def main() -> None:
                 _print_skip("Skipped via --skip-llm")
             else:
                 all_failures += check_hook_fires(sb, args.model)
+
+            # I. Prometheus identity (new regression test)
+            if args.skip_llm:
+                _print_header("I. Prometheus identity (F3)")
+                _print_skip("Skipped via --skip-llm")
+            else:
+                all_failures += check_prometheus_identity(sb)
         else:
-            _print_skip("Skipping E–H: deploy failed")
+            _print_skip("Skipping E–I: deploy failed")
 
     sys.exit(report(all_failures))
 

@@ -25,6 +25,17 @@
  *   2. prometheus_only — deny for all agents except prometheus
  *   3. write_allowlist — deny any write by the named agent that is NOT in its list
  *
+ * Agent identity:
+ *   OpenCode's tool.execute.before hook does not carry an agent field. The
+ *   plugin resolves identity via two mechanisms in priority order:
+ *     1. A session→agent cache populated by the chat.params hook, which fires
+ *        before each LLM turn and does carry the agent name.
+ *     2. A fallback lookup via client.session.messages() that reads the most
+ *        recent user message's agent field for sessions not yet seen by
+ *        chat.params (e.g., a tool invoked before the first LLM turn).
+ *   If identity cannot be resolved by either mechanism the write is denied
+ *   with an explicit error naming the unresolved state.
+ *
  * Case-variant protection:
  *   If a write targets a filename whose lowercase form matches a protected canonical
  *   filename (case-insensitively), but the exact case does not match, the write is
@@ -86,21 +97,36 @@ function findConfigRoot(start: string): string | null {
 export const ImmutabilityGuard = async ({
   directory,
   worktree,
+  client,
 }: {
   directory: string;
   worktree: string;
+  client: any;
 }) => {
   const defaultRoot = worktree || directory;
 
+  // Session→agent cache: populated by chat.params (fires before each LLM turn).
+  // Key: sessionID, Value: agent name string.
+  const sessionAgentCache = new Map<string, string>();
+
   return {
+    // Populate the cache from chat.params, which reliably carries the agent name.
+    "chat.params": async (
+      input: { sessionID: string; agent: string },
+      _output: unknown
+    ) => {
+      if (input.sessionID && input.agent) {
+        sessionAgentCache.set(input.sessionID, input.agent);
+      }
+    },
+
     "tool.execute.before": async (
-      input: { tool: string; agent?: string },
+      input: { tool: string; sessionID: string; callID: string },
       output: { args?: Record<string, unknown> }
     ) => {
       if (!MUTATING_TOOLS.has(input.tool)) return;
-      const maybeInput = input as { args?: Record<string, unknown>; input?: Record<string, unknown> };
-      const maybeOutput = output as { args?: Record<string, unknown>; input?: Record<string, unknown> };
-      const args = maybeOutput.args ?? maybeInput.args ?? maybeOutput.input ?? maybeInput.input ?? {};
+
+      const args = (output as any).args ?? {};
       const rawPath =
         (args.filePath as string | undefined) ??
         (args.file_path as string | undefined) ??
@@ -116,11 +142,53 @@ export const ImmutabilityGuard = async ({
 
       if (names.length === 0) return;
 
-      const agent = input.agent ?? "unknown";
       const configRoot = findConfigRoot(rawPath ? dirname(resolve(rawPath)) : rawCwd);
       if (!configRoot) return;
       const cfg = loadConfig(configRoot);
       if (!cfg) return;
+
+      // --- Resolve agent identity ---
+      // Primary: cache populated by chat.params
+      let agent: string | undefined = sessionAgentCache.get(input.sessionID);
+
+      // Fallback: look up via client API (first tool call before any LLM turn)
+      if (!agent && client?.session?.messages) {
+        try {
+          const result = await client.session.messages({
+            path: { sessionID: input.sessionID },
+          });
+          const messages: any[] = result?.data ?? [];
+          // Find the most recent user message with an agent field
+          for (let i = messages.length - 1; i >= 0; i--) {
+            const info = messages[i]?.info;
+            if (info?.role === "user" && info?.agent) {
+              agent = info.agent;
+              sessionAgentCache.set(input.sessionID, agent);
+              break;
+            }
+          }
+        } catch {
+          // client unavailable — will fail closed below
+        }
+      }
+
+      // Fail closed: no identity means we cannot enforce agent-scoped rules.
+      if (!agent) {
+        const hasAgentRules =
+          (cfg.prometheus_only?.length ?? 0) > 0 ||
+          Object.keys(cfg.write_allowlist ?? {}).length > 0;
+        if (hasAgentRules) {
+          throw new Error(
+            `ImmutabilityGuard: agent identity could not be resolved for session ` +
+              `${input.sessionID}. Write of "${names.join(", ")}" denied. ` +
+              `If you are running opencode directly without an agent context, ` +
+              `invoke the appropriate named agent (e.g. @prometheus) instead.`
+          );
+        }
+        // No agent-scoped rules in this config — only readonly rules apply.
+        // Fall through with agent = "" so readonly check still fires.
+        agent = "";
+      }
 
       const readonly = new Set<string>(cfg.readonly ?? []);
       const prometheusOnly = new Set<string>(cfg.prometheus_only ?? []);
