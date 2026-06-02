@@ -23,6 +23,7 @@
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { evidencePasses, findAllEvidenceBlocks } from "../shared/evidence.js";
 
 const FLAG_REVIEWER = flag("OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER", true);
@@ -53,6 +54,24 @@ async function specPresent(directory) {
   const candidates = ["SPEC.md", "spec.md"];
   for (const c of candidates) {
     if (await fileExists(path.join(directory, c))) return true;
+  }
+  return false;
+}
+
+async function reviewerAvailable(directory) {
+  // Check local agent folders first
+  const local1 = path.join(directory, ".opencode/agents/reviewer.md");
+  const local2 = path.join(directory, "agents/reviewer.md");
+  if ((await fileExists(local1)) || (await fileExists(local2))) {
+    return true;
+  }
+  // Check global config folder
+  const configDir =
+    process.env.OPENCODE_CONFIG_DIR ||
+    path.join(os.homedir(), ".config/opencode");
+  const globalReviewer = path.join(configDir, "agents/reviewer.md");
+  if (await fileExists(globalReviewer)) {
+    return true;
   }
   return false;
 }
@@ -129,7 +148,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     }
   }
 
-  async function postCorrective(sessionId, reason, details, isStuck = false) {
+  async function postCorrective(sessionId, reason, details, isStuck = false, requireReviewer = FLAG_REVIEWER) {
     const commonPreconditions = [
       "AUTONOMOUS GATE: promise rejected.",
       `Reason: ${reason}`,
@@ -141,7 +160,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       FLAG_PROGRESS
         ? "- progress.txt (or PROGRESS.txt) has been updated in this session before emitting <promise>WORK_STUCK</promise>."
         : null,
-      FLAG_REVIEWER
+      requireReviewer
         ? "- @reviewer has produced an APPROVE verdict in this session before emitting <promise>COMPLETE</promise>."
         : null,
     ];
@@ -224,7 +243,17 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       if (FLAG_EVIDENCE && !evidenceOk) {
         reasons.push("missing/failing evidence block (exit_code must be 0)");
       }
-      if (FLAG_REVIEWER && !reviewerOk) {
+
+      let requireReviewer = FLAG_REVIEWER;
+      if (requireReviewer && process.env.OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER === undefined) {
+        const hasReviewer = await reviewerAvailable(directory);
+        if (!hasReviewer) {
+          requireReviewer = false;
+          await log("info", "@reviewer agent not found; auto-disabling reviewer requirement.");
+        }
+      }
+
+      if (requireReviewer && !reviewerOk) {
         reasons.push("no @reviewer APPROVE in this session");
       }
       if (reasons.length) {
@@ -233,6 +262,8 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
           sessionId,
           "COMPLETE preconditions not met",
           reasons.join("; "),
+          false,
+          requireReviewer,
         );
       } else {
         await log("info", "COMPLETE accepted", {});
