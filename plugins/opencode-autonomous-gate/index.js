@@ -161,7 +161,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
         ? "- progress.txt (or PROGRESS.txt) has been updated in this session before emitting <promise>WORK_STUCK</promise>."
         : null,
       requireReviewer
-        ? "- @reviewer has produced an APPROVE verdict in this session before emitting <promise>COMPLETE</promise>."
+        ? "- @reviewer has produced an APPROVE verdict in this session before emitting <promise>COMPLETE</promise>. (Note: if the @reviewer/Task tool is unavailable in your environment, you can disable this check by setting the environment variable OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER=false)"
         : null,
     ];
 
@@ -250,11 +250,55 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
         if (!hasReviewer) {
           requireReviewer = false;
           await log("info", "@reviewer agent not found; auto-disabling reviewer requirement.");
+        } else {
+          // Check if "task" tool is available in the environment/session
+          let hasTaskTool = true;
+
+          // Check client.tools or client.app.tools if available
+          const clientTools = client?.tools || client?.app?.tools;
+          if (Array.isArray(clientTools)) {
+            const hasTask = clientTools.some(t => {
+              if (typeof t === "string") return t.toLowerCase() === "task";
+              const name = t?.name || t?.metadata?.name || "";
+              return String(name).toLowerCase() === "task";
+            });
+            if (!hasTask) {
+              hasTaskTool = false;
+            }
+          }
+
+          // Check client session tools if available
+          if (hasTaskTool && client?.session?.get && sessionId) {
+            try {
+              const res = await client.session.get({ path: { id: sessionId } });
+              const sessionInfo = res?.data || res;
+              if (sessionInfo) {
+                const tools = sessionInfo.tools || sessionInfo.agent?.tools || sessionInfo.config?.tools || sessionInfo.session?.tools;
+                if (Array.isArray(tools)) {
+                  const hasTask = tools.some(t => {
+                    if (typeof t === "string") return t.toLowerCase() === "task";
+                    const name = t?.name || t?.metadata?.name || "";
+                    return String(name).toLowerCase() === "task";
+                  });
+                  if (!hasTask) {
+                    hasTaskTool = false;
+                  }
+                }
+              }
+            } catch (e) {
+              await log("debug", "Failed to check session tools from get()", { error: e.message });
+            }
+          }
+
+          if (!hasTaskTool) {
+            requireReviewer = false;
+            await log("info", "@reviewer agent is present, but 'task' tool is not available in the session. Auto-disabling reviewer requirement.");
+          }
         }
       }
 
       if (requireReviewer && !reviewerOk) {
-        reasons.push("no @reviewer APPROVE in this session");
+        reasons.push("no @reviewer APPROVE in this session (Note: if the @reviewer/Task tool is unavailable in your environment, you can disable this check by setting the environment variable OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER=false)");
       }
       if (reasons.length) {
         await log("warn", "Rejecting <promise>COMPLETE</promise>", { reasons });
@@ -316,6 +360,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       if (!text) return;
       const sessionId = sessionFromMessage(input) || sessionFromMessage(msg);
       const agent = agentFromMessage(input) || agentFromMessage(msg);
+
       // Only act on assistant messages; filter defensively.
       const role =
         msg?.role || msg?.message?.role || input?.role || "assistant";

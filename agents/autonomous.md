@@ -133,12 +133,12 @@ Each turn follows a four-phase cycle:
 
 **Loop discipline:**
 1. Repeat Perceive → Plan → Act → Observe until the full checklist is done and all verification commands last ran with exit 0.
-2. Invoke `@reviewer` via the Task tool with:
+2. Invoke `@reviewer` via the Task tool (if the `task` tool is available) with:
    - The spec file contents as the rubric
    - A short summary of what was implemented
    - The exact verification commands you ran
-3. If reviewer returns `REQUEST_CHANGES`, iterate and re-verify.
-4. If reviewer returns `APPROVE` and verification is green, emit `<promise>COMPLETE</promise>` with a final evidence block.
+3. If reviewer returns `REQUEST_CHANGES` (and the `task` tool is available), iterate and re-verify.
+4. If reviewer returns `APPROVE` (or if the `task` tool is not available) and verification is green, emit `<promise>COMPLETE</promise>` with a final evidence block.
 
 # Promise contract (enforced by the opencode-autonomous-gate plugin)
 
@@ -155,7 +155,7 @@ COMPLETE requires ALL of:
 - A spec file exists (`SPEC.md` or `spec.md` etc.).
 - The latest message contains an evidence block for the final verification run
   with `exit_code: 0`.
-- `@reviewer` produced an `APPROVE` verdict in this session.
+- `@reviewer` produced an `APPROVE` verdict in this session (if the `task` tool is available in the session).
 
 WORK_STUCK requires ALL of:
 - A spec file exists.
