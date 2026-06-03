@@ -27,14 +27,21 @@
  *
  * Agent identity:
  *   OpenCode's tool.execute.before hook does not carry an agent field. The
- *   plugin resolves identity via two mechanisms in priority order:
+ *   plugin resolves identity via three mechanisms in priority order:
  *     1. A session→agent cache populated by the chat.params hook, which fires
  *        before each LLM turn and does carry the agent name.
- *     2. A fallback lookup via client.session.messages() that reads the most
- *        recent user message's agent field for sessions not yet seen by
- *        chat.params (e.g., a tool invoked before the first LLM turn).
- *   If identity cannot be resolved by either mechanism the write is denied
- *   with an explicit error naming the unresolved state.
+ *     2. A fallback lookup via client.session.messages({ path: { id } }) that
+ *        reads the most recent user message's agent field for sessions not yet
+ *        seen by chat.params.
+ *     3. A parent-session lookup via client.session.get({ path: { id } }) that
+ *        walks parentID to find the originating agent (covers subagent/task
+ *        child sessions whose own messages carry a different agent identity).
+ *   If identity cannot be resolved by any mechanism:
+ *     - Writes to files covered by prometheus_only or write_allowlist are denied.
+ *     - Writes to files NOT covered by any agent-scoped rule are ALLOWED.
+ *       (readonly files are always denied regardless of identity.)
+ *   This policy avoids a total session lockout when identity is merely unknown
+ *   while still protecting explicitly named files.
  *
  * Case-variant protection:
  *   If a write targets a filename whose lowercase form matches a protected canonical
@@ -109,6 +116,53 @@ export const ImmutabilityGuard = async ({
   // Key: sessionID, Value: agent name string.
   const sessionAgentCache = new Map<string, string>();
 
+  // Resolve agent identity for a session, with parent-session fallback.
+  async function resolveAgent(sessionID: string): Promise<string | undefined> {
+    // 1. Hot-path: cache populated by chat.params
+    const cached = sessionAgentCache.get(sessionID);
+    if (cached) return cached;
+
+    if (!client?.session) return undefined;
+
+    // 2. Look up this session's messages — most recent user message carries agent.
+    //    SDK requires path: { id }, NOT path: { sessionID }.
+    try {
+      const result = await client.session.messages({
+        path: { id: sessionID },
+      });
+      const messages: any[] = result?.data ?? (Array.isArray(result) ? result : []);
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const info = messages[i]?.info;
+        if (info?.role === "user" && info?.agent) {
+          sessionAgentCache.set(sessionID, info.agent);
+          return info.agent;
+        }
+      }
+    } catch {
+      // SDK unavailable or session not found — fall through to parent lookup.
+    }
+
+    // 3. Walk parentID chain — covers subagent/task child sessions whose own
+    //    messages may not carry the originating agent name.
+    try {
+      const res = await client.session.get({ path: { id: sessionID } });
+      const session = res?.data ?? res;
+      const parentID: string | undefined = session?.parentID;
+      if (parentID) {
+        // Recurse once — a single parent walk is enough in practice.
+        const parentAgent = await resolveAgent(parentID);
+        if (parentAgent) {
+          sessionAgentCache.set(sessionID, parentAgent);
+          return parentAgent;
+        }
+      }
+    } catch {
+      // Parent lookup failed — give up gracefully.
+    }
+
+    return undefined;
+  }
+
   return {
     // Populate the cache from chat.params, which reliably carries the agent name.
     "chat.params": async (
@@ -148,47 +202,7 @@ export const ImmutabilityGuard = async ({
       if (!cfg) return;
 
       // --- Resolve agent identity ---
-      // Primary: cache populated by chat.params
-      let agent: string | undefined = sessionAgentCache.get(input.sessionID);
-
-      // Fallback: look up via client API (first tool call before any LLM turn)
-      if (!agent && client?.session?.messages) {
-        try {
-          const result = await client.session.messages({
-            path: { sessionID: input.sessionID },
-          });
-          const messages: any[] = result?.data ?? [];
-          // Find the most recent user message with an agent field
-          for (let i = messages.length - 1; i >= 0; i--) {
-            const info = messages[i]?.info;
-            if (info?.role === "user" && info?.agent) {
-              agent = info.agent;
-              sessionAgentCache.set(input.sessionID, agent);
-              break;
-            }
-          }
-        } catch {
-          // client unavailable — will fail closed below
-        }
-      }
-
-      // Fail closed: no identity means we cannot enforce agent-scoped rules.
-      if (!agent) {
-        const hasAgentRules =
-          (cfg.prometheus_only?.length ?? 0) > 0 ||
-          Object.keys(cfg.write_allowlist ?? {}).length > 0;
-        if (hasAgentRules) {
-          throw new Error(
-            `ImmutabilityGuard: agent identity could not be resolved for session ` +
-              `${input.sessionID}. Write of "${names.join(", ")}" denied. ` +
-              `If you are running opencode directly without an agent context, ` +
-              `invoke the appropriate named agent (e.g. @prometheus) instead.`
-          );
-        }
-        // No agent-scoped rules in this config — only readonly rules apply.
-        // Fall through with agent = "" so readonly check still fires.
-        agent = "";
-      }
+      const agent = await resolveAgent(input.sessionID);
 
       const readonly = new Set<string>(cfg.readonly ?? []);
       const prometheusOnly = new Set<string>(cfg.prometheus_only ?? []);
@@ -209,7 +223,7 @@ export const ImmutabilityGuard = async ({
 
       for (const name of names) {
 
-      // --- Case-variant protection ---
+        // --- Case-variant protection ---
         const canonical = lowerToCanonical.get(name.toLowerCase());
         if (canonical && canonical !== name) {
           throw new Error(
@@ -218,7 +232,7 @@ export const ImmutabilityGuard = async ({
           );
         }
 
-      // --- readonly: no agent may edit ---
+        // --- readonly: no agent may edit (enforced regardless of identity) ---
         if (readonly.has(name)) {
           throw new Error(
             `ImmutabilityGuard: "${name}" is declared readonly in ` +
@@ -226,16 +240,47 @@ export const ImmutabilityGuard = async ({
           );
         }
 
-      // --- prometheus_only: only @prometheus may edit ---
-        if (prometheusOnly.has(name) && agent !== "prometheus") {
-          throw new Error(
-            `ImmutabilityGuard: "${name}" may only be edited by @prometheus ` +
-              `(attempted by @${agent}). If the spec needs to change, invoke ` +
-              `@prometheus to revise it.`
-          );
+        // --- prometheus_only: only @prometheus may edit ---
+        //     If identity is unknown, deny (file is explicitly protected).
+        if (prometheusOnly.has(name)) {
+          if (!agent) {
+            throw new Error(
+              `ImmutabilityGuard: "${name}" may only be edited by @prometheus ` +
+                `but the agent identity could not be resolved for session ` +
+                `${input.sessionID}. Invoke @prometheus directly to edit this file.`
+            );
+          }
+          if (agent !== "prometheus") {
+            throw new Error(
+              `ImmutabilityGuard: "${name}" may only be edited by @prometheus ` +
+                `(attempted by @${agent}). If the spec needs to change, invoke ` +
+                `@prometheus to revise it.`
+            );
+          }
         }
 
-      // --- write_allowlist: agent may only write files in its list ---
+        // --- write_allowlist: agent may only write files in its list ---
+        //     If identity is unknown and the file is NOT in any allowlist, allow.
+        //     If identity is known and agent has an allowlist, enforce it.
+        //     If identity is unknown and the file IS in some agent's allowlist, deny.
+        if (!agent) {
+          // Unknown identity: deny only if the file appears in any agent's allowlist.
+          const coveredByAllowlist = Object.values(writeAllowlist).some(
+            (files) => files.has(name)
+          );
+          if (coveredByAllowlist) {
+            throw new Error(
+              `ImmutabilityGuard: "${name}" is covered by a write_allowlist rule but ` +
+                `the agent identity could not be resolved for session ${input.sessionID}. ` +
+                `Only the explicitly allowed agent may write this file. ` +
+                `If you are running without an agent context, invoke the appropriate ` +
+                `named agent instead.`
+            );
+          }
+          // File is not covered by any agent-scoped rule — allow.
+          continue;
+        }
+
         if (writeAllowlist[agent] && !writeAllowlist[agent].has(name)) {
           throw new Error(
             `ImmutabilityGuard: @${agent} is restricted to writing ` +
