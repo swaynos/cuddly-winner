@@ -50,6 +50,13 @@ SKILLS_DIR = REPO_ROOT / ".opencode" / "skills"
 PLUGINS_DIR = REPO_ROOT / "plugins"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 
+# Shell scripts tracked for shellcheck linting.
+# Each entry is (rel_path_from_repo_root, shellcheck_dialect).
+# Add new .sh files here as they are created.
+SHELL_SCRIPTS: list[tuple[str, str]] = [
+    ("scripts/deploy-opencode-agents.sh", "bash"),
+]
+
 EXPECTED_AGENT_FILES = [
     "ask.md",
     "prometheus.md",
@@ -442,6 +449,61 @@ def check_preflight() -> list[Failure]:
         _print_fail("scripts/deploy-opencode-agents.sh")
     else:
         _print_pass("scripts/deploy-opencode-agents.sh")
+
+    # shellcheck linting
+    failures.extend(_check_shellcheck())
+
+    return failures
+
+
+def _check_shellcheck() -> list[Failure]:
+    """
+    Run shellcheck against every tracked shell script.
+
+    Behaviour:
+    - If shellcheck is not installed and SHELLCHECK_REQUIRED=1 is set, fail hard.
+    - If shellcheck is not installed and the env var is absent, warn and skip.
+    - If shellcheck is installed, run it and fail on any warning or error.
+    """
+    failures: list[Failure] = []
+    shellcheck_bin = shutil.which("shellcheck")
+    required = os.environ.get("SHELLCHECK_REQUIRED", "").lower() in ("1", "true", "yes")
+
+    if shellcheck_bin is None:
+        if required:
+            failures.append(Failure(
+                "shellcheck",
+                "shellcheck not found and SHELLCHECK_REQUIRED=1 — install shellcheck to proceed",
+            ))
+            _print_fail("shellcheck not installed (required)")
+        else:
+            _print_skip("shellcheck not installed — skipping lint (set SHELLCHECK_REQUIRED=1 to enforce)")
+        return failures
+
+    _print_dim(f"  shellcheck {subprocess.run([shellcheck_bin, '--version'], capture_output=True, text=True).stdout.splitlines()[1] if True else ''}")
+
+    for rel_path, dialect in SHELL_SCRIPTS:
+        script = REPO_ROOT / rel_path
+        if not script.exists():
+            failures.append(Failure("shellcheck", f"Tracked script not found: {rel_path}"))
+            _print_fail(f"shellcheck: {rel_path} (missing)")
+            continue
+
+        result = subprocess.run(
+            [shellcheck_bin, "-s", dialect, str(script)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            _print_pass(f"shellcheck {rel_path}")
+        else:
+            lines = (result.stdout + result.stderr).strip().splitlines()
+            failures.append(Failure(
+                "shellcheck",
+                f"{rel_path}: shellcheck found issues",
+                diff=lines[:30],
+            ))
+            _print_fail(f"shellcheck {rel_path}")
 
     return failures
 

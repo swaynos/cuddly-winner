@@ -167,6 +167,7 @@ install_files() {
   fi
 
   shopt -s nullglob
+  # shellcheck disable=SC2206  # intentional glob expansion; nullglob set above ensures empty array on no match
   local files=("$src_dir"/$glob)
   shopt -u nullglob
 

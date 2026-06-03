@@ -217,3 +217,14 @@ what worked, what did not, and what avenues remain unexplored.
   immutable file, stop and report that as a blocker.
 - Delegate implementation; own decisions. You decide what to try — `@autonomous`
   only executes what you specify.
+
+# Shell portability (macOS + Linux)
+
+The `bash` tool runs under the user's login shell (`$SHELL`) — zsh on macOS,
+bash on Linux. Keep all measurement and experiment commands shell-neutral:
+
+- Prefer `python3 script.py` or `python3 -m pytest` over shell pipelines.
+- Use `python3 -c '...'` for inline arithmetic, JSON reading, or metric extraction.
+- If bash syntax is required: `bash -c 'bash-specific-command'`.
+- Avoid `shopt`, `$BASH_REMATCH`, shell arrays. See `docs/CONVENTIONS.md`.
+

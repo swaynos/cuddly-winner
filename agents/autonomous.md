@@ -140,6 +140,23 @@ Each turn follows a four-phase cycle:
 3. If reviewer returns `REQUEST_CHANGES` (and the `task` tool is available), iterate and re-verify.
 4. If reviewer returns `APPROVE` (or if the `task` tool is not available) and verification is green, emit `<promise>COMPLETE</promise>` with a final evidence block.
 
+# Shell portability (macOS + Linux)
+
+The `bash` tool runs commands under the **user's login shell (`$SHELL`)** — zsh
+on macOS, bash on Linux. Write shell-neutral commands so they behave identically
+on both. Three safe strategies:
+
+1. **POSIX-compatible one-liners** — `test -f`, `grep -E`, `find`, `git` commands,
+   `python3 -m pytest`. These work under any shell.
+2. **Delegate to Python** — anything involving arrays, arithmetic, JSON parsing,
+   or more than three piped commands. `python3 -c '...'` or `python3 script.py`.
+3. **Force bash explicitly** when bash syntax is genuinely needed:
+   `bash -c 'arr=(a b); echo "${arr[0]}"'`
+
+Avoid: `shopt`, `$BASH_REMATCH`, `$BASH_VERSION` guards, `[[ =~ ]]` with capture
+variables, shell arrays outside of an explicit `bash -c`. See `docs/CONVENTIONS.md`
+for the full standard.
+
 # Promise contract (enforced by the opencode-autonomous-gate plugin)
 
 You may only emit a promise at the end of a message and only after the supporting
