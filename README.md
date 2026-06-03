@@ -195,6 +195,7 @@ matches the trigger.
 | `test-driven-development` | Enforce failing-test-first discipline for testable production changes. |
 | `subagent-driven-development` | Dispatch focused subagents with explicit briefs, escalation, and review. |
 | `writing-skills` | Create or revise skills with validation and pressure scenarios. |
+| `playwright-image-generation` | Automate web AI image generation/editing safely with Playwright/CDP, verified image capture, failure recording, and dataset protection. |
 
 OpenCode loads agents, skills, plugins, and config at startup. Quit and restart
 OpenCode after changing any of these files.

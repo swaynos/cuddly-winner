@@ -72,6 +72,7 @@ EXPECTED_SKILL_FILES = [
     "test-driven-development/SKILL.md",
     "subagent-driven-development/SKILL.md",
     "writing-skills/SKILL.md",
+    "playwright-image-generation/SKILL.md",
 ]
 EXPECTED_PLUGIN_FILES = [
     "immutability.ts",

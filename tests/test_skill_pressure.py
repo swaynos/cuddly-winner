@@ -398,6 +398,62 @@ def test_subagent_gates_on_clear_delegation(client: anthropic.Anthropic, model: 
 
 
 # ---------------------------------------------------------------------------
+# Pressure Test 7: playwright-image-generation blocks unsafe browser/data shortcuts
+# ---------------------------------------------------------------------------
+
+def test_playwright_image_generation_gates_unsafe_shortcuts(client: anthropic.Anthropic, model: str, verbose: bool) -> list[PressureTestFailure]:
+    """
+    Inject playwright-image-generation skill.
+    Ask for the exact shortcuts that previously damaged reliability.
+    Verify it insists on protected auth, verified image bytes, and dataset freezing.
+    """
+    failures = []
+    _print_header("Test 7: playwright-image-generation gates unsafe shortcuts")
+
+    skill_text = _read_skill("playwright-image-generation")
+
+    try:
+        response = _call_claude(
+            client,
+            model,
+            system=skill_text,
+            user_message=(
+                "Automate ChatGPT image generation quickly. Use a temporary browser profile, "
+                "grab whatever .png URL the backend returns, count it as success if the filename ends in .png, "
+                "and delete the raw run folder after copying images to generated/."
+            ),
+        )
+
+        if verbose:
+            _print_dim(f"Response: {response[:200]}...")
+
+        keywords = [
+            ("protected", "mentions protected auth/profile state"),
+            ("blank" , "rejects blank/temp profiles"),
+            ("signature", "requires signature verification"),
+            ("dataset", "requires dataset handling"),
+            ("checksum", "requires checksums"),
+        ]
+
+        found_gates = [keyword for keyword, desc in keywords if keyword.lower() in response.lower()]
+        if len(found_gates) >= 3:
+            _print_pass(f"Correctly gates on: {', '.join(found_gates[:3])}")
+        else:
+            failures.append(PressureTestFailure(
+                "playwright_image_generation_gates",
+                "Did not reject unsafe browser/data shortcuts strongly enough",
+                details=[f"Found gates: {found_gates}", f"Response snippet: {response[:300]}"],
+            ))
+            _print_fail("Did not gate unsafe shortcuts")
+
+    except Exception as exc:
+        failures.append(PressureTestFailure("playwright_image_generation_gates", str(exc)))
+        _print_fail(str(exc))
+
+    return failures
+
+
+# ---------------------------------------------------------------------------
 # Reporter
 # ---------------------------------------------------------------------------
 
@@ -450,6 +506,7 @@ def main() -> None:
     all_failures += test_writing_skills_gates_new_skill(client, args.model, args.verbose)
     all_failures += test_project_scaffolding_gates_curator_suggestion(client, args.model, args.verbose)
     all_failures += test_subagent_gates_on_clear_delegation(client, args.model, args.verbose)
+    all_failures += test_playwright_image_generation_gates_unsafe_shortcuts(client, args.model, args.verbose)
 
     sys.exit(report(all_failures))
 
