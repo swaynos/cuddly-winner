@@ -33,6 +33,7 @@ const AGENT_NAME = process.env.OPENCODE_AUTONOMOUS_AGENT_NAME || "autonomous";
 
 const COMPLETE_TOKEN = "<promise>COMPLETE</promise>";
 const STUCK_TOKEN = "<promise>WORK_STUCK</promise>";
+const BLOCKED_TOKEN = "<promise>BLOCKED</promise>";
 const REVIEWER_APPROVE_PATTERN = /\bAPPROVE\b/;
 
 function flag(name, def) {
@@ -74,6 +75,50 @@ async function reviewerAvailable(directory) {
     return true;
   }
   return false;
+}
+
+/**
+ * Probe whether the `bash` tool is available in the current session.
+ * Uses the same multi-source heuristic as the `task` tool check.
+ * Returns true (assume available) if the SDK doesn't expose tool lists.
+ */
+async function bashToolAvailable(client, sessionId) {
+  // 1. Check client.tools / client.app.tools if the SDK exposes them
+  const clientTools = client?.tools || client?.app?.tools;
+  if (Array.isArray(clientTools)) {
+    return clientTools.some(t => {
+      if (typeof t === "string") return t.toLowerCase() === "bash";
+      const name = t?.name || t?.metadata?.name || "";
+      return String(name).toLowerCase() === "bash";
+    });
+  }
+
+  // 2. Check session tool list via client.session.get
+  if (client?.session?.get && sessionId) {
+    try {
+      const res = await client.session.get({ path: { id: sessionId } });
+      const sessionInfo = res?.data || res;
+      if (sessionInfo) {
+        const tools =
+          sessionInfo.tools ||
+          sessionInfo.agent?.tools ||
+          sessionInfo.config?.tools ||
+          sessionInfo.session?.tools;
+        if (Array.isArray(tools)) {
+          return tools.some(t => {
+            if (typeof t === "string") return t.toLowerCase() === "bash";
+            const name = t?.name || t?.metadata?.name || "";
+            return String(name).toLowerCase() === "bash";
+          });
+        }
+      }
+    } catch {
+      // Cannot determine — fall through
+    }
+  }
+
+  // 3. Cannot determine — assume available to avoid false positives
+  return true;
 }
 
 function extractTextFromMessage(msg) {
@@ -163,6 +208,8 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       requireReviewer
         ? "- @reviewer has produced an APPROVE verdict in this session before emitting <promise>COMPLETE</promise>. (Note: if the @reviewer/Task tool is unavailable in your environment, you can disable this check by setting the environment variable OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER=false)"
         : null,
+      "",
+      "If the 'bash' tool is not available in your environment (you cannot run any shell commands), emit <promise>BLOCKED</promise> immediately. Do NOT defer, rationalize, or reclassify the work. BLOCKED is the only valid exit when shell execution is impossible.",
     ];
 
     const stuckGuidance = isStuck
@@ -217,7 +264,6 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     if (st.recentTexts.length > 10) st.recentTexts.shift();
 
     if (REVIEWER_APPROVE_PATTERN.test(text)) {
-      // If the reviewer agent produced APPROVE in this session, remember it.
       if (String(agent || "").toLowerCase() === "reviewer") {
         st.reviewerApproved = true;
       }
@@ -229,7 +275,8 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
 
     const hasComplete = text.includes(COMPLETE_TOKEN);
     const hasStuck = text.includes(STUCK_TOKEN);
-    if (!hasComplete && !hasStuck) return;
+    const hasBlocked = text.includes(BLOCKED_TOKEN);
+    if (!hasComplete && !hasStuck && !hasBlocked) return;
 
     const specOk = await specPresent(directory);
     const evidenceBlocks = findAllEvidenceBlocks(text);
@@ -237,10 +284,25 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     const progressOk = st.progressTouched;
     const reviewerOk = st.reviewerApproved;
 
+    // Probe bash availability once; used by both COMPLETE and BLOCKED handlers.
+    const hasBash = process.env.OPENCODE_AUTONOMOUS_REQUIRE_EVIDENCE !== undefined
+      ? true  // explicit flag set — don't auto-disable based on bash
+      : await bashToolAvailable(client, sessionId);
+
     if (hasComplete) {
       const reasons = [];
       if (!specOk) reasons.push("missing SPEC.md/spec.md");
-      if (FLAG_EVIDENCE && !evidenceOk) {
+
+      // Auto-disable evidence requirement when bash is unavailable.
+      // Mirrors the reviewer/task auto-disable: the agent cannot satisfy a
+      // precondition that requires a tool it does not have.
+      let requireEvidence = FLAG_EVIDENCE;
+      if (requireEvidence && !hasBash) {
+        requireEvidence = false;
+        await log("info", "'bash' tool not available; auto-disabling evidence requirement for COMPLETE.");
+      }
+
+      if (requireEvidence && !evidenceOk) {
         reasons.push("missing/failing evidence block (exit_code must be 0)");
       }
 
@@ -254,7 +316,6 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
           // Check if "task" tool is available in the environment/session
           let hasTaskTool = true;
 
-          // Check client.tools or client.app.tools if available
           const clientTools = client?.tools || client?.app?.tools;
           if (Array.isArray(clientTools)) {
             const hasTask = clientTools.some(t => {
@@ -267,7 +328,6 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
             }
           }
 
-          // Check client session tools if available
           if (hasTaskTool && client?.session?.get && sessionId) {
             try {
               const res = await client.session.get({ path: { id: sessionId } });
@@ -332,6 +392,25 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
         await log("info", "WORK_STUCK accepted", {});
       }
     }
+
+    if (hasBlocked) {
+      // BLOCKED is the clean exit when a required tool (e.g. bash) is absent.
+      // Accept it only when bash is genuinely unavailable.
+      // Reject it when bash IS available — prevents agents rationalizing away work.
+      if (!hasBash) {
+        await log("info", "BLOCKED accepted: 'bash' tool is not available in this environment.");
+      } else {
+        await log("warn", "Rejecting <promise>BLOCKED</promise>: 'bash' tool is available; use COMPLETE or WORK_STUCK.");
+        await postCorrective(
+          sessionId,
+          "BLOCKED rejected: the 'bash' tool is available in this environment",
+          "Use <promise>COMPLETE</promise> with a valid evidence block, or <promise>WORK_STUCK</promise> if genuinely stuck.",
+          false,
+          false,
+        );
+      }
+    }
+
   }
 
   await log("info", "AutonomousGatePlugin initialized", {

@@ -165,6 +165,7 @@ evidence is present in that same message.
 Emit exactly one of these tokens, verbatim, on its own line:
 - `<promise>COMPLETE</promise>`
 - `<promise>WORK_STUCK</promise>`
+- `<promise>BLOCKED</promise>`
 
 Preconditions enforced by the plugin:
 
@@ -182,6 +183,17 @@ WORK_STUCK requires ALL of:
   were attempted.
 - The message explains whether `@grounder` was consulted for research (and
   if not, why research would not help).
+
+BLOCKED is the only valid exit when the `bash` tool is not available in the
+environment and you cannot run any shell commands. Rules:
+- Check immediately at the start of the session whether `bash` is available.
+  If `bash` appears in the tool-call error as "unavailable", you are in a
+  no-shell environment.
+- Emit `<promise>BLOCKED</promise>` immediately. Do NOT rationalize the missing
+  tool away. Do NOT reclassify the work as a writing task. Do NOT say "that's
+  fine" and defer. Stop cleanly and explain that bash is unavailable.
+- If `bash` IS available, `<promise>BLOCKED</promise>` will be rejected by the
+  plugin. Use COMPLETE or WORK_STUCK instead.
 
 If preconditions are not met, the plugin will post a corrective message and you
 must iterate, fix the gap, and try again.

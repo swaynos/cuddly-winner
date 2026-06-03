@@ -18,6 +18,7 @@ const STALE_SECONDS = Number(process.env.OPENCODE_AUTONOMOUS_STALE_SECONDS || 90
 
 const COMPLETE_TOKEN = "<promise>COMPLETE</promise>";
 const STUCK_TOKEN = "<promise>WORK_STUCK</promise>";
+const BLOCKED_TOKEN = "<promise>BLOCKED</promise>";
 
 async function fileExists(p) {
   try {
@@ -273,6 +274,7 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
       const evidence = findLastEvidenceBlock(text);
       const hasComplete = text.includes(COMPLETE_TOKEN);
       const hasStuck = text.includes(STUCK_TOKEN);
+      const hasBlocked = text.includes(BLOCKED_TOKEN);
       const reviewerApproved = /\bAPPROVE\b/.test(text);
 
       const run = await updateRun(sid, (r) => {
@@ -280,7 +282,7 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
         history.push({
           ts: unixTs(),
           event: "assistant_turn",
-          promise: hasComplete ? "COMPLETE" : hasStuck ? "WORK_STUCK" : null,
+          promise: hasComplete ? "COMPLETE" : hasStuck ? "WORK_STUCK" : hasBlocked ? "BLOCKED" : null,
           evidence_exit_code:
             evidence && typeof evidence.exit_code !== "undefined"
               ? Number(evidence.exit_code)
@@ -302,6 +304,10 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
         } else if (hasStuck) {
           next.status = "blocked";
           next.stuck_count = (r.stuck_count || 0) + 1;
+        } else if (hasBlocked) {
+          next.status = "blocked";
+          next.stuck_count = (r.stuck_count || 0) + 1;
+          next.last_error = "bash tool unavailable";
         } else {
           next.status = "running";
         }
