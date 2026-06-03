@@ -51,7 +51,7 @@
  */
 
 import { readFileSync, existsSync } from "fs";
-import { join, basename, dirname, resolve } from "path";
+import { join, basename, dirname, resolve, relative } from "path";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 
@@ -61,7 +61,48 @@ interface ImmutableConfig {
   write_allowlist?: Record<string, string[]>;
 }
 
-function extractPatchedBasenames(patchText: string): string[] {
+/**
+ * Match a relative file path against a pattern that may contain:
+ *   - exact basename:           "SPEC.md"
+ *   - exact relative path:     "gmail_scanner/experiments/harness.py"
+ *   - glob with **:            "gmail_scanner/experiments/**"
+ *   - glob with *:             "tests/*.py"
+ *
+ * Matching is done against both the full relative path and the basename,
+ * so a bare "SPEC.md" still matches "/any/dir/SPEC.md".
+ */
+function matchesPattern(relPath: string, pattern: string): boolean {
+  // Normalise separators to forward slash
+  const norm = relPath.replace(/\\/g, "/");
+  const name = basename(norm);
+
+  // Convert glob pattern to regex
+  function globToRegex(glob: string): RegExp {
+    const escaped = glob
+      .replace(/\\/g, "/")
+      .replace(/[.+^${}()|[\]]/g, "\\$&")  // escape regex specials except * and ?
+      .replace(/\*\*/g, "{{DOUBLE_STAR}}")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\?/g, "[^/]")
+      .replace(/\{\{DOUBLE_STAR\}\}/g, ".*");
+    return new RegExp(`^${escaped}$`);
+  }
+
+  const re = globToRegex(pattern);
+
+  // 1. Match against full relative path
+  if (re.test(norm)) return true;
+
+  // 2. Match against basename (allows "SPEC.md" to match any depth)
+  if (!pattern.includes("/") && !pattern.includes("*")) {
+    if (re.test(name)) return true;
+  }
+
+  // 3. Pattern with no path sep and no glob: compare as basename
+  return false;
+}
+
+function extractPatchedPaths(patchText: string): string[] {
   const out = new Set<string>();
   const lines = patchText.split(/\r?\n/);
   for (const line of lines) {
@@ -70,11 +111,12 @@ function extractPatchedBasenames(patchText: string): string[] {
       line.startsWith("*** Add File: ") ||
       line.startsWith("*** Delete File: ")
     ) {
-      const filePath = line.replace("*** Update File: ", "")
+      const filePath = line
+        .replace("*** Update File: ", "")
         .replace("*** Add File: ", "")
         .replace("*** Delete File: ", "")
         .trim();
-      if (filePath) out.add(basename(filePath));
+      if (filePath) out.add(filePath);
     }
   }
   return [...out];
@@ -188,15 +230,19 @@ export const ImmutabilityGuard = async ({
       const patchText = args.patchText as string | undefined;
       const rawCwd = (args.cwd as string | undefined) ?? defaultRoot;
 
-      const names = rawPath
-        ? [basename(rawPath)]
+      // Build list of absolute paths being written
+      const absPaths: string[] = rawPath
+        ? [resolve(rawPath)]
         : input.tool === "apply_patch" && patchText
-          ? extractPatchedBasenames(patchText)
+          ? extractPatchedPaths(patchText).map((p) =>
+              p.startsWith("/") ? p : resolve(rawCwd, p)
+            )
           : [];
 
-      if (names.length === 0) return;
+      if (absPaths.length === 0) return;
 
-      const configRoot = findConfigRoot(rawPath ? dirname(resolve(rawPath)) : rawCwd);
+      // Find config root once from first path
+      const configRoot = findConfigRoot(dirname(absPaths[0]));
       if (!configRoot) return;
       const cfg = loadConfig(configRoot);
       if (!cfg) return;
@@ -204,89 +250,97 @@ export const ImmutabilityGuard = async ({
       // --- Resolve agent identity ---
       const agent = await resolveAgent(input.sessionID);
 
-      const readonly = new Set<string>(cfg.readonly ?? []);
-      const prometheusOnly = new Set<string>(cfg.prometheus_only ?? []);
-      const writeAllowlist: Record<string, Set<string>> = {};
-      for (const [allowAgent, files] of Object.entries(cfg.write_allowlist ?? {})) {
-        writeAllowlist[allowAgent] = new Set(files);
-      }
+      const readonlyPatterns: string[]    = cfg.readonly ?? [];
+      const prometheusOnlyPatterns: string[] = cfg.prometheus_only ?? [];
+      const writeAllowlistPatterns: Record<string, string[]> =
+        cfg.write_allowlist ?? {};
 
-      const allCanonical = new Set<string>([
-        ...readonly,
-        ...prometheusOnly,
-        ...Object.values(cfg.write_allowlist ?? {}).flat(),
-      ]);
-      const lowerToCanonical = new Map<string, string>();
-      for (const canonicalName of allCanonical) {
-        lowerToCanonical.set(canonicalName.toLowerCase(), canonicalName);
-      }
+      for (const absPath of absPaths) {
+        // Compute path relative to configRoot for glob matching
+        const relPath = relative(configRoot, absPath).replace(/\\/g, "/");
+        const name    = basename(absPath);
 
-      for (const name of names) {
-
-        // --- Case-variant protection ---
-        const canonical = lowerToCanonical.get(name.toLowerCase());
-        if (canonical && canonical !== name) {
-          throw new Error(
-            `ImmutabilityGuard: "${name}" is a case variant of the protected file ` +
-              `"${canonical}". Use the canonical filename.`
-          );
+        // --- Case-variant protection (exact-name patterns only) ---
+        const allPatterns = [
+          ...readonlyPatterns,
+          ...prometheusOnlyPatterns,
+          ...Object.values(writeAllowlistPatterns).flat(),
+        ];
+        for (const pattern of allPatterns) {
+          if (!pattern.includes("*") && !pattern.includes("/")) {
+            // bare filename pattern
+            if (
+              name.toLowerCase() === pattern.toLowerCase() &&
+              name !== pattern
+            ) {
+              throw new Error(
+                `ImmutabilityGuard: "${name}" is a case variant of the protected file ` +
+                  `"${pattern}". Use the canonical filename.`
+              );
+            }
+          }
         }
 
-        // --- readonly: no agent may edit (enforced regardless of identity) ---
-        if (readonly.has(name)) {
+        // --- readonly: no agent may edit ---
+        const isReadonly = readonlyPatterns.some((p) =>
+          matchesPattern(relPath, p)
+        );
+        if (isReadonly) {
           throw new Error(
-            `ImmutabilityGuard: "${name}" is declared readonly in ` +
+            `ImmutabilityGuard: "${relPath}" is declared readonly in ` +
               `.opencode/immutable.json — no agent may edit it.`
           );
         }
 
         // --- prometheus_only: only @prometheus may edit ---
-        //     If identity is unknown, deny (file is explicitly protected).
-        if (prometheusOnly.has(name)) {
+        const isPrometheusOnly = prometheusOnlyPatterns.some((p) =>
+          matchesPattern(relPath, p)
+        );
+        if (isPrometheusOnly) {
           if (!agent) {
             throw new Error(
-              `ImmutabilityGuard: "${name}" may only be edited by @prometheus ` +
+              `ImmutabilityGuard: "${relPath}" may only be edited by @prometheus ` +
                 `but the agent identity could not be resolved for session ` +
                 `${input.sessionID}. Invoke @prometheus directly to edit this file.`
             );
           }
           if (agent !== "prometheus") {
             throw new Error(
-              `ImmutabilityGuard: "${name}" may only be edited by @prometheus ` +
+              `ImmutabilityGuard: "${relPath}" may only be edited by @prometheus ` +
                 `(attempted by @${agent}). If the spec needs to change, invoke ` +
                 `@prometheus to revise it.`
             );
           }
         }
 
-        // --- write_allowlist: agent may only write files in its list ---
-        //     If identity is unknown and the file is NOT in any allowlist, allow.
-        //     If identity is known and agent has an allowlist, enforce it.
-        //     If identity is unknown and the file IS in some agent's allowlist, deny.
+        // --- write_allowlist: agent may only write files matching its patterns ---
         if (!agent) {
-          // Unknown identity: deny only if the file appears in any agent's allowlist.
-          const coveredByAllowlist = Object.values(writeAllowlist).some(
-            (files) => files.has(name)
+          const coveredByAnyAllowlist = Object.values(
+            writeAllowlistPatterns
+          ).some((patterns) =>
+            patterns.some((p) => matchesPattern(relPath, p))
           );
-          if (coveredByAllowlist) {
+          if (coveredByAnyAllowlist) {
             throw new Error(
-              `ImmutabilityGuard: "${name}" is covered by a write_allowlist rule but ` +
+              `ImmutabilityGuard: "${relPath}" is covered by a write_allowlist rule but ` +
                 `the agent identity could not be resolved for session ${input.sessionID}. ` +
-                `Only the explicitly allowed agent may write this file. ` +
-                `If you are running without an agent context, invoke the appropriate ` +
-                `named agent instead.`
+                `Only the explicitly allowed agent may write this file.`
             );
           }
-          // File is not covered by any agent-scoped rule — allow.
           continue;
         }
 
-        if (writeAllowlist[agent] && !writeAllowlist[agent].has(name)) {
-          throw new Error(
-            `ImmutabilityGuard: @${agent} is restricted to writing ` +
-              `[${[...writeAllowlist[agent]].join(", ")}] per .opencode/immutable.json. ` +
-              `Writing "${name}" is not permitted.`
+        if (writeAllowlistPatterns[agent]) {
+          const allowed = writeAllowlistPatterns[agent].some((p) =>
+            matchesPattern(relPath, p)
           );
+          if (!allowed) {
+            throw new Error(
+              `ImmutabilityGuard: @${agent} is restricted to writing ` +
+                `[${writeAllowlistPatterns[agent].join(", ")}] per .opencode/immutable.json. ` +
+                `Writing "${relPath}" is not permitted.`
+            );
+          }
         }
       }
     },
