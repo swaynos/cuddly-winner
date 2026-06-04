@@ -217,5 +217,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Playwright
+.playwright-mcp
+
 # Local deployment overrides for OpenCode agent installer
 .opencode-deploy.local.env
