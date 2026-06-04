@@ -477,6 +477,9 @@ printf 'Action: %s\n' "$ACTION"
 printf 'Mode: %s\n' "$MODE"
 printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
 
+# --- AGENTS.md (global rules — installed to config dir root) ---
+install_files "Rules" "$REPO_ROOT" "$CONFIG_DIR" "$MODE" "$ACTION" "AGENTS.md"
+
 # --- Agents ---
 install_files "Agents" "$SOURCE_DIR" "$AGENTS_DIR" "$MODE" "$ACTION" "*.md"
 

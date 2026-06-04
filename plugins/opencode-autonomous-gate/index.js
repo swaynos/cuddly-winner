@@ -36,6 +36,19 @@ const STUCK_TOKEN = "<promise>WORK_STUCK</promise>";
 const BLOCKED_TOKEN = "<promise>BLOCKED</promise>";
 const REVIEWER_APPROVE_PATTERN = /\bAPPROVE\b/;
 
+// Detects the workaround-dump pattern: agent says it can't do something AND
+// provides a code block with commands for the user to run manually.
+// Both signals must be present together — a code block alone is fine (it may
+// be evidence output), and a can't-do statement alone is fine (it may be a
+// legitimate one-sentence decline). The combination is the anti-pattern.
+const CANT_DO_PATTERN = /\b(can['']t|cannot|don['']t have|not available|unavailable|no (bash|shell|SSH|ssh|edit|write|file.edit)|tools?.*(don['']t|not)|without (shell|SSH|bash|edit))\b/i;
+const HAS_CODE_BLOCK_PATTERN = /```[\s\S]{20,}/;  // fenced block with substance
+
+function isWorkaroundDump(text) {
+  return CANT_DO_PATTERN.test(text) && HAS_CODE_BLOCK_PATTERN.test(text);
+}
+
+
 function flag(name, def) {
   const v = process.env[name];
   if (v == null) return def;
@@ -276,6 +289,29 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     const hasComplete = text.includes(COMPLETE_TOKEN);
     const hasStuck = text.includes(STUCK_TOKEN);
     const hasBlocked = text.includes(BLOCKED_TOKEN);
+
+    // --- Workaround-dump detection ---
+    // If the agent produced no promise token but is doing the "I can't / here
+    // are commands for you to run" pattern, intercept it and demand BLOCKED.
+    if (!hasComplete && !hasStuck && !hasBlocked && isWorkaroundDump(text)) {
+      const hasBashNow = await bashToolAvailable(client, sessionId);
+      if (!hasBashNow) {
+        await log("warn", "Detected workaround-dump without promise token; injecting BLOCKED correction.");
+        await postCorrective(
+          sessionId,
+          "Workaround dump detected — BLOCKED required",
+          "You produced a response saying you cannot run commands, along with manual command instructions for the user. " +
+          "This is not acceptable. When bash is unavailable you must: " +
+          "(1) state it in one sentence, " +
+          "(2) emit <promise>BLOCKED</promise> immediately, " +
+          "(3) produce no command lists, no workaround instructions, no handoff prompts.",
+          false,
+          false,
+        );
+        return;
+      }
+    }
+
     if (!hasComplete && !hasStuck && !hasBlocked) return;
 
     const specOk = await specPresent(directory);

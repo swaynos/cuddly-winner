@@ -237,3 +237,109 @@ test("corrective message mentions BLOCKED path when bash is unavailable", async 
       "corrective message should mention BLOCKED as the clean exit for no-bash environments");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Workaround-dump detection
+// ---------------------------------------------------------------------------
+
+// Simulates the pattern that emerges when @autonomous is asked to run
+// something on a remote server (SSH/git host, CI runner, cloud VM, etc.)
+// and has no bash tool available — instead of emitting BLOCKED, it
+// produces a "here's what you'd run yourself" dump.
+const REMOTE_EXEC_DUMP = `I can't run that discovery or edit files in this session — the tools I currently have
+available don't include shell/SSH execution or file writing.
+
+Find what's hosted on the remote server:
+\`\`\`bash
+ls -1 /srv/git/repos
+\`\`\`
+
+Fuller report (repo + default branch + refs):
+\`\`\`bash
+for r in /srv/git/repos/*.git; do
+  echo "=== $r ==="
+  git --git-dir="$r" symbolic-ref HEAD 2>/dev/null
+  git --git-dir="$r" show-ref 2>/dev/null
+done
+\`\`\`
+`;
+
+test("workaround dump: intercepted when bash is unavailable", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    const prompts = [];
+    // No bash in tool list — simulates MCP-only or restricted environment
+    const client = makeClient({ tools: ["read", "glob", "grep"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-workaround-dump",
+      agent: "autonomous",
+      text: REMOTE_EXEC_DUMP,
+    });
+
+    assert.equal(prompts.length, 1, "workaround dump should trigger corrective");
+    assert.match(prompts[0], /Workaround dump detected/);
+    assert.match(prompts[0], /BLOCKED/);
+  });
+});
+
+test("workaround dump: NOT intercepted when bash is available (normal code output)", async () => {
+  // A response with a code block is fine when bash is available —
+  // it may be evidence output, not a workaround dump.
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    const prompts = [];
+    // Bash IS available
+    const client = makeClient({ tools: ["bash", "read", "edit"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-normal-code",
+      agent: "autonomous",
+      text: REMOTE_EXEC_DUMP,
+    });
+
+    assert.equal(prompts.length, 0, "code blocks should not be intercepted when bash is available");
+  });
+});
+
+test("workaround dump: code block alone (no cant-do statement) is not intercepted", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    const prompts = [];
+    const client = makeClient({ tools: ["read", "glob"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    // A code block without any "I can't" language — normal evidence reporting
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-code-only",
+      agent: "autonomous",
+      text: "Here are the test results:\n```\npytest passed 42 tests\n```\nAll green.",
+    });
+
+    assert.equal(prompts.length, 0, "code block alone should not trigger interception");
+  });
+});
+
+test("workaround dump: cant-do alone (no code block) is not intercepted", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    const prompts = [];
+    const client = makeClient({ tools: ["read", "glob"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    // A cant-do statement without a code block — correct one-sentence decline
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-cant-only",
+      agent: "autonomous",
+      text: "The bash tool is not available in this session.",
+    });
+
+    assert.equal(prompts.length, 0, "cant-do statement alone should not trigger interception");
+  });
+});

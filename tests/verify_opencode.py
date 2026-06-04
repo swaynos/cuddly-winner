@@ -49,6 +49,16 @@ AGENTS_DIR = REPO_ROOT / "agents"
 SKILLS_DIR = REPO_ROOT / ".opencode" / "skills"
 PLUGINS_DIR = REPO_ROOT / "plugins"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
+AGENTS_MD = REPO_ROOT / "AGENTS.md"
+
+# Key phrases that must be present in AGENTS.md.
+AGENTS_MD_REQUIRED = [
+    "commit",          # no-auto-commit rule
+    "workaround",      # workaround-dump rule
+    "BLOCKED",         # BLOCKED promise reference
+    "@autonomous",     # agent routing
+    "@prometheus",     # agent routing
+]
 
 # Shell scripts tracked for shellcheck linting.
 # Each entry is (rel_path_from_repo_root, shellcheck_dialect).
@@ -459,6 +469,23 @@ def check_preflight() -> list[Failure]:
     else:
         _print_pass("scripts/deploy-opencode-agents.sh")
 
+    # AGENTS.md
+    if not AGENTS_MD.exists():
+        failures.append(Failure("preflight", "AGENTS.md missing from repo root"))
+        _print_fail("AGENTS.md")
+    else:
+        content = AGENTS_MD.read_text(encoding="utf-8")
+        missing_phrases = [p for p in AGENTS_MD_REQUIRED if p not in content]
+        if missing_phrases:
+            failures.append(Failure(
+                "preflight",
+                f"AGENTS.md is missing required content",
+                diff=[f"  missing: {p}" for p in missing_phrases],
+            ))
+            _print_fail(f"AGENTS.md (missing: {', '.join(missing_phrases)})")
+        else:
+            _print_pass("AGENTS.md")
+
     # shellcheck linting
     failures.extend(_check_shellcheck())
 
@@ -699,8 +726,9 @@ def check_deploy(sandbox: Sandbox) -> list[Failure]:
             name for name in EXPECTED_SKILL_FILES
             if not (skills_dir / name).exists()
         ]
+        agents_md_missing = not (sandbox.config_dir / "AGENTS.md").exists()
 
-        if missing_agents or missing_plugins or missing_skills:
+        if missing_agents or missing_plugins or missing_skills or agents_md_missing:
             msg_parts = []
             if missing_agents:
                 msg_parts.append(f"Missing agents: {missing_agents}")
@@ -708,9 +736,11 @@ def check_deploy(sandbox: Sandbox) -> list[Failure]:
                 msg_parts.append(f"Missing plugins: {missing_plugins}")
             if missing_skills:
                 msg_parts.append(f"Missing skills: {missing_skills}")
+            if agents_md_missing:
+                msg_parts.append("Missing AGENTS.md in config dir")
             raise RuntimeError("; ".join(msg_parts))
 
-        _print_pass(f"Install: {len(EXPECTED_AGENT_FILES)} agents + {len(EXPECTED_PLUGIN_FILES)} plugin(s) + {len(EXPECTED_SKILL_FILES)} skill(s)")
+        _print_pass(f"Install: {len(EXPECTED_AGENT_FILES)} agents + {len(EXPECTED_PLUGIN_FILES)} plugin(s) + {len(EXPECTED_SKILL_FILES)} skill(s) + AGENTS.md")
 
     except Exception as exc:
         failures.append(Failure("deploy:install", str(exc)))
