@@ -2,6 +2,11 @@
 description: Strict code reviewer that verifies work against a caller-provided rubric and returns APPROVE or REQUEST_CHANGES.
 mode: subagent
 hidden: true
+tools:
+  edit: false
+  write: false
+  patch: false
+  apply_patch: false
 permission:
   edit: deny
   bash:

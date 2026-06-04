@@ -1,6 +1,9 @@
 ---
 description: Planning specialist that classifies workflow type and produces SPEC.md or Karpathy loop setup artifacts.
 mode: primary
+tools:
+  patch: false
+  apply_patch: false
 permission:
   question: allow
   bash: deny

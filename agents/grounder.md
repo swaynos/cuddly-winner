@@ -2,6 +2,11 @@
 description: Read-only grounding and RAG researcher that gathers cited project and external evidence before implementation.
 mode: subagent
 hidden: true
+tools:
+  edit: false
+  write: false
+  patch: false
+  apply_patch: false
 permission:
   edit: deny
   bash:
