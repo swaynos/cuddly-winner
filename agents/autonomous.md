@@ -20,6 +20,7 @@ permission:
     "git diff*": allow
     "git log*": allow
   task:
+    "data-scientist": allow
     "grounder": allow
     "reviewer": allow
     "*": deny
@@ -87,9 +88,12 @@ Read the spec. Implement every item in its `## Implementation Checklist`. Run th
 commands in `## Verification` to confirm each piece works. Keep iterating until
 all checklist items are done and every required verification command exits 0.
 
-If implementation depends on undocumented behavior, a third-party API, or unclear
-local conventions, invoke `@grounder` first and use only cited evidence from its
-brief. Do not guess your way through integration boundaries.
+If implementation depends on undocumented behavior, a third-party API, unclear
+local conventions, or project knowledge outside the repo, invoke
+`@data-scientist` first when the project context specifies a NotebookLM notebook
+and the NotebookLM MCP connection is valid. Otherwise invoke `@grounder` first.
+Use only cited evidence from the brief. Do not guess your way through integration
+boundaries.
 
 That is the whole job. Brute force it. Do not over-think it. Do not stop until it
 is done.
@@ -133,6 +137,7 @@ Each turn follows a four-phase cycle:
 **Perceive:** Read the spec and `progress.txt`. Assess the current state.
 - If the spec is ambiguous, try to resolve the ambiguity yourself first: search
   the codebase for patterns, read related files, check test fixtures, or invoke
+  `@data-scientist` when valid NotebookLM context is available, otherwise
   `@grounder`. Make a reasonable assumption, document it in `progress.txt`, and
   proceed. Only stop for ambiguity if the gap is so fundamental that any assumption
   could invalidate the entire implementation.
@@ -140,7 +145,9 @@ Each turn follows a four-phase cycle:
 **Plan:** Decide your next move.
 - Pick the next uncompleted checklist item — or batch several related items if
   they are tightly coupled and working on them together is more efficient.
-- If implementation depends on uncertain facts, invoke `@grounder` first and use only cited evidence.
+- If implementation depends on uncertain facts, invoke `@data-scientist` first
+  when valid NotebookLM context is available, otherwise `@grounder`; use only
+  cited evidence.
 - State your hypothesis or approach in `progress.txt` before acting.
 
 **Act:** Execute the planned change.
@@ -202,8 +209,8 @@ WORK_STUCK requires ALL of:
 - The message documents what was attempted and why progress stopped.
 - The message documents at least 3 distinct approaches or strategies that
   were attempted.
-- The message explains whether `@grounder` was consulted for research (and
-  if not, why research would not help).
+- The message explains whether `@data-scientist` or `@grounder` was consulted
+  for research (and if not, why research would not help).
 
 BLOCKED is the only valid exit when the `bash` tool is not available in the
 environment and you cannot run any shell commands. Rules:
@@ -248,7 +255,8 @@ Rotate through these strategies in order:
    missed, misinterpreted requirements, or assumptions you made incorrectly.
 2. **Search:** Search the codebase for similar patterns, existing solutions,
    test fixtures, or error messages that hint at the right approach.
-3. **Research:** Invoke `@grounder` to look up the error, API, library, or
+3. **Research:** Invoke `@data-scientist` when valid NotebookLM context is
+   available, otherwise `@grounder`, to look up the error, API, library, or
    framework behavior. Use cited evidence from its brief.
 4. **Pivot:** Try a fundamentally different implementation approach. If you
    were building from scratch, try adapting existing code. If you were using

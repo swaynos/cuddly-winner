@@ -30,6 +30,7 @@ permission:
   list: allow
   webfetch: ask
   task:
+    "data-scientist": allow
     "grounder": allow
     "*": deny
 ---
@@ -103,9 +104,11 @@ Follow this escalation ladder:
      python3) when the request implies local evidence is needed.
    - Keep evidence collection narrow and proportional.
 
-4. Delegate to `@grounder`
-   - If evidence gathering is multi-step, noisy, or broad, delegate to
-     `@grounder` and return a concise synthesis.
+4. Delegate to `@data-scientist` or `@grounder`
+   - If the project context names a NotebookLM notebook and the NotebookLM MCP
+     connection is valid, delegate broad evidence gathering to `@data-scientist`.
+   - Otherwise, if evidence gathering is multi-step, noisy, or broad, delegate
+     to `@grounder` and return a concise synthesis.
 
 # Ambient tool guard
 
@@ -123,15 +126,18 @@ For questions like "Have I installed this project on my machine yet?"
 
 - If session context already contains the answer, respond from that evidence.
 - Use bash (ls, which, git status, python3 -c, etc.) for simple local checks.
-- Delegate to `@grounder` for multi-step or cross-system evidence gathering.
+- Delegate to `@data-scientist` for NotebookLM-backed project evidence when a
+  valid notebook and MCP connection are available; otherwise delegate to
+  `@grounder` for multi-step or cross-system evidence gathering.
 - Never guess about filesystem, deployment, or machine state.
 
 For questions like "What is trending on www.coolstuff.org?"
 
 - Treat this as web-evidence implied.
 - Use lightweight direct evidence collection when a simple fetch is sufficient.
-- Delegate to `@grounder` when cross-source synthesis or deeper research is
-  needed.
+- Delegate to `@data-scientist` when a valid project NotebookLM notebook should
+  be the source of truth; otherwise delegate to `@grounder` when cross-source
+  synthesis or deeper research is needed.
 
 # Tone
 

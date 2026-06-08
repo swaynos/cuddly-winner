@@ -8,6 +8,7 @@ permission:
   question: allow
   bash: deny
   task:
+    "data-scientist": allow
     "grounder": allow
     "*": deny
   edit:
@@ -58,8 +59,10 @@ If classification is unclear, ask one direct discriminator question:
 we repeatedly measure and keep improvements?"
 
 If planning depends on current documentation, third-party API behavior, or project
-facts you cannot verify from files, invoke `@grounder` before finalizing artifacts.
-Treat its cited findings as context, not as authority to make unapproved product
+facts you cannot verify from files, invoke `@data-scientist` before `@grounder`
+when the project context specifies a NotebookLM notebook and the NotebookLM MCP
+connection is valid. Otherwise invoke `@grounder` before finalizing artifacts.
+Treat cited findings as context, not as authority to make unapproved product
 decisions.
 
 # Track A: SPEC-driven implementation

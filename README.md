@@ -10,6 +10,7 @@ A multi-agent autonomous workflow for OpenCode.
 | `@prometheus` | primary | Front-door planner: interviews, chooses workflow, writes `SPEC.md` or Karpathy loop setup artifacts. |
 | `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. |
 | `@karpathy` | primary | Structured iterative improvement: one change, measure, keep or revert. |
+| `@data-scientist` | subagent (hidden) | NotebookLM-backed research and analysis. Supersedes `@grounder` when a valid project notebook and NotebookLM MCP connection are available. |
 | `@grounder` | subagent (hidden) | Read-only RAG/grounding researcher with cited local and external evidence. |
 | `@reviewer` | subagent (hidden) | Read-only critic. Returns `APPROVE` or `REQUEST_CHANGES` with evidence. |
 
@@ -25,6 +26,7 @@ A multi-agent autonomous workflow for OpenCode.
 |-- agents/
 |   |-- ask.md
 |   |-- autonomous.md
+|   |-- data-scientist.md
 |   |-- grounder.md
 |   |-- karpathy.md
 |   |-- prometheus.md
@@ -130,10 +132,12 @@ do not want planning or implementation.
 - `@ask` uses session context first, then code context only when needed.
 - It avoids edits, bash, and implementation workflows.
 - It uses a tool-escalation ladder: session context -> clarify intent -> minimal
-  direct evidence -> `@grounder` for broad/noisy research.
+  direct evidence -> `@data-scientist` for valid NotebookLM-backed research,
+  otherwise `@grounder` for broad/noisy research.
 - It is tool-light by default (not tool-never): web/local evidence is used only
   when the wording implies it.
-- If evidence is missing, it can invoke `@grounder` and return a compact summary.
+- If evidence is missing, it can invoke `@data-scientist` or `@grounder` and
+  return a compact summary.
 
 When to use `@ask` vs others:
 
@@ -142,7 +146,9 @@ When to use `@ask` vs others:
 - Use `plan` with the `project-agent-scaffolding` skill when you want project-local agents or skills for the current repo.
 - Use `@prometheus` when you need a new or improved `SPEC.md`.
 - Use `@autonomous` when a `SPEC.md` exists and you want execution.
-- Use `@grounder` when the task is evidence gathering itself.
+- Use `@data-scientist` when the task is evidence gathering itself and the
+  project specifies a valid NotebookLM notebook with an authenticated MCP
+  connection; otherwise use `@grounder`.
 - Use `@reviewer` for formal approve/request-changes review.
 
 ## Workflow: Project Agent Scaffolding
@@ -202,10 +208,17 @@ OpenCode after changing any of these files.
 
 ## Workflow: Grounding / RAG
 
-`@grounder` is a read-only subagent for evidence gathering. `@prometheus` and
-`@autonomous` can invoke it when requirements or implementation depend on current
-docs, third-party APIs, or uncertain project conventions. Its output separates
-local context, external context, risks, and a recommendation with citations.
+`@data-scientist` is the preferred grounding subagent when the project context
+specifies a NotebookLM notebook and the NotebookLM MCP connection is valid. It
+queries NotebookLM with the required `Referencing the 'Role/Instructions' note,
+analyze...` preface, then separates notebook evidence, local facts, analysis,
+risks, and a recommendation.
+
+`@grounder` remains the read-only fallback for evidence gathering when NotebookLM
+context is absent, invalid, ambiguous, or unnecessary. `@prometheus` and
+`@autonomous` can invoke either subagent when requirements or implementation
+depend on current docs, third-party APIs, uncertain project conventions, or
+project knowledge outside the repo.
 
 ## Workflow: Karpathy Loop
 
@@ -243,9 +256,10 @@ prevents case-insensitive filesystem drift between contributors.
 **Status language.** No XML ceremony. Agents report completion with a plain
 summary. Blocked agents end their message with `STATUS: BLOCKED — <reason>`.
 
-**Subagents are composable.** `@grounder` can support planning or implementation
-with cited evidence. `@reviewer` is spawned by `@autonomous` and `@karpathy` for
-reflection and final quality gates.
+**Subagents are composable.** `@data-scientist` can support planning or
+implementation with NotebookLM-backed cited evidence when valid notebook context
+exists; `@grounder` handles the non-NotebookLM fallback. `@reviewer` is spawned
+by `@autonomous` and `@karpathy` for reflection and final quality gates.
 
 **`@reviewer` is composable.** Both `@autonomous` and `@karpathy` spawn it.
 The caller passes the rubric as Task input — acceptance criteria for Autonomous,
@@ -391,8 +405,8 @@ require confirmation (`external_directory: ask`).
 
 - **Per-agent permissions still win.** Agent files declare their own `permission:`
   blocks that take precedence over this project config. `@prometheus` stays
-  `bash: deny`; `@reviewer` and `@grounder` stay read-only — regardless of what
-  the project config says.
+  `bash: deny`; `@reviewer`, `@data-scientist`, and `@grounder` stay read-only —
+  regardless of what the project config says.
 
 - **Immutability plugin still fires.** `.opencode/immutable.json` rules are enforced
   by a plugin hook, not a permission rule. `edit: allow` in the project config does

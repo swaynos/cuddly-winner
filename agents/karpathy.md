@@ -185,7 +185,8 @@ execute a strategy pivot:
    that might temporarily worsen the metric but open a new improvement path.
 4. **Question your measurement:** Is the metric stable? Is the scoring pipeline
    correct? Is there a bug in the evaluation harness? Run a sanity check.
-5. **Research:** Use `@autonomous` to invoke `@grounder` for literature or
+5. **Research:** Use `@autonomous` to invoke `@data-scientist` when valid
+   NotebookLM context is available, otherwise `@grounder`, for literature or
    documentation on techniques you have not tried.
 
 Log the strategy pivot in `experiments.md`:
@@ -227,4 +228,3 @@ bash on Linux. Keep all measurement and experiment commands shell-neutral:
 - Use `python3 -c '...'` for inline arithmetic, JSON reading, or metric extraction.
 - If bash syntax is required: `bash -c 'bash-specific-command'`.
 - Avoid `shopt`, `$BASH_REMATCH`, shell arrays. See `docs/CONVENTIONS.md`.
-
