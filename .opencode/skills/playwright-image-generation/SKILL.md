@@ -71,7 +71,7 @@ Keep `outcome` separate from `failure_layer`.
 
 - `success`: image bytes saved and signature-verified.
 - `refused`: visible provider refusal or policy message.
-- `stalled`: timeout without image or terminal refusal.
+- `stalled`: timeout without image or terminal refusal. Also treat provider UI text like `Connection interrupted. Waiting for the complete answer` as a stall/silent-failure warning unless a verified image appears later.
 - `failed`: browser, UI, network, upload, or unexpected failure.
 
 Recommended failure layers:
@@ -100,5 +100,6 @@ Recommended failure layers:
 - “Just use a temp profile.”
 - “The file is named `.png`, so it is fine.”
 - “Use the latest image count only.”
+- “Keep waiting forever because the provider did not explicitly refuse.”
 - “Delete raw runs before freezing the dataset.”
 - “Mix ChatGPT and Gemini selectors in one hard-coded path.”

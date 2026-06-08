@@ -48,7 +48,13 @@ Common text fragments:
 - `sexuality`
 - `erotic content`
 
+Silent/stall warning text observed in the UI:
+
+- `Connection interrupted. Waiting for the complete answer`
+
 Guardrail text can appear after prompt acceptance, so record text refusals and backend image guardrails separately when possible.
+
+If the connection-interrupted text appears and no new generated image source is observed before timeout, record `outcome="stalled"` with `failure_layer="stalled"`. Do not retry indefinitely and do not count the attempt as success without a signature-verified image.
 
 ## New Image Detection
 

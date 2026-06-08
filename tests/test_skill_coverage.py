@@ -594,6 +594,7 @@ def test_playwright_image_generation_skill_content() -> list[TestFailure]:
         ("cdp attach" in text or "connect_over_cdp" in text, "documents CDP attach"),
         ("png signature" in text, "requires PNG signature verification"),
         ("currentSrc".lower() in text or "new source" in text, "guards against image-count-only detection"),
+        ("connection interrupted. waiting for the complete answer" in text, "records ChatGPT connection-interrupted stalls"),
         ("dataset release" in text and "checksums" in text, "protects datasets with releases/checksums"),
         ("gemini" in text and "chatgpt" in text, "keeps provider-neutral scope"),
     ]
