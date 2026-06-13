@@ -92,9 +92,23 @@ export function hashText(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
+/**
+ * Returns true if the text contains at least one unchecked Markdown checkbox
+ * (a line matching `- [ ]`).  Used to detect an unfinished progress.txt
+ * checklist so the plugin can post a continuation nudge.
+ */
+export function hasUncheckedItems(text) {
+  return /^- \[ \]/m.test(text || "");
+}
+
 export const AutonomousLoopPlugin = async ({ client, directory }) => {
   const runsPath = path.join(directory, RUN_STATE_FILE);
   const statusPath = path.join(directory, STATUS_FILE);
+
+  // Tracks the last text hash per session for which a continuation nudge was
+  // posted.  Prevents firing duplicate nudges when the same partial turn text
+  // is delivered more than once (e.g., streaming updates).
+  const lastNudgeTextHash = new Map();
 
   async function log(level, message, extra = {}) {
     if (client?.app?.log) {
@@ -223,10 +237,66 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
         });
       }
       await updateRun(sessionId, (r) => ({ ...r, stale_notified_at: now }));
-      await log("info", "posted stale reminder", { runId: run.run_id });
+      await log("info", "posted stale reminder", { runId: normalizeRunId(sessionId) });
     } catch (err) {
       await log("warn", "failed posting stale reminder", {
-        runId: run.run_id,
+        runId: normalizeRunId(sessionId),
+        error: String(err?.message || err),
+      });
+    }
+  }
+
+  /**
+   * Post a turn-boundary continuation nudge if progress.txt has unchecked
+   * items and we have not already nudged for this exact turn text in this
+   * session.  This is the fix for the premature-exit bug: the agent can end
+   * a turn silently with open checklist items, because no plugin event fires
+   * at a normal turn boundary.  This function fills that gap.
+   */
+  async function maybePostContinuationNudge(sessionId, turnText) {
+    if (!sessionId) return;
+
+    // Check progress.txt for unchecked items.
+    const progressCandidates = ["progress.txt", "PROGRESS.txt"];
+    let progressContent = null;
+    for (const name of progressCandidates) {
+      const p = path.join(directory, name);
+      if (await fileExists(p)) {
+        progressContent = await fs.readFile(p, "utf-8").catch(() => null);
+        break;
+      }
+    }
+    if (!progressContent || !hasUncheckedItems(progressContent)) return;
+
+    // Dedup: don't fire for the same turn text twice in the same session.
+    const textHash = hashText(turnText);
+    const sid = normalizeSessionId(sessionId);
+    if (lastNudgeTextHash.get(sid) === textHash) return;
+    lastNudgeTextHash.set(sid, textHash);
+
+    const body = [
+      "AUTONOMOUS LOOP: unchecked items remain in progress.txt.",
+      "You ended a turn without a promise token while the checklist is unfinished.",
+      "Do NOT stop. Resume with the next unchecked [ ] item now:",
+      "1. Read progress.txt and identify the next open item.",
+      "2. Implement it.",
+      "3. Run the verification command for that item.",
+      "4. Update progress.txt and continue to the next item.",
+      "Only emit a promise token (COMPLETE / WORK_STUCK / BLOCKED) when the",
+      "entire checklist is done or you have genuinely exhausted all strategies.",
+    ].join("\n");
+
+    try {
+      if (client?.session?.prompt) {
+        await client.session.prompt({
+          path: { id: sessionId },
+          body: { parts: [{ type: "text", text: body }] },
+        });
+        await log("info", "posted continuation nudge", { sessionId: sid });
+      }
+    } catch (err) {
+      await log("warn", "failed posting continuation nudge", {
+        sessionId: sid,
         error: String(err?.message || err),
       });
     }
@@ -319,6 +389,25 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
       });
 
       await maybePostStaleReminder(sid, run);
+
+      // -----------------------------------------------------------------------
+      // Turn-boundary continuation nudge (premature-exit fix)
+      //
+      // If @autonomous ends a turn with NO promise token while a spec is
+      // present and progress.txt still has unchecked [ ] items, the agent has
+      // gone quiet with unfinished work.  Post a corrective nudge telling it
+      // to resume the next open item.
+      //
+      // Guard conditions (do NOT nudge when):
+      //   - a promise token is present in this turn
+      //   - spec is absent (gate handles the no-spec case)
+      //   - progress.txt is absent or has no checkboxes
+      //   - all checklist items are already checked
+      //   - we already nudged for this exact turn text in this session
+      // -----------------------------------------------------------------------
+      if (!hasComplete && !hasStuck && !hasBlocked && spec.spec_present) {
+        await maybePostContinuationNudge(sid, text);
+      }
     },
 
     "session.idle": async (input) => {
