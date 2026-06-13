@@ -208,6 +208,9 @@ OpenCode after changing any of these files.
 
 ## Workflow: Grounding / RAG
 
+Project NotebookLM notebook:
+https://notebooklm.google.com/notebook/63e72bfa-9025-435d-909c-1fd35db1d505
+
 `@data-scientist` is the preferred grounding subagent when the project context
 specifies a NotebookLM notebook and the NotebookLM MCP connection is valid. It
 queries NotebookLM with the required `Referencing the 'Role/Instructions' note,
