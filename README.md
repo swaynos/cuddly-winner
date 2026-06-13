@@ -7,9 +7,9 @@ A multi-agent autonomous workflow for OpenCode.
 | Agent | Mode | Role |
 |---|---|---|
 | `@ask` | primary | Quick questions and concise answers from session context first. |
-| `@prometheus` | primary | Front-door planner: interviews, chooses workflow, writes `SPEC.md` or Karpathy loop setup artifacts. |
-| `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. |
-| `@karpathy` | primary | Structured iterative improvement: one change, measure, keep or revert. |
+| `@prometheus` | primary | Front-door planner: interviews, classifies workflow, writes `SPEC.md` or Karpathy loop artifacts, and records the autonomous strategy directive in `AGENTS.md`. |
+| `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. Owns looping — selects and invokes the appropriate loop strategy subagent. |
+| `@karpathy` | subagent (hidden) | Karpathy loop strategy — invoked by `@autonomous` when a task has a scalar metric and a stable frozen evaluator. Mandatory when the task is measurable. |
 | `@data-scientist` | subagent (hidden) | NotebookLM-backed research and analysis. Supersedes `@grounder` when a valid project notebook and NotebookLM MCP connection are available. |
 | `@grounder` | subagent (hidden) | Read-only RAG/grounding researcher with cited local and external evidence. |
 | `@reviewer` | subagent (hidden) | Read-only critic. Returns `APPROVE` or `REQUEST_CHANGES` with evidence. |
@@ -82,18 +82,21 @@ Remove:
 Start with `@prometheus` when you are not sure whether work should be
 spec-driven execution or a metric optimization loop.
 
-Prometheus classifies and outputs one of two paths:
+Prometheus classifies and outputs one of two paths, and always records an
+`## Autonomous Strategy` directive in `AGENTS.md`:
 
 1. **SPEC path** (implementation/refactor/bugfix):
    - Writes `SPEC.md`
+   - Records strategy directive in `AGENTS.md` (default: `karpathy` where measurable, otherwise `auto`)
    - Handoff: run `@autonomous`
 
 2. **Karpathy path** (iterative metric optimization):
    - Writes `program.md`
    - Writes `.opencode/karpathy.json`
    - Writes `.opencode/immutable.json`
+   - Records `strategy: karpathy` in `AGENTS.md`
    - Optional: initializes `experiments.md`
-   - Handoff: run `@karpathy`
+   - Handoff: run `@autonomous` (which invokes `@karpathy` internally)
 
 If Karpathy intent is clear but instrumentation is missing, Prometheus writes a
 `SPEC.md` for instrumentation and includes proposed code in markdown code blocks.
@@ -104,10 +107,12 @@ It does not write executable source files itself; run `@autonomous` first.
 1. Open a project in OpenCode. Tab to `@prometheus` or type `@prometheus`.
 2. Prometheus interviews you (batched questions, 3–5 per turn) until it has
    enough to write a complete, testable spec.
-3. It writes `SPEC.md` and stops.
+3. It writes `SPEC.md`, records the strategy directive in `AGENTS.md`, and stops.
 4. Tab to `@autonomous` (or type `@autonomous`).
-5. Autonomous reads `SPEC.md`, implements the checklist, runs the verification
-   commands after each change, and loops until everything passes.
+5. Autonomous reads `SPEC.md` and the `AGENTS.md` strategy directive. If the
+   strategy is `karpathy` (and a scalar metric + frozen evaluator exist), it
+   invokes `@karpathy` to run the loop. Otherwise it executes the SPEC checklist
+   directly, running verification commands after each change.
 6. Before declaring done, it spawns `@reviewer` with the spec and a change
    summary. If the reviewer returns `REQUEST_CHANGES`, it keeps going.
 7. When `@reviewer` returns `APPROVE`, autonomous writes a completion summary
@@ -115,14 +120,6 @@ It does not write executable source files itself; run `@autonomous` first.
 
 If `SPEC.md` is missing when you invoke `@autonomous`, it will tell you to run
 `@prometheus` first.
-
-## Workflow: Prometheus -> Karpathy
-
-1. Start in the target project with `@prometheus`.
-2. Ask for optimization toward a measurable metric.
-3. Prometheus writes `program.md`, `.opencode/karpathy.json`, and
-   `.opencode/immutable.json`.
-4. Run `@karpathy` to execute the loop.
 
 ## Workflow: Quick Questions (`@ask`)
 
@@ -144,8 +141,8 @@ When to use `@ask` vs others:
 - Use `@ask` for “what does this mean?”, “did we already do X?”, and quick tradeoff checks.
 - Use `plan` (built-in) when you explicitly want an implementation plan.
 - Use `plan` with the `project-agent-scaffolding` skill when you want project-local agents or skills for the current repo.
-- Use `@prometheus` when you need a new or improved `SPEC.md`.
-- Use `@autonomous` when a `SPEC.md` exists and you want execution.
+- Use `@prometheus` when you need a new or improved `SPEC.md` or loop setup artifacts.
+- Use `@autonomous` when a `SPEC.md` exists and you want execution — it handles both spec-driven work and metric loops (selecting `@karpathy` automatically when the strategy calls for it).
 - Use `@data-scientist` when the task is evidence gathering itself and the
   project specifies a valid NotebookLM notebook with an authenticated MCP
   connection; otherwise use `@grounder`.
@@ -223,10 +220,42 @@ context is absent, invalid, ambiguous, or unnecessary. `@prometheus` and
 depend on current docs, third-party APIs, uncertain project conventions, or
 project knowledge outside the repo.
 
-## Workflow: Karpathy Loop
+## Looping Strategy: Karpathy-First
 
-Use `@karpathy` when you have a measurable target and want to iterate toward it
-with discipline — not flailing, not over-planning.
+`@autonomous` owns looping. It selects a strategy based on context, with this
+precedence: explicit user instruction > `strategy:` field in `SPEC.md` >
+`## Autonomous Strategy` directive in `AGENTS.md` > context-based default.
+
+**The core principle: force nondeterminism into a deterministic check.**
+
+The Karpathy strategy is mandatory whenever a task has (or can be given) a
+scalar metric and a stable frozen evaluator. It converts "is this better?" into
+a repeatable hard yes/no by measuring baseline → noise floor → keep only if
+improvement exceeds 2× noise. This discipline is the goal; exotic strategies are
+a last resort.
+
+**Instrument before going exotic.** When a task is not naturally measurable,
+`@autonomous` first attempts to add a scalar metric and a frozen evaluator. Only
+if that genuinely fails may it select a different strategy — and it must record
+why in `progress.txt`.
+
+**Exotic strategies are named subagents** that `@autonomous` invokes only after
+the instrument-first step has failed. An exotic strategy is an admission that
+the task resisted a deterministic check. Current exotic strategies:
+
+| Strategy | When to use |
+|---|---|
+| Ralph Wiggum | Brute-force repeat-until-done for tasks with no meaningful scalar metric — high variability, no stable evaluator, or purely creative/exploratory work. |
+
+Future strategies (animal-kingdom, game-design AI, refined practice) follow the
+same pattern: each is a hidden subagent `@autonomous` can invoke, documented
+here when added.
+
+## Workflow: Karpathy Loop (via `@autonomous`)
+
+Use `@prometheus` to set up the loop artifacts, then run `@autonomous`.
+`@autonomous` reads the strategy directive from `AGENTS.md` and invokes
+`@karpathy` internally when the strategy is `karpathy`.
 
 Required: `program.md` in the project root with the loop objective, metric,
 constraints, and stop criteria.
@@ -238,7 +267,7 @@ loop configuration (exact commands, score source, noise probe). Copy and adapt:
 cp examples/karpathy.json.example .opencode/karpathy.json
 ```
 
-Karpathy's process:
+Karpathy's process (executed by the `@karpathy` strategy subagent):
 1. Reads `program.md` and `karpathy.json`. Restates objective and stop criteria.
 2. Establishes a baseline measurement.
 3. Measures the noise floor (3+ runs with varied seeds).
@@ -426,13 +455,15 @@ repos so contributors can opt in individually rather than inheriting your trust 
 
 ## Karpathy Loop Example
 
-`examples/ml-loop/` is a complete, runnable example of `@karpathy` applied to a
-small binary classification problem. No dependencies beyond Python stdlib.
+`examples/ml-loop/` is a complete, runnable example of the Karpathy loop strategy
+applied to a small binary classification problem. No dependencies beyond Python stdlib.
+Invoke `@autonomous` (it reads the `AGENTS.md` strategy directive and delegates
+to `@karpathy` automatically):
 
 ```bash
 cd examples/ml-loop
 opencode
-# then: @karpathy
+# then: @autonomous
 ```
 
 The baseline logistic regression scores ~70–75%. The loop's goal is to reach

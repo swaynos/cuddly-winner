@@ -1,7 +1,7 @@
 # ml-loop — Karpathy Loop Example
 
-A complete, runnable example of the `@karpathy` loop applied to a small
-binary classification problem. No dependencies beyond Python stdlib.
+A complete, runnable example of the Karpathy loop strategy applied to a small
+binary classification problem via `@autonomous`. No dependencies beyond Python stdlib.
 
 ## What this demonstrates
 
@@ -23,13 +23,14 @@ cd examples/ml-loop
 opencode
 ```
 
-Then invoke `@karpathy`. The agent will:
+Then invoke `@autonomous`. It reads the `AGENTS.md` strategy directive
+(`strategy: karpathy`) and delegates to the `@karpathy` strategy subagent, which:
 
-1. Read `program.md` and restate the objective.
-2. Establish a baseline score (~0.745 with default seed).
-3. Probe the noise floor across three seeds.
-4. Propose one change, implement it, measure, and decide KEEP or REVERT.
-5. Repeat until accuracy >= 0.85 or 10 consecutive non-improvements.
+1. Reads `program.md` and restates the objective.
+2. Establishes a baseline score (~0.745 with default seed).
+3. Probes the noise floor across three seeds.
+4. Proposes one change, implements it, measures, and decides KEEP or REVERT.
+5. Repeats until accuracy >= 0.85 or 10 consecutive non-improvements.
 
 Results are logged to `experiments.md` (created by the agent on first run).
 

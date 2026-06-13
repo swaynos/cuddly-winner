@@ -22,3 +22,7 @@ When a task is out of your lane, name the right agent in one sentence:
 - Planning / spec writing → `@prometheus`
 - Evidence gathering / research → `@grounder`
 - Code review → `@reviewer`
+
+## Autonomous Strategy
+strategy: karpathy
+rationale: Default — prefer forcing nondeterminism into a deterministic check wherever a scalar metric and frozen evaluator exist or can be constructed; reach for exotic strategies only when instrumentation is genuinely impossible.
