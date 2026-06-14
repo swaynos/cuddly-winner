@@ -1,171 +1,259 @@
-# Autonomous Strategy Toolkit — Karpathy-First Refactor
+# Cuddly Winner — Agent Capabilities
 
-## Problem
-`@karpathy` is an exposed primary agent that users invoke directly for metric
-loops. The project's direction is to collapse looping ownership into `@autonomous`:
-it selects and invokes the appropriate loop strategy subagent based on context,
-with the Karpathy strategy mandatory whenever a task is (or can be made)
-measurable. Exotic strategies are a documented last resort. `@prometheus` must
-record the strategy decision in `AGENTS.md` so it survives across sessions and is
-readable by every agent. Previously, a premature-exit defect caused `@autonomous`
-to abandon its checklist mid-run; that bug has been fixed.
+This document describes the current capabilities of the cuddly-winner
+autonomous agent suite. It is a reference, not a roadmap.
 
-## Goals
-- `@autonomous` owns looping. It reads the strategy directive from `AGENTS.md`,
-  follows a clear selection precedence, and invokes the right strategy subagent.
-- Karpathy is the **mandatory default** when a task has (or can be given) a
-  scalar metric and a stable frozen evaluator. This is a hard rule, not a
-  preference.
-- When a task is not naturally measurable, the agent first attempts to instrument
-  it (add a scalar metric + frozen evaluator) before reaching for an exotic
-  strategy.
-- Exotic strategies (Ralph Wiggum, future) are named hidden subagents, invoked
-  only when instrumentation genuinely cannot be done, with the reason recorded.
-- `@prometheus` records an `## Autonomous Strategy` section in `AGENTS.md` on
-  every intake, defaulting to `karpathy` and applying the hard rule.
-- `@karpathy` is demoted to a hidden subagent while preserving all its loop
-  logic, `program.md`/`karpathy.json` handling, and the `examples/ml-loop` example.
+---
 
-## Non-goals
-- Do not build any new exotic strategy subagents in this change.
-- Do not run any strategy trial or comparison experiment.
-- Do not add automatic git commits, pull request creation, or release automation.
-- Do not change `@karpathy`'s loop logic, only its mode and framing.
+## What this project is
 
-## Constraints
-- `@prometheus` is the only agent permitted to write `AGENTS.md`; its
-  `edit`/`write` allowlists and the immutability `write_allowlist.prometheus`
-  include `AGENTS.md`; no other agent gains write access.
-- All existing sections of `AGENTS.md` must be preserved verbatim; only the
-  `## Autonomous Strategy` section is added or updated.
-- `@karpathy` frontmatter becomes `mode: subagent` and `hidden: true`; loop
-  logic is untouched.
-- `@autonomous` task map gains `"karpathy": allow`.
-- Shell commands follow `docs/CONVENTIONS.md` (POSIX / explicit `bash -c` /
-  `python3`; no zsh/bash-only syntax).
-- All new or changed plugin behavior is covered by `node --test tests/plugins/*.test.mjs`.
-- All agent/permission changes are covered by `python3 tests/verify_opencode.py --skip-llm`.
+A multi-agent OpenCode workflow. The agents divide work along a strict
+plan/build line: `@prometheus` plans and validates; `@autonomous` builds and
+loops; specialist subagents handle measurement, research, review, and strategy
+execution. Plugins enforce the contracts between them.
 
-## Grounding
-- `@karpathy` is currently `mode: primary`; users invoke it directly. - `agents/karpathy.md:1-3`
-- `@autonomous` task map does not include `karpathy`; it cannot invoke it. - `agents/autonomous.md:22-26`
-- `@prometheus` `edit`/`write` allowlists do not include `AGENTS.md`; it cannot record the strategy directive there. - `agents/prometheus.md:14-27`
-- `AGENTS.md` is the project's persistent operating contract. - `AGENTS.md:1-24`
-- The premature-exit defect (silent checklist abandonment between turns) was fixed in a prior detour: `hasUncheckedItems` + `maybePostContinuationNudge` in `plugins/opencode-autonomous-loop/index.js`, 48/48 plugin tests passing. - `plugins/opencode-autonomous-loop/index.js`, `tests/plugins/autonomous-loop.test.mjs`
-- Karpathy's value is forcing nondeterminism into a deterministic check (baseline → noise floor → keep if > 2× noise). This is the design principle, not just one option. - `AGENTS.md: ## Autonomous Strategy`
-- `examples/ml-loop` is a real runnable Karpathy target (frozen `prepare.py`, mutable `train.py`, scalar accuracy metric). - `examples/ml-loop/README.md`
+---
 
-## Acceptance Criteria
+## Agents
 
-### Premature-exit fix (AC 1–5) — LANDED 2026-06-12
-1. When `@autonomous` ends a turn with no promise token while a spec is present
-   and `progress.txt` has unchecked `[ ]` items, the loop plugin posts a
-   continuation corrective instructing it to resume.
-2. The corrective does NOT fire when a promise token is present.
-3. The corrective does NOT fire when all items are checked or `progress.txt` has
-   no checkboxes.
-4. The nudge fires at most once per unchanged turn text per session.
-5. The fix does not relax any existing promise precondition.
+### `@prometheus` — Planner with a discovery sandbox
 
-> Status: implemented. `node --test tests/plugins/*.test.mjs` → 48/48 pass.
+`@prometheus` classifies incoming work into one of two planning tracks and
+produces the right artifacts for `@autonomous` to execute.
 
-### Strategy directive in AGENTS.md (AC 6–10)
-6. `agents/prometheus.md` instructs `@prometheus` to write an `## Autonomous Strategy`
-   section into the project's `AGENTS.md` on every intake, recording the strategy
-   (`karpathy` by default) and a one-line rationale.
-7. `agents/prometheus.md` documents Karpathy as mandatory when a scalar metric +
-   frozen evaluator exist or can be constructed, instrument-first before going
-   exotic, and the selection precedence: user > SPEC > AGENTS.md > context default.
-8. `agents/prometheus.md` permission block includes `AGENTS.md` in both `edit`
-   and `write` allowlists, removing nothing from the existing list.
-9. The project `AGENTS.md` contains an `## Autonomous Strategy` section with
-   `strategy: karpathy` and a rationale; all pre-existing sections are preserved.
-10. `agents/autonomous.md` includes a strategy section instructing it to read the
-    directive, apply the hard Karpathy rule, instrument before going exotic, and
-    invoke exotic strategies as named subagents only when instrumentation fails.
+**Planning tracks:**
+- **SPEC track** — implementation/refactor/bugfix work produces `SPEC.md`.
+- **Karpathy track** — metric-driven optimization produces `program.md`,
+  `.opencode/karpathy.json`, and `.opencode/immutable.json`.
 
-### Karpathy demotion (AC 11–15)
-11. `agents/karpathy.md` frontmatter sets `mode: subagent` and `hidden: true`.
-12. `agents/autonomous.md` permission `task` map includes `"karpathy": allow`.
-13. `agents/karpathy.md` body states it is a strategy invoked by `@autonomous`,
-    not a user-facing primary agent; loop logic is unchanged.
-14. `program.md`, `.opencode/karpathy.json`, `.opencode/immutable.json`, and
-    `examples/ml-loop/` are preserved; the ml-loop baseline runs without errors.
-15. `tests/verify_opencode.py` reflects `@karpathy` as `subagent` (hidden) and
-    `@autonomous` having `task: karpathy: allow`; no assertion that `@karpathy`
-    is `primary` remains.
+**Discovery intake.** When a pitch is vague or its critical assumptions are
+untested, `@prometheus` runs a bounded spike loop in an ephemeral sandbox
+(`/tmp/prometheus-spike`) before writing the spec. The sandbox is a temp dir
+outside the project; `@prometheus` has free `bash` and `edit` access inside it.
+The discovery loop follows an ant-foraging model: surface hidden assumptions,
+rank by criticality (make-or-break first), run the cheapest test first, mark
+findings proportionally, and let unconfirmed paths evaporate via
+milestone-gating. The default spike format is Wizard-of-Oz — simulate the
+expensive capability cheaply before building it. The only persistent
+project-facing output is `SPEC.md` (and planning siblings); everything in the
+sandbox is disposable.
 
-### Documentation (AC 16–18)
-16. `README.md` documents `@autonomous` as the single looping owner with strategy
-    selection precedence, and `@karpathy` as a hidden strategy subagent.
-17. `README.md` states the Karpathy-first principle: deterministic check is the
-    goal; exotic strategies are last resort; names Ralph Wiggum as the first
-    exotic option and describes when it applies.
-18. `README.md` reflects that `@prometheus` records the strategy directive in
-    `AGENTS.md` and that `examples/ml-loop` is invoked via `@autonomous`.
+**Enforcement note.** `edit`/`write` tools are config-blocked outside the
+sandbox and planning artifacts. Bash side-effects (a script writing to disk)
+are not interceptable by the permission layer — the sandbox is a behavioral and
+config contract, not an OS-level hermetic jail.
 
-### Immutability allowlist (AC 19)
-19. `examples/immutable.json.example` `prometheus_only` and
-    `write_allowlist.prometheus` both include `AGENTS.md`; no other agent
-    allowlist gains `AGENTS.md`.
+**Persistent outputs:** `SPEC.md`, `program.md`, `experiments.md`,
+`.opencode/karpathy.json`, `.opencode/immutable.json`, `AGENTS.md`.
 
-### Regression (AC 20–21)
-20. `node --test tests/plugins/*.test.mjs` exits 0.
-21. `python3 tests/verify_opencode.py --skip-llm` exits 0.
+**Permissions:** `bash: ask` (with broad sandbox allows), `edit`/`write`
+scoped to planning artifacts and `/tmp/prometheus-spike/**`, `webfetch: allow`,
+`question: allow`. `task` allows only `@data-scientist` and `@grounder`.
+
+---
+
+### `@autonomous` — Builder and loop owner
+
+`@autonomous` reads `SPEC.md` and executes every item in its Implementation
+Checklist, running verification commands after each change and looping until
+all verification exits 0. It owns looping — it reads the strategy directive
+from `AGENTS.md` and invokes the appropriate strategy subagent.
+
+**Strategy selection precedence:**
+1. Explicit user instruction in the session.
+2. `strategy:` field in `SPEC.md`.
+3. `## Autonomous Strategy` directive in `AGENTS.md`.
+4. Context-based classification (with the Karpathy hard rule applied).
+
+**Karpathy hard rule.** When a task has (or can be given) a scalar metric and a
+stable frozen evaluator, `@autonomous` must invoke `@karpathy`. It attempts to
+instrument unmeasurable tasks toward measurability before reaching for an exotic
+strategy.
+
+**Loop continuity.** The `opencode-autonomous-loop` plugin tracks run state and
+posts a continuation nudge when `@autonomous` ends a turn with unchecked
+`progress.txt` items and no promise token — preventing silent abandonment.
+
+**Promise contract** (enforced by `opencode-autonomous-gate`):
+- `COMPLETE` requires a spec, a green evidence block, and `@reviewer` APPROVE.
+- `WORK_STUCK` requires `progress.txt` updated with documented attempts.
+- `BLOCKED` is only valid when `bash` is unavailable.
+
+**Permissions:** `bash: ask` (with broad test/build allows), `task` allows
+`@data-scientist`, `@grounder`, `@reviewer`, `@karpathy`, `@ralph-wiggum`.
+
+---
+
+### `@karpathy` — Karpathy loop strategy (hidden subagent)
+
+Invoked by `@autonomous` when a task has a scalar metric and a stable frozen
+evaluator. Drives structured, iterative improvement: establish baseline,
+measure noise floor, propose exactly one change, measure, KEEP if improvement
+exceeds 2× noise floor, REVERT otherwise. Delegates non-trivial implementation
+back to `@autonomous`. Calls `@reviewer` after each run.
+
+Reads `program.md` and optionally `.opencode/karpathy.json` for deterministic
+loop configuration. Stops when `program.md`'s stop criteria are met, or after
+3 distinct strategy pivots each fail to produce a KEEP decision.
+
+Not user-facing. Users invoke `@autonomous`; the strategy directive in `AGENTS.md`
+routes to `@karpathy` when appropriate.
+
+---
+
+### `@ralph-wiggum` — Brute-force loop strategy (hidden subagent)
+
+Invoked by `@autonomous` for tasks with no automatable verifier where
+brute-force repetition is the right approach. Each iteration reads the current
+repo state fresh, attempts progress, commits, and exits. Memory is files and
+git history; the LLM context is fresh each iteration. Bounded by a hard
+30-iteration cap and a concrete completion check evaluated at the start of
+every round.
+
+---
+
+### `@data-scientist` — NotebookLM-grounded researcher (hidden subagent)
+
+Read-only. Queries a project-specified NotebookLM notebook via the NotebookLM
+MCP and returns cited evidence. Used by `@prometheus`, `@autonomous`, and
+`@ask` when the project context identifies a valid notebook and the MCP
+connection is authenticated. Falls back to `@grounder` when unavailable.
+
+The repo's registered notebook is `cuddly-winner-loop-strategies`
+(`63e72bfa-9025-435d-909c-1fd35db1d505`), which contains research on loop
+strategies, ant-foraging biology, Karpathy/autoresearch, Agile SPIKEs, and
+related material.
+
+---
+
+### `@grounder` — Read-only RAG researcher (hidden subagent)
+
+Read-only fallback for evidence gathering when NotebookLM context is absent,
+invalid, or unnecessary. Returns cited local and external evidence. Cannot
+mutate files. `@data-scientist` supersedes it when a valid notebook and MCP
+connection exist.
+
+---
+
+### `@reviewer` — Read-only critic (hidden subagent)
+
+Read-only. Returns `APPROVE` or `REQUEST_CHANGES` with evidence. Called by
+`@autonomous` (as a gate before COMPLETE) and `@karpathy` (after each
+measurement run). The rubric is passed by the caller — acceptance criteria for
+`@autonomous`, loop objective + measurements for `@karpathy`.
+
+---
+
+### `@ask` — Quick-question agent
+
+Answers short questions from session context first, then code context only when
+needed. Avoids implementation workflows. Uses a tool-escalation ladder: session
+context → clarify → minimal direct evidence → `@data-scientist` (if valid
+notebook) → `@grounder`. Read-only; no edits, no bash mutations.
+
+---
+
+## Plugins
+
+### `opencode-autonomous-gate`
+
+Enforces `@autonomous`'s promise contract. Monitors assistant messages for
+promise tokens and posts a structured corrective back into the session when
+preconditions are not met. Detects and intercepts workaround-dump responses.
+Auto-disables the reviewer and evidence requirements when the relevant tools are
+unavailable in the session.
+
+### `opencode-autonomous-loop`
+
+Treats each `@autonomous` session as a bounded worker. Persists run state
+(`runs.json`, `status.json`) in `.opencode/autonomous-loop/`. Tracks iterations,
+promise emissions, spec presence, and progress-file touches per session. Posts
+a **continuation nudge** when `@autonomous` ends a turn with unchecked `[ ]`
+items in `progress.txt` and no promise token — the primary defence against
+premature loop exit. Nudge is deduplicated per turn and cannot busy-loop.
+
+### `immutability.ts`
+
+Enforces per-project file mutation rules declared in `.opencode/immutable.json`.
+Supports `readonly` (no agent may edit), `prometheus_only` (only `@prometheus`
+may write), and per-agent `write_allowlist`. Resolves agent identity from a
+`chat.params` session cache (with `parentID` chain walk for subagent sessions)
+so child/delegated sessions inherit the originating agent's identity correctly.
+Applies a C1 fail-closed policy: unknown identity only blocks files explicitly
+named in a rule; uncovered files are allowed.
+
+---
+
+## Skills
+
+Skills are reusable process playbooks loaded by agents when a task matches
+their trigger. Core skills distributed by this repo:
+
+| Skill | Trigger |
+|---|---|
+| `project-agent-scaffolding` | Deriving project-local agents or skills from a repo's requirements and recurring workflows. |
+| `verification-before-completion` | Any task where a completion claim must be backed by fresh command evidence. |
+| `systematic-debugging` | Diagnosing a failing test, runtime error, or unexplained behavior. |
+| `test-driven-development` | Making a testable production behavior change, bug fix, or API change. |
+| `subagent-driven-development` | Executing a plan with independent tasks that can be delegated in parallel. |
+| `writing-skills` | Creating, revising, or validating an OpenCode skill. |
+| `playwright-image-generation` | Automating web AI image generation or editing with Playwright/CDP. |
+| `local-word-document` | Creating a local Word (.docx) document from notes or structured content. |
+
+---
+
+## Strategy framework
+
+Loop strategies are hidden subagents that `@autonomous` invokes. Each conforms
+to `docs/STRATEGY-CONTRACT.md`: `mode: subagent`, `hidden: true`, `task` allows
+`autonomous` + `reviewer` and denies `*`, and the body contains Applicability /
+Stop criteria / Escalation sections. Strategies are registered in
+`.opencode/strategies.json`.
+
+The selection principle: **force nondeterminism into a deterministic check.**
+Karpathy is mandatory when a frozen scalar evaluator exists or can be
+constructed. Instrument toward measurability before reaching for an exotic
+strategy. Exotic strategies are an admission the task resisted a deterministic
+check.
+
+Current registry:
+
+| Strategy | Status | When |
+|---|---|---|
+| `karpathy` | reference | Scalar metric + frozen evaluator exist or can be constructed. Mandatory. |
+| `ralph-wiggum` | active | No automatable verifier; brute-force repeat-until-done. |
+
+---
+
+## Key files
+
+| File | Owner | Purpose |
+|---|---|---|
+| `SPEC.md` | `@prometheus` | Current task specification for `@autonomous`. |
+| `AGENTS.md` | `@prometheus` | Persistent operating contract: git rules, agent routing, autonomous strategy directive. |
+| `progress.txt` | `@autonomous` | Runtime run log: checklist, attempts, verification results, strategy selection. |
+| `program.md` | `@prometheus` | Karpathy loop objective, metric, constraints, stop criteria. |
+| `.opencode/karpathy.json` | `@prometheus` | Deterministic Karpathy loop configuration. |
+| `.opencode/immutable.json` | project | Per-project file mutation rules for the immutability plugin. |
+| `.opencode/strategies.json` | project | Strategy registry. |
+| `docs/STRATEGY-CONTRACT.md` | project | Contract every strategy subagent must satisfy. |
+| `foraging-log.md` | `@prometheus` | Discovery spike session log (sandbox artifact, may exist in project root after intake). |
+
+---
 
 ## Verification
+
+The test suite covers agents, permissions, skills, plugins, and the strategy
+contract without model API keys:
+
 ```bash
-# --- Premature-exit fix (already landed) ---
-grep -q 'hasUncheckedItems' plugins/opencode-autonomous-loop/index.js
-grep -q 'maybePostContinuationNudge' plugins/opencode-autonomous-loop/index.js
-node --test tests/plugins/autonomous-loop.test.mjs
-
-# --- Karpathy demotion ---
-grep -q 'mode: subagent' agents/karpathy.md
-grep -q 'hidden: true' agents/karpathy.md
-python3 -c "import sys,re; t=open('agents/autonomous.md').read(); sys.exit(0 if re.search(r'\"karpathy\"\s*:\s*allow', t) else 1)"
-test -d examples/ml-loop
-sh -c 'cd examples/ml-loop && python3 train.py >/dev/null 2>&1 && test -f logs/latest_score.txt'
-
-# --- Strategy directive ---
-grep -q '## Autonomous Strategy' AGENTS.md
-grep -q 'strategy: karpathy' AGENTS.md
-grep -q '## Git commits' AGENTS.md
-grep -q '## Workaround dumps' AGENTS.md
-grep -q '## Agent routing' AGENTS.md
-grep -q 'Autonomous Strategy' agents/prometheus.md
-python3 -c "import sys; t=open('agents/prometheus.md').read(); sys.exit(0 if t.count('AGENTS.md')>=2 else 1)"
-grep -q 'Autonomous Strategy' agents/autonomous.md
-grep -qi 'instrument' agents/autonomous.md
-
-# --- Immutability allowlist ---
-grep -q 'AGENTS.md' examples/immutable.json.example
-
-# --- Documentation ---
-grep -qi 'Ralph Wiggum' README.md
-grep -qi 'Karpathy' README.md
-grep -qi 'strategy' README.md
-grep -qi 'deterministic' README.md
-
-# --- Regression suites ---
-node --test tests/plugins/*.test.mjs
-python3 tests/verify_opencode.py --skip-llm
+node --test tests/plugins/*.test.mjs       # plugin unit tests (48 checks)
+python3 tests/verify_opencode.py --skip-llm  # agent/permission/registry integration
 ```
 
-## Implementation Checklist
-- [x] Fix premature-exit defect: `hasUncheckedItems` + `maybePostContinuationNudge` in `opencode-autonomous-loop`; 11 new tests; 48/48 pass. (AC 1–5)
-- [x] Add `"karpathy": allow` to `agents/autonomous.md` `task` permission map. (AC 12)
-- [x] Add strategy directive section to `agents/autonomous.md`: read `AGENTS.md`, hard Karpathy rule, instrument-first, exotic as last-resort subagent. (AC 10)
-- [x] Reinforce "do not stop with unchecked items" in `agents/autonomous.md` loop discipline. (AC 1–5 reinforcement)
-- [x] Demote `agents/karpathy.md`: `mode: subagent`, `hidden: true`, reword opening; preserve loop logic. (AC 11, 13)
-- [x] Update `agents/prometheus.md`: add `AGENTS.md` to `edit`/`write` allowlists; add intake instructions for strategy directive with Karpathy-first logic and selection precedence; update handoff to `@autonomous` only. (AC 6, 7, 8)
-- [x] Add `## Autonomous Strategy` section to project `AGENTS.md` (`strategy: karpathy`, rationale). (AC 9)
-- [x] Update `examples/immutable.json.example`: add `AGENTS.md` to `prometheus_only` and `write_allowlist.prometheus`. (AC 19)
-- [x] Update `README.md`: agent table, Prometheus intake workflow, looping strategy section with Karpathy-first principle + exotic strategies table, ml-loop example pointing at `@autonomous`. (AC 16, 17, 18)
-- [x] Update `examples/ml-loop/README.md`: invoke via `@autonomous` instead of `@karpathy`. (AC 18)
-- [x] Update `tests/verify_opencode.py`: `@karpathy` mode → `subagent`; add `task: karpathy: allow` to `autonomous` rules; add `AGENTS.md` to `prometheus` `edit`/`write` rules. (AC 15, 20, 21)
-- [ ] Run every command in `## Verification` and confirm all exit 0.
-
-## Change Log
-- 2026-06-12: New SPEC (replaces completed skill-layer SPEC). Scope: make `@autonomous` the single looping owner with a Karpathy-first hard rule, record strategy in `AGENTS.md` via `@prometheus`, demote `@karpathy` to a hidden strategy subagent. The premature-exit fix and the trial scaffold were discussed during planning; the fix was completed as a detour (AC 1–5 landed), and the trial was dropped in favour of the hard Karpathy rule (forcing nondeterminism into a deterministic check is the answer, not an experiment to discover). NotebookLM was unauthenticated with no relevant notebook during planning.
-- 2026-06-12: All structural edits completed (agents, permissions, AGENTS.md, immutability example, README, validator). Verification run pending.
+The validator runs checks A (preflight), A2 (strategy registry + contract),
+A3 (Prometheus sandbox contract), B–G (binary, isolation, deploy, agent list,
+permissions, plugin load), skipping H (plugin hook fires) and I (Prometheus
+identity) in `--skip-llm` mode. The `plugin_load` check (G) requires a live
+OpenCode startup log and fails deterministically in `--skip-llm` mode; this is
+a known, pre-existing limitation unrelated to the agent or plugin code.

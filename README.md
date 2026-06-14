@@ -7,9 +7,10 @@ A multi-agent autonomous workflow for OpenCode.
 | Agent | Mode | Role |
 |---|---|---|
 | `@ask` | primary | Quick questions and concise answers from session context first. |
-| `@prometheus` | primary | Front-door planner: interviews, classifies workflow, writes `SPEC.md` or Karpathy loop artifacts, and records the autonomous strategy directive in `AGENTS.md`. |
+| `@prometheus` | primary | Front-door planner: interviews, runs discovery spikes in an ephemeral sandbox to validate assumptions, produces evidence-backed `SPEC.md` or Karpathy loop artifacts, and records the autonomous strategy directive in `AGENTS.md`. |
 | `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. Owns looping — selects and invokes the appropriate loop strategy subagent. |
-| `@karpathy` | subagent (hidden) | Karpathy loop strategy — invoked by `@autonomous` when a task has a scalar metric and a stable frozen evaluator. Mandatory when the task is measurable. |
+| `@karpathy` | subagent (hidden) | Karpathy loop strategy — mandatory when a task has a scalar metric and a stable frozen evaluator. |
+| `@ralph-wiggum` | subagent (hidden) | Ralph Wiggum loop strategy — brute-force repeat-until-done; fresh context each iteration; memory is files + git; bounded by a hard iteration cap. For tasks that resist instrumentation. |
 | `@data-scientist` | subagent (hidden) | NotebookLM-backed research and analysis. Supersedes `@grounder` when a valid project notebook and NotebookLM MCP connection are available. |
 | `@grounder` | subagent (hidden) | Read-only RAG/grounding researcher with cited local and external evidence. |
 | `@reviewer` | subagent (hidden) | Read-only critic. Returns `APPROVE` or `REQUEST_CHANGES` with evidence. |
@@ -278,6 +279,35 @@ Karpathy's process (executed by the `@karpathy` strategy subagent):
 8. Repeats until stop criteria are met or 3 consecutive runs with no KEEP.
 
 If `program.md` is missing, Karpathy will tell you to create it first.
+
+## Strategy-Authoring Framework
+
+New loop strategies are added as **hidden subagents** that conform to a shared
+contract. The framework has four parts:
+
+- **Contract** (`docs/STRATEGY-CONTRACT.md`) — the required shape of any strategy
+  subagent: `mode: subagent` + `hidden: true` frontmatter, a `task` posture that
+  allows `autonomous` + `reviewer` and denies everything else, and three
+  mandatory body sections: **applicability**, **bounded stop criteria**, and
+  **escalation**. Open-ended / "run forever" strategies are forbidden by the
+  contract.
+- **Registry** (`.opencode/strategies.json`) — a declarative list of strategies
+  with `name`, `agent`, `applicability`, and `status` (`active` / `reference` /
+  `planned`). `@autonomous` reads this to discover selectable strategies.
+  `karpathy` is the `reference` entry; `ralph-wiggum` is a `planned` slot.
+- **Template** (`docs/strategy-template.md`) — a copy-to-create scaffold with
+  every required section as fill-in placeholders.
+- **Validation** — `tests/verify_opencode.py` loads the registry and fails any
+  non-conformant or open-ended strategy.
+
+**Adding a strategy requires no edit to `@autonomous`.** Drop a conformant agent
+file in `agents/` (or `.opencode/agents/`), add a registry entry with status
+`active`, and restart OpenCode. The registry never overrides the Karpathy hard
+rule: if a task is measurable, Karpathy is mandatory regardless of what else the
+registry lists.
+
+`@karpathy` is the reference implementation — read it alongside the contract when
+authoring a new strategy.
 
 ## Conventions
 

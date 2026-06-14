@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "strategies": [
+    {
+      "name": "karpathy",
+      "agent": "karpathy",
+      "applicability": "Mandatory when a task has (or can be given) a scalar metric and a stable frozen evaluator; iterate one change at a time, keep only if improvement exceeds 2x the noise floor.",
+      "status": "reference"
+    },
+    {
+      "name": "ralph-wiggum",
+      "agent": "ralph-wiggum",
+      "applicability": "Brute-force repeat-until-done for tasks with no automatable verifier; each iteration reads the current repo state, attempts progress, commits, and exits; memory is files and git; fresh context each iteration; bounded by a hard iteration cap.",
+      "status": "active"
+    }
+  ]
+}

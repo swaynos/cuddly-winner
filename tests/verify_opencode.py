@@ -50,6 +50,10 @@ SKILLS_DIR = REPO_ROOT / ".opencode" / "skills"
 PLUGINS_DIR = REPO_ROOT / "plugins"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 AGENTS_MD = REPO_ROOT / "AGENTS.md"
+STRATEGIES_FILE = REPO_ROOT / ".opencode" / "strategies.json"
+STRATEGY_CONTRACT = REPO_ROOT / "docs" / "STRATEGY-CONTRACT.md"
+# Required contract body sections every active/reference strategy agent must contain.
+STRATEGY_REQUIRED_SECTIONS = ("applicability", "stop criteria", "escalation")
 
 # Key phrases that must be present in AGENTS.md.
 AGENTS_MD_REQUIRED = [
@@ -72,6 +76,7 @@ EXPECTED_AGENT_FILES = [
     "prometheus.md",
     "autonomous.md",
     "karpathy.md",
+    "ralph-wiggum.md",
     "data-scientist.md",
     "grounder.md",
     "reviewer.md",
@@ -135,7 +140,17 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
     "prometheus": [
-        {"permission": "bash",      "action": "deny",  "pattern": "*"},
+        {"permission": "bash",      "action": "ask",   "pattern": "*"},
+        {"permission": "bash",      "action": "allow", "pattern": "python3 *"},
+        {"permission": "bash",      "action": "allow", "pattern": "python *"},
+        {"permission": "bash",      "action": "allow", "pattern": "rg *"},
+        {"permission": "bash",      "action": "allow", "pattern": "find *"},
+        {"permission": "bash",      "action": "allow", "pattern": "git status*"},
+        {"permission": "bash",      "action": "allow", "pattern": "git log*"},
+        {"permission": "bash",      "action": "allow", "pattern": "git diff*"},
+        {"permission": "bash",      "action": "allow", "pattern": "cat *"},
+        {"permission": "bash",      "action": "allow", "pattern": "ls *"},
+        {"permission": "bash",      "action": "allow", "pattern": "mkdir *"},
         {"permission": "edit",      "action": "deny",  "pattern": "*"},
         {"permission": "edit",      "action": "allow", "pattern": "SPEC.md"},
         {"permission": "edit",      "action": "allow", "pattern": "program.md"},
@@ -177,6 +192,7 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "task",  "action": "allow", "pattern": "grounder"},
         {"permission": "task",  "action": "allow", "pattern": "reviewer"},
         {"permission": "task",  "action": "allow", "pattern": "karpathy"},
+        {"permission": "task",  "action": "allow", "pattern": "ralph-wiggum"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
     "karpathy": [
@@ -190,6 +206,24 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
         {"permission": "bash",  "action": "allow", "pattern": "cat *"},
         {"permission": "bash",  "action": "allow", "pattern": "rg *"},
+        {"permission": "task",  "action": "allow", "pattern": "autonomous"},
+        {"permission": "task",  "action": "allow", "pattern": "reviewer"},
+        {"permission": "task",  "action": "deny",  "pattern": "*"},
+    ],
+    "ralph-wiggum": [
+        {"permission": "bash",  "action": "ask",   "pattern": "*"},
+        {"permission": "bash",  "action": "allow", "pattern": "python *"},
+        {"permission": "bash",  "action": "allow", "pattern": "python3 *"},
+        {"permission": "bash",  "action": "allow", "pattern": "uv run *"},
+        {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
+        {"permission": "bash",  "action": "allow", "pattern": "npm test*"},
+        {"permission": "bash",  "action": "allow", "pattern": "npm run *"},
+        {"permission": "bash",  "action": "allow", "pattern": "rg *"},
+        {"permission": "bash",  "action": "allow", "pattern": "git status*"},
+        {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
+        {"permission": "bash",  "action": "allow", "pattern": "git log*"},
+        {"permission": "bash",  "action": "allow", "pattern": "git add*"},
+        {"permission": "bash",  "action": "allow", "pattern": "git commit*"},
         {"permission": "task",  "action": "allow", "pattern": "autonomous"},
         {"permission": "task",  "action": "allow", "pattern": "reviewer"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
@@ -247,13 +281,14 @@ EXPECTED_RULES: dict[str, list[dict]] = {
 }
 
 EXPECTED_MODES: dict[str, str] = {
-    "ask":      "primary",
-    "prometheus": "primary",
-    "autonomous": "all",
-    "karpathy":   "subagent",
+    "ask":            "primary",
+    "prometheus":     "primary",
+    "autonomous":     "all",
+    "karpathy":       "subagent",
+    "ralph-wiggum":   "subagent",
     "data-scientist": "subagent",
-    "grounder":   "subagent",
-    "reviewer":   "subagent",
+    "grounder":       "subagent",
+    "reviewer":       "subagent",
 }
 
 
@@ -452,6 +487,176 @@ def _validate_skill_file(rel_path: str) -> list[Failure]:
     non_empty_body_lines = [line for line in body_lines if line.strip()]
     if len(non_empty_body_lines) > 500:
         failures.append(Failure("skills", f".opencode/skills/{rel_path}: body exceeds 500 non-empty lines"))
+
+    return failures
+
+
+# ---------------------------------------------------------------------------
+# Strategy registry + contract validation
+# ---------------------------------------------------------------------------
+
+def _strategy_agent_text(agent_name: str) -> str | None:
+    """Return the full text of a strategy agent file, core or project-local."""
+    for cand in (AGENTS_DIR / f"{agent_name}.md",
+                 REPO_ROOT / ".opencode" / "agents" / f"{agent_name}.md"):
+        if cand.exists():
+            return cand.read_text(encoding="utf-8")
+    return None
+
+
+def _frontmatter_block(text: str) -> str:
+    """Return the YAML frontmatter block (between the first two '---' fences)."""
+    parts = text.split("---", 2)
+    return parts[1] if len(parts) >= 3 else ""
+
+
+def check_strategy_registry() -> list[Failure]:
+    """Validate the loop-strategy registry and the contract conformance of each
+    active/reference strategy agent. Pure local check — no sandbox required."""
+    failures: list[Failure] = []
+    _print_header("A2. Strategy registry + contract")
+
+    if not STRATEGY_CONTRACT.exists():
+        failures.append(Failure("strategy", "Missing docs/STRATEGY-CONTRACT.md"))
+
+    if not STRATEGIES_FILE.exists():
+        failures.append(Failure("strategy", "Missing .opencode/strategies.json"))
+        for f in failures:
+            _print_fail(f.message)
+        return failures
+
+    try:
+        data = json.loads(STRATEGIES_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        failures.append(Failure("strategy", f"strategies.json is not valid JSON: {exc}"))
+        _print_fail(failures[-1].message)
+        return failures
+
+    strategies = data.get("strategies") if isinstance(data, dict) else data
+    if not isinstance(strategies, list) or not strategies:
+        failures.append(Failure("strategy", "strategies.json must contain a non-empty 'strategies' array"))
+        _print_fail(failures[-1].message)
+        return failures
+
+    required_fields = {"name", "agent", "applicability", "status"}
+    valid_status = {"active", "reference", "planned"}
+    names = set()
+
+    for entry in strategies:
+        if not isinstance(entry, dict):
+            failures.append(Failure("strategy", f"registry entry is not an object: {entry!r}"))
+            continue
+        missing = sorted(required_fields - set(entry))
+        if missing:
+            failures.append(Failure("strategy", f"registry entry {entry.get('name', '?')} missing fields: {missing}"))
+            continue
+        names.add(entry["name"])
+        status = entry["status"]
+        if status not in valid_status:
+            failures.append(Failure("strategy", f"{entry['name']}: invalid status '{status}'"))
+            continue
+
+        # planned entries are documented slots — no agent file required yet.
+        if status == "planned":
+            continue
+
+        # active/reference entries must name a conformant hidden subagent.
+        text = _strategy_agent_text(entry["agent"])
+        if text is None:
+            failures.append(Failure("strategy", f"{entry['name']}: agent file for '{entry['agent']}' not found"))
+            continue
+
+        fm = _frontmatter_block(text)
+        if "mode: subagent" not in fm:
+            failures.append(Failure("strategy", f"{entry['name']}: agent must be 'mode: subagent'"))
+        if "hidden: true" not in fm:
+            failures.append(Failure("strategy", f"{entry['name']}: agent must be 'hidden: true'"))
+
+        # task posture: must allow autonomous + reviewer and deny '*'
+        if not re.search(r'"autonomous"\s*:\s*allow', fm):
+            failures.append(Failure("strategy", f"{entry['name']}: task must allow 'autonomous'"))
+        if not re.search(r'"reviewer"\s*:\s*allow', fm):
+            failures.append(Failure("strategy", f"{entry['name']}: task must allow 'reviewer'"))
+        if not re.search(r'"\*"\s*:\s*deny', fm):
+            failures.append(Failure("strategy", f"{entry['name']}: task must deny '*'"))
+
+        # required contract sections (case-insensitive) must appear in the body.
+        body = text.split("---", 2)[-1].lower()
+        for section in STRATEGY_REQUIRED_SECTIONS:
+            if section not in body:
+                failures.append(Failure("strategy", f"{entry['name']}: body missing required '{section}' section"))
+
+    if "karpathy" not in names:
+        failures.append(Failure("strategy", "registry must include a 'karpathy' entry"))
+    if "ralph-wiggum" not in names:
+        failures.append(Failure("strategy", "registry must include a 'ralph-wiggum' entry"))
+
+    if failures:
+        for f in failures:
+            _print_fail(f.message)
+    else:
+        active = [e["name"] for e in strategies if isinstance(e, dict) and e.get("status") in ("active", "reference")]
+        planned = [e["name"] for e in strategies if isinstance(e, dict) and e.get("status") == "planned"]
+        _print_pass(f"Strategy registry: {len(active)} active/reference ({', '.join(active)}), {len(planned)} planned ({', '.join(planned)})")
+
+    return failures
+
+
+# ---------------------------------------------------------------------------
+# A3. Prometheus sandbox contract
+# ---------------------------------------------------------------------------
+
+SANDBOX_PATH = "/tmp/prometheus-spike"
+
+def check_prometheus_sandbox() -> list[Failure]:
+    """Verify that agents/prometheus.md declares the sandbox permission contract:
+    - external_directory grant for /tmp/prometheus-spike/**
+    - edit allow for the sandbox path
+    - write allow for the sandbox path
+    - bash is not globally denied (sandbox requires it)
+
+    These rules are not covered by EXPECTED_RULES (which only checks command
+    patterns) so they need an explicit dedicated check.
+    """
+    failures: list[Failure] = []
+    _print_header("A3. Prometheus sandbox contract")
+
+    prometheus_path = AGENTS_DIR / "prometheus.md"
+    if not prometheus_path.exists():
+        failures.append(Failure("prometheus_sandbox", "agents/prometheus.md missing"))
+        _print_fail(failures[-1].message)
+        return failures
+
+    text = prometheus_path.read_text(encoding="utf-8")
+    fm = _frontmatter_block(text)
+
+    checks = [
+        (
+            "external_directory" in fm and SANDBOX_PATH in fm,
+            f"prometheus.md: missing external_directory grant for {SANDBOX_PATH}",
+        ),
+        (
+            re.search(r'edit\s*:', fm) is not None and SANDBOX_PATH in fm,
+            f"prometheus.md: missing edit allow for sandbox path {SANDBOX_PATH}",
+        ),
+        (
+            re.search(r'write\s*:', fm) is not None and SANDBOX_PATH in fm,
+            f"prometheus.md: missing write allow for sandbox path {SANDBOX_PATH}",
+        ),
+        (
+            # bash must not be globally denied — prometheus now needs it for spikes
+            not re.search(r'^  bash:\s*deny\s*$', fm, re.MULTILINE),
+            "prometheus.md: bash is globally denied; sandbox requires bash access",
+        ),
+    ]
+
+    for passed, message in checks:
+        if not passed:
+            failures.append(Failure("prometheus_sandbox", message))
+            _print_fail(message)
+
+    if not failures:
+        _print_pass(f"Prometheus sandbox contract: external_directory + edit/write for {SANDBOX_PATH}")
 
     return failures
 
@@ -1437,6 +1642,16 @@ def main() -> None:
 
     # A. Preflight (no sandbox needed)
     all_failures += check_preflight()
+    if all_failures:
+        sys.exit(report(all_failures))
+
+    # A2. Strategy registry + contract (no sandbox needed)
+    all_failures += check_strategy_registry()
+    if all_failures:
+        sys.exit(report(all_failures))
+
+    # A3. Prometheus sandbox contract (no sandbox needed)
+    all_failures += check_prometheus_sandbox()
     if all_failures:
         sys.exit(report(all_failures))
 

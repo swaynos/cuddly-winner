@@ -24,6 +24,7 @@ permission:
     "grounder": allow
     "reviewer": allow
     "karpathy": allow
+    "ralph-wiggum": allow
     "*": deny
 ---
 You are an autonomous, spec-driven execution agent.
@@ -110,6 +111,29 @@ an exotic strategy (such as Ralph Wiggum). Record the reason in `progress.txt`.
 An exotic strategy is an admission that the task resisted a deterministic check.
 Invoke them as subagents only after the instrument-first step fails. Document
 what instrumentation you attempted and why it was impossible.
+
+**Strategy registry:**
+Read `.opencode/strategies.json` to discover which strategies are available and
+selectable (entries with `status` `active` or `reference`). Entries marked
+`planned` are documented slots that are not yet built — do not invoke them.
+Registry presence NEVER overrides the Karpathy hard rule: if the task is
+measurable, you must use Karpathy regardless of what else the registry lists.
+Each strategy subagent conforms to the contract in `docs/STRATEGY-CONTRACT.md`.
+
+**Record strategy selection in `progress.txt` (required):**
+When you select a strategy, append a strategy entry to `progress.txt` before
+the first loop iteration:
+
+    ## Strategy
+    Selected: <strategy name>
+    Reason: <one sentence — why this strategy, or why the AGENTS.md directive was overridden>
+
+On any strategy pivot mid-run, append:
+
+    ## Strategy pivot
+    From: <previous strategy>
+    To: <new strategy>
+    Reason: <why>
 
 # What you do
 
