@@ -7,8 +7,8 @@ A multi-agent autonomous workflow for OpenCode.
 | Agent | Mode | Role |
 |---|---|---|
 | `@ask` | primary | Quick questions and concise answers from session context first. |
-| `@prometheus` | primary | Front-door planner: interviews, runs discovery spikes in an ephemeral sandbox to validate assumptions, produces evidence-backed `SPEC.md` or Karpathy loop artifacts, and records the autonomous strategy directive in `AGENTS.md`. |
-| `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. Owns looping — selects and invokes the appropriate loop strategy subagent. |
+| `@prometheus` | primary | Read-only front-door planner: interviews, gathers evidence, and returns a complete `<spec filename="SPEC.md">...</spec>` payload or loop artifact payloads for `@autonomous`. |
+| `@autonomous` | primary + subagent | Materializes Prometheus SPEC payloads, then executes against `SPEC.md` in a relentless loop until done. Owns looping — selects and invokes the appropriate loop strategy subagent. |
 | `@karpathy` | subagent (hidden) | Karpathy loop strategy — mandatory when a task has a scalar metric and a stable frozen evaluator. |
 | `@ralph-wiggum` | subagent (hidden) | Ralph Wiggum loop strategy — brute-force repeat-until-done; fresh context each iteration; memory is files + git; bounded by a hard iteration cap. For tasks that resist instrumentation. |
 | `@octopus` | subagent (hidden) | Octopus brain — coordinator-class sole builder. Dispatches read-only `@octopus-arm` persona lenses to feel the SPEC and implementation, integrates evidence-backed perceptions, and builds. Admission-gated; default 3 arms, 3 rounds. |
@@ -85,43 +85,44 @@ Remove:
 Start with `@prometheus` when you are not sure whether work should be
 spec-driven execution or a metric optimization loop.
 
-Prometheus classifies and outputs one of two paths, and always records an
-`## Autonomous Strategy` directive in `AGENTS.md`:
+Prometheus classifies and outputs one of two paths. It is read-only and returns
+payloads; it does not write project files:
 
 1. **SPEC path** (implementation/refactor/bugfix):
-   - Writes `SPEC.md`
-   - Records strategy directive in `AGENTS.md` (default: `karpathy` where measurable, otherwise `auto`)
+   - Returns a complete `<spec filename="SPEC.md">...</spec>` payload
+   - Includes the strategy directive in the spec payload (default: `karpathy` where measurable, otherwise `auto`)
    - Handoff: run `@autonomous`
 
 2. **Karpathy path** (iterative metric optimization):
-   - Writes `program.md`
-   - Writes `.opencode/karpathy.json`
-   - Writes `.opencode/immutable.json`
-   - Records `strategy: karpathy` in `AGENTS.md`
-   - Optional: initializes `experiments.md`
+   - Returns payloads for `program.md`, `.opencode/karpathy.json`, and `.opencode/immutable.json` when the loop is already fully specified
+   - Includes `strategy: karpathy` in the relevant spec/program payload
+   - Optional: returns an `experiments.md` starter payload
    - Handoff: run `@autonomous` (which invokes `@karpathy` internally)
 
-If Karpathy intent is clear but instrumentation is missing, Prometheus writes a
-`SPEC.md` for instrumentation and includes proposed code in markdown code blocks.
-It does not write executable source files itself; run `@autonomous` first.
+If Karpathy intent is clear but instrumentation is missing, Prometheus returns a
+`SPEC.md` payload for instrumentation and includes proposed code in markdown code
+blocks. It does not write executable source files itself; run `@autonomous`
+first.
 
 ## Workflow: Prometheus -> Autonomous
 
 1. Open a project in OpenCode. Tab to `@prometheus` or type `@prometheus`.
 2. Prometheus interviews you (batched questions, 3–5 per turn) until it has
    enough to write a complete, testable spec.
-3. It writes `SPEC.md`, records the strategy directive in `AGENTS.md`, and stops.
+3. It returns a complete `<spec filename="SPEC.md">...</spec>` payload and stops.
 4. Tab to `@autonomous` (or type `@autonomous`).
-5. Autonomous reads `SPEC.md` and the `AGENTS.md` strategy directive. If the
-   strategy is `karpathy` (and a scalar metric + frozen evaluator exist), it
-   invokes `@karpathy` to run the loop. Otherwise it executes the SPEC checklist
-   directly, running verification commands after each change.
+5. Autonomous writes the payload verbatim to `SPEC.md`, then reads `SPEC.md` and
+   its strategy directive. If the strategy is `karpathy` (and a scalar metric +
+   frozen evaluator exist), it invokes `@karpathy` to run the loop. Otherwise it
+   executes the SPEC checklist directly, running verification commands after each
+   change.
 6. Before declaring done, it spawns `@reviewer` with the spec and a change
    summary. If the reviewer returns `REQUEST_CHANGES`, it keeps going.
 7. When `@reviewer` returns `APPROVE`, autonomous writes a completion summary
    and stops.
 
-If `SPEC.md` is missing when you invoke `@autonomous`, it will tell you to run
+If `SPEC.md` is missing and the current user message does not contain a
+`<spec filename="SPEC.md">` payload, `@autonomous` will tell you to run
 `@prometheus` first.
 
 ## Workflow: Quick Questions (`@ask`)
@@ -346,11 +347,7 @@ Supported rules:
 
 ```json
 {
-  "readonly":          ["prepare.py"],   // no agent may edit
-  "prometheus_only":   ["SPEC.md"],      // only @prometheus may edit
-  "write_allowlist": {
-    "prometheus":      ["SPEC.md"]       // @prometheus may ONLY write this file
-  }
+  "readonly": ["prepare.py"]
 }
 ```
 

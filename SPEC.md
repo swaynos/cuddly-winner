@@ -16,54 +16,47 @@ execution. Plugins enforce the contracts between them.
 
 ## Agents
 
-### `@prometheus` — Planner with a discovery sandbox
+### `@prometheus` — Read-only planner
 
 `@prometheus` classifies incoming work into one of two planning tracks and
-produces the right artifacts for `@autonomous` to execute.
+returns the right artifact payloads for `@autonomous` to materialize and execute.
 
 **Planning tracks:**
-- **SPEC track** — implementation/refactor/bugfix work produces `SPEC.md`.
-- **Karpathy track** — metric-driven optimization produces `program.md`,
-  `.opencode/karpathy.json`, and `.opencode/immutable.json`.
+- **SPEC track** — implementation/refactor/bugfix work returns a complete
+  `<spec filename="SPEC.md">...</spec>` payload.
+- **Karpathy track** — metric-driven optimization returns a `SPEC.md`
+  instrumentation payload first, or explicit artifact payloads for `program.md`,
+  `.opencode/karpathy.json`, and `.opencode/immutable.json` when the loop is
+  already fully specified.
 
 **Discovery intake.** When a pitch is vague or its critical assumptions are
-untested, `@prometheus` runs a bounded spike loop in an ephemeral sandbox
-(`/tmp/prometheus-spike`) before writing the spec. The sandbox is a temp dir
-outside the project; `@prometheus` has free `bash` and `edit` access inside it.
-The discovery loop follows an ant-foraging model: surface hidden assumptions,
-rank by criticality (make-or-break first), run the cheapest test first, mark
-findings proportionally, and let unconfirmed paths evaporate via
-milestone-gating. The default spike format is Wizard-of-Oz — simulate the
-expensive capability cheaply before building it. The only persistent
-project-facing output is `SPEC.md` (and planning siblings); everything in the
-sandbox is disposable.
+untested, `@prometheus` runs a read-only discovery loop before returning the
+spec payload. It uses repository reads, user questions, web research,
+`@data-scientist`, or `@grounder`. If validation requires executable probes,
+the probe is specified in the `SPEC.md` payload for `@autonomous`; Prometheus
+does not run it.
 
-**Enforcement note.** `edit`/`write` tools are config-blocked outside the
-sandbox and planning artifacts by the permission config. Bash side-effects (a
-script writing to disk) are not interceptable by the permission layer — the
-sandbox is a behavioral and config contract, not an OS-level hermetic jail.
+**Autonomous strategy directive.** On every intake, `@prometheus` includes a
+`strategy:` field or `## Autonomous Strategy` section inside the `SPEC.md`
+payload, recording the strategy directive (`karpathy` by default, or an exotic
+strategy if instrumentation is genuinely impossible) and a one-line rationale.
 
-**Autonomous strategy directive.** On every intake, `@prometheus` writes an
-`## Autonomous Strategy` section to `AGENTS.md`, recording the strategy
-directive (`karpathy` by default, or an exotic strategy if instrumentation is
-genuinely impossible) and a one-line rationale.
+**Persistent outputs:** none. Prometheus returns response payloads only.
 
-**Persistent outputs:** `SPEC.md`, `program.md`, `experiments.md`,
-`.opencode/karpathy.json`, `.opencode/immutable.json`, `AGENTS.md`.
-
-**Permissions:** `bash: ask` (with broad sandbox allows), `edit`/`write`
-scoped to planning artifacts and `/tmp/prometheus-spike/**`, `webfetch: allow`,
-`question: allow`. `task` allows only `@data-scientist` and `@grounder`.
-30 declared rules.
+**Permissions:** `read`/`glob`/`grep`/`list`/`question`/`webfetch: allow`,
+`bash`/`edit`/`write: deny`. `task` allows only `@data-scientist` and
+`@grounder`. 15 declared rules.
 
 ---
 
 ### `@autonomous` — Builder and loop owner
 
-`@autonomous` reads `SPEC.md` and executes every item in its Implementation
-Checklist, running verification commands after each change and looping until
-all verification exits 0. It owns looping — it reads the strategy directive
-from `AGENTS.md` and invokes the appropriate strategy subagent.
+`@autonomous` first materializes any Prometheus `<spec filename="SPEC.md">`
+payload from the user message by writing it verbatim to `SPEC.md`. It then reads
+`SPEC.md` and executes every item in its Implementation Checklist, running
+verification commands after each change and looping until all verification exits
+0. It owns looping — it reads the strategy directive from the spec or `AGENTS.md`
+and invokes the appropriate strategy subagent.
 
 **Strategy selection precedence:**
 1. Explicit user instruction in the session.
@@ -310,12 +303,12 @@ The test suite covers agents, permissions, skills, plugins, and the strategy
 contract without model API keys:
 
 ```bash
-node --test tests/plugins/*.test.mjs       # plugin unit tests (48 checks)
+node --test tests/plugins/*.test.mjs       # plugin unit tests
 python3 tests/verify_opencode.py --skip-llm  # agent/permission/registry integration
 ```
 
 The validator runs checks A (preflight), A2 (strategy registry + contract),
-A3 (Prometheus sandbox contract), A4 (Octopus brain/arm split), B–G
+A3 (Prometheus read-only handoff contract), A4 (Octopus brain/arm split), B–G
 (binary, isolation, deploy, agent list, permissions, plugin load), skipping H
 (plugin hook fires) and I (Prometheus identity) in `--skip-llm` mode.
 

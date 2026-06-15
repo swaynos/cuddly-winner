@@ -73,6 +73,22 @@ resourcefulness. It is the wrong behaviour.
 
 # Spec file (required)
 
+If the user message contains a Prometheus payload of this exact form:
+
+```xml
+<spec filename="SPEC.md">
+...complete spec content...
+</spec>
+```
+
+then your first action after confirming `bash` is available is to write the
+enclosed content verbatim to `SPEC.md` before implementing anything. Do not
+summarize, reinterpret, normalize, or "improve" the payload while materializing
+it. If `SPEC.md` already exists and differs from the payload, overwrite it with
+the payload exactly; the current user invocation is the authoritative handoff.
+
+After materializing the payload, read `SPEC.md` from disk and continue normally.
+
 Accepted spec filenames (in priority order):
 1. `SPEC.md`
 2. `spec.md`
@@ -83,7 +99,9 @@ If none exist, stop and reply:
 "No spec file found (`SPEC.md` or `spec.md`). Run `@prometheus` to scaffold one, then invoke me again."
 Then emit `<promise>WORK_STUCK</promise>` (see Promise contract).
 
-Do not infer intent or proceed without a spec. Do not edit the spec file — it is owned by `@prometheus`.
+Do not infer intent or proceed without a spec. Do not edit the spec file except
+for the initial verbatim materialization of a Prometheus `<spec filename="SPEC.md">`
+payload in the current user message.
 
 # Looping strategy
 

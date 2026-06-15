@@ -54,8 +54,6 @@ STRATEGIES_FILE = REPO_ROOT / ".opencode" / "strategies.json"
 STRATEGY_CONTRACT = REPO_ROOT / "docs" / "STRATEGY-CONTRACT.md"
 # Required contract body sections every active/reference strategy agent must contain.
 STRATEGY_REQUIRED_SECTIONS = ("applicability", "stop criteria", "escalation")
-SANDBOX_PATH = "/tmp/prometheus-spike"
-
 # Key phrases that must be present in AGENTS.md.
 AGENTS_MD_REQUIRED = [
     "commit",          # no-auto-commit rule
@@ -143,29 +141,13 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
     "prometheus": [
-        {"permission": "bash",      "action": "ask",   "pattern": "*"},
-        {"permission": "bash",      "action": "allow", "pattern": "rg *"},
-        {"permission": "bash",      "action": "allow", "pattern": "find *"},
-        {"permission": "bash",      "action": "allow", "pattern": "git status*"},
-        {"permission": "bash",      "action": "allow", "pattern": "git log*"},
-        {"permission": "bash",      "action": "allow", "pattern": "git diff*"},
-        {"permission": "bash",      "action": "allow", "pattern": "cat *"},
-        {"permission": "bash",      "action": "allow", "pattern": "ls *"},
-        {"permission": "bash",      "action": "allow", "pattern": "mkdir -p /tmp/prometheus-spike*"},
+        {"permission": "read",      "action": "allow", "pattern": "*"},
+        {"permission": "glob",      "action": "allow", "pattern": "*"},
+        {"permission": "grep",      "action": "allow", "pattern": "*"},
+        {"permission": "list",      "action": "allow", "pattern": "*"},
+        {"permission": "bash",      "action": "deny",  "pattern": "*"},
         {"permission": "edit",      "action": "deny",  "pattern": "*"},
-        {"permission": "edit",      "action": "allow", "pattern": "SPEC.md"},
-        {"permission": "edit",      "action": "allow", "pattern": "program.md"},
-        {"permission": "edit",      "action": "allow", "pattern": "experiments.md"},
-        {"permission": "edit",      "action": "allow", "pattern": ".opencode/karpathy.json"},
-        {"permission": "edit",      "action": "allow", "pattern": ".opencode/immutable.json"},
-        {"permission": "edit",      "action": "allow", "pattern": "AGENTS.md"},
         {"permission": "write",     "action": "deny",  "pattern": "*"},
-        {"permission": "write",     "action": "allow", "pattern": "SPEC.md"},
-        {"permission": "write",     "action": "allow", "pattern": "program.md"},
-        {"permission": "write",     "action": "allow", "pattern": "experiments.md"},
-        {"permission": "write",     "action": "allow", "pattern": ".opencode/karpathy.json"},
-        {"permission": "write",     "action": "allow", "pattern": ".opencode/immutable.json"},
-        {"permission": "write",     "action": "allow", "pattern": "AGENTS.md"},
         {"permission": "task",      "action": "allow", "pattern": "data-scientist"},
         {"permission": "task",      "action": "allow", "pattern": "grounder"},
         {"permission": "task",      "action": "deny",  "pattern": "*"},
@@ -640,84 +622,71 @@ def check_strategy_registry() -> list[Failure]:
 
 
 # ---------------------------------------------------------------------------
-# A3. Prometheus sandbox contract
+# A3. Prometheus read-only handoff contract
 # ---------------------------------------------------------------------------
 
-SANDBOX_PATH = "/tmp/prometheus-spike"
-
-def check_prometheus_sandbox() -> list[Failure]:
-    """Verify that agents/prometheus.md declares the sandbox permission contract:
-    - external_directory grant for /tmp/prometheus-spike/**
-    - edit allow for the sandbox path
-    - write allow for the sandbox path
-    - bash is not globally denied (sandbox requires read/probe commands)
-    - write-capable bash interpreters are not auto-allowed
-
-    These rules are not covered by EXPECTED_RULES (which only checks command
-    patterns) so they need an explicit dedicated check.
+def check_prometheus_handoff() -> list[Failure]:
+    """Verify that Prometheus is a read-only planner and Autonomous owns the
+    SPEC.md materialization handoff.
     """
     failures: list[Failure] = []
-    _print_header("A3. Prometheus sandbox contract")
+    _print_header("A3. Prometheus read-only handoff contract")
 
     prometheus_path = AGENTS_DIR / "prometheus.md"
     if not prometheus_path.exists():
-        failures.append(Failure("prometheus_sandbox", "agents/prometheus.md missing"))
+        failures.append(Failure("prometheus_handoff", "agents/prometheus.md missing"))
+        _print_fail(failures[-1].message)
+        return failures
+
+    autonomous_path = AGENTS_DIR / "autonomous.md"
+    if not autonomous_path.exists():
+        failures.append(Failure("prometheus_handoff", "agents/autonomous.md missing"))
         _print_fail(failures[-1].message)
         return failures
 
     text = prometheus_path.read_text(encoding="utf-8")
     fm = _frontmatter_block(text)
-
-    forbidden_auto_allow_patterns = (
-        "python *",
-        "python3 *",
-        "uv run *",
-        "mkdir *",
-    )
+    autonomous_text = autonomous_path.read_text(encoding="utf-8")
 
     checks = [
         (
-            "external_directory" in fm and SANDBOX_PATH in fm,
-            f"prometheus.md: missing external_directory grant for {SANDBOX_PATH}",
+            "bash: deny" in fm,
+            "prometheus.md: bash must be denied",
         ),
         (
-            re.search(r'edit\s*:', fm) is not None and SANDBOX_PATH in fm,
-            f"prometheus.md: missing edit allow for sandbox path {SANDBOX_PATH}",
+            "edit: deny" in fm,
+            "prometheus.md: edit must be denied",
         ),
         (
-            re.search(r'write\s*:', fm) is not None and SANDBOX_PATH in fm,
-            f"prometheus.md: missing write allow for sandbox path {SANDBOX_PATH}",
+            "write: deny" in fm,
+            "prometheus.md: write must be denied",
         ),
         (
-            # bash must not be globally denied — prometheus now needs it for spikes
-            not re.search(r'^  bash:\s*deny\s*$', fm, re.MULTILINE),
-            "prometheus.md: bash is globally denied; sandbox requires bash access",
+            "external_directory" not in fm and "/tmp/prometheus-spike" not in text,
+            "prometheus.md: must not declare sandbox permissions or /tmp/prometheus-spike workflow",
         ),
         (
-            all(
-                not re.search(
-                    rf'^\s+"{re.escape(pattern)}":\s*allow\s*$',
-                    fm,
-                    re.MULTILINE,
-                )
-                for pattern in forbidden_auto_allow_patterns
-            ),
-            "prometheus.md: write-capable bash patterns must not be auto-allowed "
-            "(python/python3/uv run/broad mkdir)",
+            "<spec filename=\"SPEC.md\">" in text,
+            "prometheus.md: must define the SPEC payload handoff format",
         ),
         (
-            "Do not use bash to write persistent project files" in text,
-            "prometheus.md: body must explicitly forbid persistent project writes via bash",
+            "Invoke @autonomous to write this SPEC.md verbatim and execute it." in text,
+            "prometheus.md: must include the exact autonomous handoff sentence",
+        ),
+        (
+            "<spec filename=\"SPEC.md\">" in autonomous_text
+            and "enclosed content verbatim to `SPEC.md`" in autonomous_text,
+            "autonomous.md: must materialize Prometheus SPEC payloads verbatim before implementation",
         ),
     ]
 
     for passed, message in checks:
         if not passed:
-            failures.append(Failure("prometheus_sandbox", message))
+            failures.append(Failure("prometheus_handoff", message))
             _print_fail(message)
 
     if not failures:
-        _print_pass(f"Prometheus sandbox contract: sandbox grants + no auto-allowed write-capable bash")
+        _print_pass("Prometheus is read-only; Autonomous materializes SPEC payloads")
 
     return failures
 
@@ -1799,8 +1768,8 @@ def main() -> None:
     if all_failures:
         sys.exit(report(all_failures))
 
-    # A3. Prometheus sandbox contract (no sandbox needed)
-    all_failures += check_prometheus_sandbox()
+    # A3. Prometheus read-only handoff contract (no sandbox needed)
+    all_failures += check_prometheus_handoff()
     if all_failures:
         sys.exit(report(all_failures))
 

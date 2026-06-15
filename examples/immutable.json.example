@@ -5,22 +5,7 @@
     "<frozen-file.py>"
   ],
 
-  "prometheus_only": [
-    "SPEC.md",
-    "program.md",
-    "AGENTS.md",
-    ".opencode/karpathy.json",
-    ".opencode/immutable.json"
-  ],
+  "prometheus_only": [],
 
-  "write_allowlist": {
-    "prometheus": [
-      "SPEC.md",
-      "program.md",
-      "AGENTS.md",
-      ".opencode/karpathy.json",
-      ".opencode/immutable.json",
-      "experiments.md"
-    ]
-  }
+  "write_allowlist": {}
 }

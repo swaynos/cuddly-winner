@@ -8,10 +8,8 @@
  *   (the deploy script handles this with --with-plugins)
  *
  * Activation:
- *   File immutability rules activate when the project contains
- *   .opencode/immutable.json. The Prometheus bash-write guard is always active
- *   because it protects against command-level write bypasses that do not expose
- *   target file paths to OpenCode's edit/write permission layer.
+ *   The plugin only activates when the project contains .opencode/immutable.json.
+ *   Without that marker file the plugin is a no-op — safe for global install.
  *
  * Marker file format (.opencode/immutable.json):
  *   {
@@ -56,15 +54,6 @@ import { readFileSync, existsSync } from "fs";
 import { join, basename, dirname, resolve, relative } from "path";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
-const PROMETHEUS_SANDBOX_PREFIX = "/tmp/prometheus-spike";
-const PROMETHEUS_WRITE_CAPABLE_BASH = [
-  /(^|\s)python3?(\s|$)/,
-  /(^|\s)uv\s+run(\s|$)/,
-  /(^|\s)tee(\s|$)/,
-  /(^|\s)(cp|mv|rm)(\s|$)/,
-  /(^|[^<])>>?\s*[^&\s]/,
-  /<</,
-];
 
 interface ImmutableConfig {
   readonly?: string[];
@@ -154,19 +143,6 @@ function findConfigRoot(start: string): string | null {
   }
 }
 
-function isPrometheusSandboxCommand(command: string): boolean {
-  const trimmed = command.trim();
-  return (
-    /^mkdir\s+-p\s+\/tmp\/prometheus-spike(?:\b|\/)/.test(trimmed) ||
-    /^rm\s+(?:-rf\s+|-r\s+|-f\s+)?\/tmp\/prometheus-spike(?:\b|\/)/.test(trimmed)
-  );
-}
-
-function isPrometheusWriteCapableBash(command: string): boolean {
-  if (isPrometheusSandboxCommand(command)) return false;
-  return PROMETHEUS_WRITE_CAPABLE_BASH.some((pattern) => pattern.test(command));
-}
-
 export const ImmutabilityGuard = async ({
   directory,
   worktree,
@@ -244,23 +220,9 @@ export const ImmutabilityGuard = async ({
       input: { tool: string; sessionID: string; callID: string },
       output: { args?: Record<string, unknown> }
     ) => {
-      const args = (output as any).args ?? {};
-      const agent = await resolveAgent(input.sessionID);
-
-      if (input.tool === "bash") {
-        const command = String(args.command ?? "");
-        if (agent === "prometheus" && isPrometheusWriteCapableBash(command)) {
-          throw new Error(
-            `PrometheusBashGuard: @prometheus may not use bash commands that ` +
-              `can write persistent project files. Use edit/write for planning ` +
-              `artifacts or keep disposable spike work under ${PROMETHEUS_SANDBOX_PREFIX}.`
-          );
-        }
-        return;
-      }
-
       if (!MUTATING_TOOLS.has(input.tool)) return;
 
+      const args = (output as any).args ?? {};
       const rawPath =
         (args.filePath as string | undefined) ??
         (args.file_path as string | undefined) ??
@@ -284,6 +246,9 @@ export const ImmutabilityGuard = async ({
       if (!configRoot) return;
       const cfg = loadConfig(configRoot);
       if (!cfg) return;
+
+      // --- Resolve agent identity ---
+      const agent = await resolveAgent(input.sessionID);
 
       const readonlyPatterns: string[]    = cfg.readonly ?? [];
       const prometheusOnlyPatterns: string[] = cfg.prometheus_only ?? [];

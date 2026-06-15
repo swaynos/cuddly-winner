@@ -16,8 +16,7 @@
  *   7. chat.params cache — populates and is used in preference to API fallback
  *   8. Case-variant protection
  *   9. Non-mutating tools pass through untouched
- *  10. No immutable.json → file immutability no-op
- *  11. Prometheus bash-write guard blocks interpreter/redirection bypasses
+ *  10. No immutable.json → no-op
  */
 
 import test from "node:test";
@@ -84,18 +83,6 @@ async function attempt(hooks, { tool = "edit", sessionID = "s1", filename, dir }
     await hooks["tool.execute.before"](
       { tool, sessionID, callID: "c1" },
       { args: { filePath: path.join(dir, filename) } }
-    );
-    return null;
-  } catch (err) {
-    return err;
-  }
-}
-
-async function attemptBash(hooks, { sessionID = "s1", command }) {
-  try {
-    await hooks["tool.execute.before"](
-      { tool: "bash", sessionID, callID: "c1" },
-      { args: { command } }
     );
     return null;
   } catch (err) {
@@ -429,10 +416,10 @@ test("non-mutating tools: read is not intercepted", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. No immutable.json → file immutability no-op
+// 10. No immutable.json → no-op
 // ---------------------------------------------------------------------------
 
-test("file immutability no-op: no immutable.json means edit/write restrictions pass through", async () => {
+test("no-op: no immutable.json means all writes pass through", async () => {
   await withTempDir(async (dir) => {
     // No .opencode/immutable.json created.
     const client = makeClient();
@@ -440,53 +427,5 @@ test("file immutability no-op: no immutable.json means edit/write restrictions p
 
     const err = await attempt(hooks, { filename: "anything.md", dir });
     assert.equal(err, null, "no config means no restrictions");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 11. Prometheus bash-write guard
-// ---------------------------------------------------------------------------
-
-test("prometheus bash guard: blocks Python heredoc project writes", async () => {
-  await withTempDir(async (dir) => {
-    const client = makeClient();
-    const hooks = await ImmutabilityGuard({ directory: dir, worktree: dir, client });
-    await cacheAgent(hooks, "s1", "prometheus");
-
-    const err = await attemptBash(hooks, {
-      command: "python3 - << 'PYEOF'\nfrom pathlib import Path\nPath('tests/verify_opencode.py').write_text('oops')\nPYEOF",
-    });
-
-    assert.ok(err, "prometheus Python heredoc write must be blocked");
-    assert.match(err.message, /PrometheusBashGuard/);
-  });
-});
-
-test("prometheus bash guard: blocks shell redirection project writes", async () => {
-  await withTempDir(async (dir) => {
-    const client = makeClient();
-    const hooks = await ImmutabilityGuard({ directory: dir, worktree: dir, client });
-    await cacheAgent(hooks, "s1", "prometheus");
-
-    const err = await attemptBash(hooks, {
-      command: "cat > progress.txt << 'EOF'\nwrite\nEOF",
-    });
-
-    assert.ok(err, "prometheus redirection write must be blocked");
-    assert.match(err.message, /PrometheusBashGuard/);
-  });
-});
-
-test("prometheus bash guard: allows sandbox cleanup", async () => {
-  await withTempDir(async (dir) => {
-    const client = makeClient();
-    const hooks = await ImmutabilityGuard({ directory: dir, worktree: dir, client });
-    await cacheAgent(hooks, "s1", "prometheus");
-
-    const err = await attemptBash(hooks, {
-      command: "rm -rf /tmp/prometheus-spike/run-1",
-    });
-
-    assert.equal(err, null, "sandbox cleanup should remain allowed");
   });
 });
