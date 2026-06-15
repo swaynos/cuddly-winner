@@ -125,27 +125,42 @@ every round.
 
 ---
 
-### `@octopus` — Parallel-perception loop strategy (hidden subagent)
+### `@octopus` (brain) + `@octopus-arm` (arms) — Parallel-perception strategy (hidden subagents)
 
-Coordinator-class strategy. The brain (`@octopus` itself) is the **sole
-builder**. N read-only persona "arms" feel the SPEC and the implementation
-through task-specific lenses, reporting sensed risks, gaps, and smells. Personas
-are derived dynamically from the SPEC each run — not from a fixed list.
+Coordinator-class strategy, split into two agents:
+
+**`@octopus` — the brain, and the sole builder.** It has `edit`/`write`/build
+permissions and owns all project mutation. It derives task-specific personas
+from the SPEC, dispatches read-only `@octopus-arm` lenses, integrates their
+perceptions, and builds. It dispatches arms directly via `task: octopus-arm` —
+never through `@autonomous` (which would cause recursion and break read-only
+enforcement).
+
+**`@octopus-arm` — a read-only persona lens.** `edit`/`write` denied, no `task`
+delegation, read-only bash only. Each arm feels one perspective of the SPEC or
+implementation and returns a structured perception: lens, phase, sensed
+risk/gap, severity, **evidence** (a concrete anchor or "SPEC-only inference"),
+**confidence**, **actionability** (FIX_NOW / DOCUMENT / IGNORE), and a
+**DedupKey** so repeated concerns are suppressed across rounds. Each arm must
+"pay rent" — a perception without evidence is rejected.
+
+**Admission test (run before choosing Octopus).** All must hold: Karpathy does
+not apply; the task has ≥3 distinct non-overlapping risk lenses; the cost of
+missing something is meaningful; a single reviewer pass would likely miss
+something. Octopus is not a default strategy — for measurable tasks use Karpathy;
+for small low-risk features use a normal build + single `@reviewer` pass.
 
 **Two sensing phases around one build:**
-1. **Pre-build:** arms feel the SPEC to surface risks and gaps before a line
-   is written; the brain integrates their perceptions into a sharper plan.
+1. **Pre-build:** arms feel the SPEC; the brain integrates perceptions into a
+   sharper plan.
 2. **Build once, informed** — the brain is the sole implementer.
 3. **Post-build:** arms feel the actual implementation; the brain revises until
-   perceptions are clean or the rounds budget (3) is exhausted.
+   perceptions are clean or the rounds budget is exhausted.
 
-Arms are read-only — no sandbox, no `edit`/`write` grants. The coordinator owns
-all project mutation. Bounded by arm cap (8) and rounds budget (3).
-
-Suited to tasks with enough surface area that a single perspective misses
-things: security, edge cases, maintainability, spec-fidelity, UX.
-
----
+Bounded: **default 3 arms** (escalate toward the cap of 8 only when the SPEC
+justifies more distinct lenses); 3 build→feel→revise rounds. Suited to
+high-risk, multidimensional tasks: auth flows, parsers, migrations, public APIs,
+compatibility changes.
 
 ### `@data-scientist` — NotebookLM-grounded researcher (hidden subagent)
 
@@ -250,11 +265,12 @@ Required contract: `mode: subagent`, `hidden: true`, `task` allows
 `autonomous` + `reviewer` and denies `*`, body contains Applicability / Stop
 criteria / Escalation sections.
 
-**Coordinator-class strategies** — the brain is the sole builder; N read-only
-perception arms examine the task through derived personas. The coordinator
-dispatches arms via the `task` tool (requires `task: autonomous: allow`). Arms
-never build; the coordinator owns all mutation. Adding a coordinator strategy
-requires a `task: <name>: allow` entry in `@autonomous`.
+**Coordinator-class strategies** — split into a **brain** (sole builder, has
+`edit`/`write`, dispatches arms) and read-only **perception arms** (persona
+lenses; no `edit`/`write`, no delegation). The brain dispatches arms directly
+(never through `@autonomous`). Arms return evidence-backed perceptions; the brain
+owns all mutation. Adding a coordinator strategy requires a `task: <brain>: allow`
+entry in `@autonomous`, and the brain must allow its arm (`task: <arm>: allow`).
 
 **The selection principle: force nondeterminism into a deterministic check.**
 Karpathy is mandatory when a frozen scalar evaluator exists or can be
@@ -268,7 +284,7 @@ check.
 |---|---|---|---|
 | `karpathy` | single-agent | reference | Scalar metric + frozen evaluator — mandatory. |
 | `ralph-wiggum` | single-agent | active | No automatable verifier; brute-force sequential. |
-| `octopus` | coordinator | active | Multi-perspective scrutiny; task has enough surface area to benefit from parallel persona arms. |
+| `octopus` (+`octopus-arm`) | coordinator | active | High-risk, multi-lens tasks; brain builds, read-only arms perceive. Admission-gated; default 3 arms, 3 rounds. |
 
 ---
 
@@ -299,7 +315,7 @@ python3 tests/verify_opencode.py --skip-llm  # agent/permission/registry integra
 ```
 
 The validator runs checks A (preflight), A2 (strategy registry + contract),
-A3 (Prometheus sandbox contract), A4 (Octopus perception contract), B–G
+A3 (Prometheus sandbox contract), A4 (Octopus brain/arm split), B–G
 (binary, isolation, deploy, agent list, permissions, plugin load), skipping H
 (plugin hook fires) and I (Prometheus identity) in `--skip-llm` mode.
 

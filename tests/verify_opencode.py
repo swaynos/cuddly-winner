@@ -79,6 +79,7 @@ EXPECTED_AGENT_FILES = [
     "karpathy.md",
     "ralph-wiggum.md",
     "octopus.md",
+    "octopus-arm.md",
     "data-scientist.md",
     "grounder.md",
     "reviewer.md",
@@ -143,8 +144,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
     ],
     "prometheus": [
         {"permission": "bash",      "action": "ask",   "pattern": "*"},
-        {"permission": "bash",      "action": "allow", "pattern": "python3 *"},
-        {"permission": "bash",      "action": "allow", "pattern": "python *"},
         {"permission": "bash",      "action": "allow", "pattern": "rg *"},
         {"permission": "bash",      "action": "allow", "pattern": "find *"},
         {"permission": "bash",      "action": "allow", "pattern": "git status*"},
@@ -152,7 +151,7 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",      "action": "allow", "pattern": "git diff*"},
         {"permission": "bash",      "action": "allow", "pattern": "cat *"},
         {"permission": "bash",      "action": "allow", "pattern": "ls *"},
-        {"permission": "bash",      "action": "allow", "pattern": "mkdir *"},
+        {"permission": "bash",      "action": "allow", "pattern": "mkdir -p /tmp/prometheus-spike*"},
         {"permission": "edit",      "action": "deny",  "pattern": "*"},
         {"permission": "edit",      "action": "allow", "pattern": "SPEC.md"},
         {"permission": "edit",      "action": "allow", "pattern": "program.md"},
@@ -233,17 +232,30 @@ EXPECTED_RULES: dict[str, list[dict]] = {
     ],
     "octopus": [
         {"permission": "bash",  "action": "ask",   "pattern": "*"},
-        {"permission": "bash",  "action": "allow", "pattern": "python3 *"},
         {"permission": "bash",  "action": "allow", "pattern": "python *"},
+        {"permission": "bash",  "action": "allow", "pattern": "python3 *"},
+        {"permission": "bash",  "action": "allow", "pattern": "uv run *"},
+        {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
         {"permission": "bash",  "action": "allow", "pattern": "rg *"},
-        {"permission": "bash",  "action": "allow", "pattern": "find *"},
-        {"permission": "bash",  "action": "allow", "pattern": "ls *"},
-        {"permission": "bash",  "action": "allow", "pattern": "cat *"},
         {"permission": "bash",  "action": "allow", "pattern": "git status*"},
         {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
         {"permission": "bash",  "action": "allow", "pattern": "git log*"},
-        {"permission": "task",  "action": "allow", "pattern": "autonomous"},
+        {"permission": "edit",  "action": "allow", "pattern": "*"},
+        {"permission": "write", "action": "allow", "pattern": "*"},
+        {"permission": "task",  "action": "allow", "pattern": "octopus-arm"},
         {"permission": "task",  "action": "allow", "pattern": "reviewer"},
+        {"permission": "task",  "action": "deny",  "pattern": "*"},
+    ],
+    "octopus-arm": [
+        {"permission": "edit",  "action": "deny",  "pattern": "*"},
+        {"permission": "write", "action": "deny",  "pattern": "*"},
+        {"permission": "bash",  "action": "deny",  "pattern": "*"},
+        {"permission": "bash",  "action": "allow", "pattern": "rg *"},
+        {"permission": "bash",  "action": "allow", "pattern": "find *"},
+        {"permission": "bash",  "action": "allow", "pattern": "cat *"},
+        {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
+        {"permission": "bash",  "action": "allow", "pattern": "git log*"},
+        {"permission": "bash",  "action": "allow", "pattern": "git status*"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
     "reviewer": [
@@ -305,6 +317,7 @@ EXPECTED_MODES: dict[str, str] = {
     "karpathy":       "subagent",
     "ralph-wiggum":   "subagent",
     "octopus":        "subagent",
+    "octopus-arm":    "subagent",
     "data-scientist": "subagent",
     "grounder":       "subagent",
     "reviewer":       "subagent",
@@ -591,13 +604,18 @@ def check_strategy_registry() -> list[Failure]:
         if "hidden: true" not in fm:
             failures.append(Failure("strategy", f"{entry['name']}: agent must be 'hidden: true'"))
 
-        # task posture: must allow autonomous + reviewer and deny '*'
-        if not re.search(r'"autonomous"\s*:\s*allow', fm):
-            failures.append(Failure("strategy", f"{entry['name']}: task must allow 'autonomous'"))
+        # task posture: must allow reviewer and deny '*'. A single-agent strategy
+        # allows 'autonomous' (delegates implementation back); a coordinator-class
+        # brain instead allows its arm(s). Require reviewer + deny '*' + at least
+        # one delegation allow.
         if not re.search(r'"reviewer"\s*:\s*allow', fm):
             failures.append(Failure("strategy", f"{entry['name']}: task must allow 'reviewer'"))
         if not re.search(r'"\*"\s*:\s*deny', fm):
             failures.append(Failure("strategy", f"{entry['name']}: task must deny '*'"))
+        task_allows = re.findall(r'"([a-z0-9-]+)"\s*:\s*allow', fm)
+        delegation_allows = [a for a in task_allows if a != "reviewer"]
+        if not delegation_allows:
+            failures.append(Failure("strategy", f"{entry['name']}: task must allow a delegation target ('autonomous' for single-agent, or an arm for coordinator-class)"))
 
         # required contract sections (case-insensitive) must appear in the body.
         body = text.split("---", 2)[-1].lower()
@@ -632,7 +650,8 @@ def check_prometheus_sandbox() -> list[Failure]:
     - external_directory grant for /tmp/prometheus-spike/**
     - edit allow for the sandbox path
     - write allow for the sandbox path
-    - bash is not globally denied (sandbox requires it)
+    - bash is not globally denied (sandbox requires read/probe commands)
+    - write-capable bash interpreters are not auto-allowed
 
     These rules are not covered by EXPECTED_RULES (which only checks command
     patterns) so they need an explicit dedicated check.
@@ -648,6 +667,13 @@ def check_prometheus_sandbox() -> list[Failure]:
 
     text = prometheus_path.read_text(encoding="utf-8")
     fm = _frontmatter_block(text)
+
+    forbidden_auto_allow_patterns = (
+        "python *",
+        "python3 *",
+        "uv run *",
+        "mkdir *",
+    )
 
     checks = [
         (
@@ -667,6 +693,22 @@ def check_prometheus_sandbox() -> list[Failure]:
             not re.search(r'^  bash:\s*deny\s*$', fm, re.MULTILINE),
             "prometheus.md: bash is globally denied; sandbox requires bash access",
         ),
+        (
+            all(
+                not re.search(
+                    rf'^\s+"{re.escape(pattern)}":\s*allow\s*$',
+                    fm,
+                    re.MULTILINE,
+                )
+                for pattern in forbidden_auto_allow_patterns
+            ),
+            "prometheus.md: write-capable bash patterns must not be auto-allowed "
+            "(python/python3/uv run/broad mkdir)",
+        ),
+        (
+            "Do not use bash to write persistent project files" in text,
+            "prometheus.md: body must explicitly forbid persistent project writes via bash",
+        ),
     ]
 
     for passed, message in checks:
@@ -675,67 +717,95 @@ def check_prometheus_sandbox() -> list[Failure]:
             _print_fail(message)
 
     if not failures:
-        _print_pass(f"Prometheus sandbox contract: external_directory + edit/write for {SANDBOX_PATH}")
+        _print_pass(f"Prometheus sandbox contract: sandbox grants + no auto-allowed write-capable bash")
 
     return failures
 
 
 def check_octopus_perception() -> list[Failure]:
-    """Verify the Octopus coordinator-class perception contract:
-    - agents/octopus.md exists, mode=subagent, hidden=true
-    - task allows autonomous (coordinator dispatches perception arms)
-    - NO edit or write grants (arms are read-only; brain is sole builder)
-    - NO external_directory grant (no sandboxes; arms only read)
-    - bash is not globally denied (coordinator reads project files)
-    - body documents the perception findings contract (arm perceptions)
+    """Verify the Octopus coordinator-class brain/arm split:
+
+    Brain (agents/octopus.md):
+    - exists; dispatches arms via task: octopus-arm: allow
+    - HAS edit/write grants (it is the sole builder)
+    - does NOT route arms through @autonomous (no task: autonomous)
+    - body documents the admission test and persona derivation
+
+    Arm (agents/octopus-arm.md):
+    - exists; read-only: edit deny, write deny, no task allows
+    - body documents the evidence-backed perception contract
     """
     failures: list[Failure] = []
-    _print_header("A4. Octopus perception contract")
+    _print_header("A4. Octopus brain/arm split")
 
-    octopus_path = AGENTS_DIR / "octopus.md"
-    if not octopus_path.exists():
-        failures.append(Failure("octopus_perception", "agents/octopus.md missing"))
-        _print_fail(failures[-1].message)
+    brain = AGENTS_DIR / "octopus.md"
+    arm = AGENTS_DIR / "octopus-arm.md"
+
+    if not brain.exists():
+        failures.append(Failure("octopus", "agents/octopus.md missing"))
+    if not arm.exists():
+        failures.append(Failure("octopus", "agents/octopus-arm.md missing"))
+    if failures:
+        for f in failures:
+            _print_fail(f.message)
         return failures
 
-    text = octopus_path.read_text(encoding="utf-8")
-    fm = _frontmatter_block(text)
-    body = text.split("---", 2)[-1].lower()
+    btext = brain.read_text(encoding="utf-8")
+    bfm = _frontmatter_block(btext)
+    bbody = btext.split("---", 2)[-1].lower()
+
+    atext = arm.read_text(encoding="utf-8")
+    afm = _frontmatter_block(atext)
+    abody = atext.split("---", 2)[-1].lower()
 
     checks = [
+        # --- Brain: sole builder ---
         (
-            re.search(r'"autonomous"\s*:\s*allow', fm) is not None,
-            "octopus.md: task must allow 'autonomous' (coordinator dispatches perception arms)",
+            re.search(r'"octopus-arm"\s*:\s*allow', bfm) is not None,
+            "octopus.md (brain): task must allow 'octopus-arm' (dispatches arms)",
         ),
         (
-            "external_directory" not in fm,
-            "octopus.md: should NOT have external_directory grant — arms are read-only, no sandboxes",
+            re.search(r'"autonomous"\s*:\s*allow', bfm) is None,
+            "octopus.md (brain): must NOT route arms through 'autonomous' (recursion/role confusion)",
         ),
         (
-            re.search(r'edit\s*:[^\n]*allow', fm) is None,
-            "octopus.md: should NOT have edit allows — arms never edit; brain handles all mutation",
+            re.search(r'edit\s*:[\s\S]*?allow', bfm) is not None,
+            "octopus.md (brain): must HAVE edit allow — it is the sole builder",
         ),
         (
-            re.search(r'write\s*:[^\n]*allow', fm) is None,
-            "octopus.md: should NOT have write allows — arms never write; brain handles all mutation",
+            re.search(r'write\s*:[\s\S]*?allow', bfm) is not None,
+            "octopus.md (brain): must HAVE write allow — it is the sole builder",
         ),
         (
-            not re.search(r'^  bash:\s*deny\s*$', fm, re.MULTILINE),
-            "octopus.md: bash is globally denied; coordinator needs read access",
+            "admission test" in bbody,
+            "octopus.md (brain): body must document the admission test",
+        ),
+        # --- Arm: read-only ---
+        (
+            re.search(r'edit\s*:\s*deny', afm) is not None,
+            "octopus-arm.md: edit must be denied (read-only)",
         ),
         (
-            "perception" in body or "persona" in body,
-            "octopus.md: body must document perception/persona arm contract",
+            re.search(r'write\s*:\s*deny', afm) is not None,
+            "octopus-arm.md: write must be denied (read-only)",
+        ),
+        (
+            re.search(r'"autonomous"\s*:\s*allow', afm) is None and re.search(r'"octopus-arm"\s*:\s*allow', afm) is None,
+            "octopus-arm.md: must NOT delegate via task (no arm dispatch from an arm)",
+        ),
+        (
+            "evidence" in abody and "dedupkey" in abody.replace(" ", ""),
+            "octopus-arm.md: body must document the evidence-backed perception contract (Evidence, DedupKey)",
         ),
     ]
 
     for passed, message in checks:
         if not passed:
-            failures.append(Failure("octopus_perception", message))
+            failures.append(Failure("octopus", message))
             _print_fail(message)
 
     if not failures:
-        _print_pass("Octopus perception contract: read-only arms, task:autonomous, no sandbox grants")
+        _print_pass("Octopus brain/arm split: brain builds + dispatches octopus-arm; arm is read-only with evidence contract")
 
     return failures
 

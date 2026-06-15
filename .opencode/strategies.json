@@ -16,7 +16,7 @@
     {
       "name": "octopus",
       "agent": "octopus",
-      "applicability": "Coordinator-class: the brain is the sole builder; N read-only persona arms feel the SPEC (pre-build) and implementation (post-build) through task-specific lenses, reporting sensed risks, gaps, and smells; brain integrates perceptions and builds once informed. For tasks with enough surface area to benefit from multi-perspective scrutiny.",
+      "applicability": "Coordinator-class: @octopus is the sole builder; it dispatches read-only @octopus-arm persona lenses to feel the SPEC (pre-build) and implementation (post-build), integrates their evidence-backed perceptions, and builds. For high-risk, multi-lens tasks where a single reviewer pass would miss things. Default 3 arms, bounded 3 rounds. Subject to an admission test; not a default strategy.",
       "status": "active"
     }
   ]

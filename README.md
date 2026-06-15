@@ -11,7 +11,8 @@ A multi-agent autonomous workflow for OpenCode.
 | `@autonomous` | primary + subagent | Executes against `SPEC.md` in a relentless loop until done. Owns looping — selects and invokes the appropriate loop strategy subagent. |
 | `@karpathy` | subagent (hidden) | Karpathy loop strategy — mandatory when a task has a scalar metric and a stable frozen evaluator. |
 | `@ralph-wiggum` | subagent (hidden) | Ralph Wiggum loop strategy — brute-force repeat-until-done; fresh context each iteration; memory is files + git; bounded by a hard iteration cap. For tasks that resist instrumentation. |
-| `@octopus` | subagent (hidden) | Octopus loop strategy — coordinator-class; the brain is the sole builder while N read-only persona arms feel the SPEC and implementation through task-specific lenses (security, edge-cases, UX, etc.), reporting sensed risks and gaps. Brain integrates perceptions and builds once, informed. |
+| `@octopus` | subagent (hidden) | Octopus brain — coordinator-class sole builder. Dispatches read-only `@octopus-arm` persona lenses to feel the SPEC and implementation, integrates evidence-backed perceptions, and builds. Admission-gated; default 3 arms, 3 rounds. |
+| `@octopus-arm` | subagent (hidden) | Octopus perception arm — a read-only persona lens. Feels one perspective of the SPEC or implementation and returns a structured perception (evidence, confidence, actionability, dedup key). Cannot build, edit, or delegate. |
 | `@data-scientist` | subagent (hidden) | NotebookLM-backed research and analysis. Supersedes `@grounder` when a valid project notebook and NotebookLM MCP connection are available. |
 | `@grounder` | subagent (hidden) | Read-only RAG/grounding researcher with cited local and external evidence. |
 | `@reviewer` | subagent (hidden) | Read-only critic. Returns `APPROVE` or `REQUEST_CHANGES` with evidence. |
