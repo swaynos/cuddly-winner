@@ -91,12 +91,87 @@ Each strategy must be listed in the strategy registry (`.opencode/strategies.jso
 with `name`, `agent`, `applicability`, and `status` (`active` / `reference` /
 `planned`). See `docs/strategy-template.md` for a copy-to-create scaffold.
 
-Adding a conformant strategy agent plus a registry entry is sufficient —
-no edit to `@autonomous` is required.
+Adding a conformant strategy agent plus a registry entry is sufficient for
+single-agent strategies. **Coordinator-class strategies additionally require a
+`task: <name>: allow` entry in `@autonomous`'s permission map** (see section 5
+below).
+
+---
+
+## 5. Coordinator-class strategies
+
+A **coordinator-class strategy** is one where the brain (the coordinator) is the
+**sole builder** and the arms are **read-only perception agents** — personas that
+feel the SPEC and the implementation through different lenses and report what they
+sense. The Octopus strategy is the reference implementation.
+
+### How it differs from single-agent strategies
+
+- The coordinator strategy agent *may* dispatch persona arm sub-agents via the
+  `task` tool (by delegating to `@autonomous` with a read-only perception brief).
+  The coordinator must allow `autonomous` in its `task` map.
+- **Arms are read-only.** They perceive and report sensed risks, gaps, and
+  smells. They never build, never edit files, and never touch the project.
+- **The coordinator is the sole builder.** All implementation and all project
+  mutation is the coordinator's responsibility. Arms perceive; the brain builds.
+- Personas are derived dynamically from the SPEC each run — not a fixed list.
+
+### Two sensing phases
+
+A coordinator strategy wraps a single build with two perception phases:
+
+1. **Pre-build:** arms feel the SPEC to surface risks and gaps; the brain
+   integrates their sensations into a sharper plan before building.
+2. **Post-build:** arms feel the actual implementation to surface what the code
+   reveals; the brain revises until perceptions are clean or the rounds budget
+   is exhausted.
+
+### Coordinator frontmatter
+
+Arms are read-only — no sandbox, no `external_directory`, no `edit`/`write`
+grants required:
+
+```yaml
+---
+description: <one line — coordinator strategy>
+mode: subagent
+hidden: true
+permission:
+  bash:
+    "*": ask
+    <read/observe allows: rg, cat, ls, git status/diff/log>
+  task:
+    "autonomous": allow
+    "reviewer": allow
+    "*": deny
+---
+```
+
+### Required body sections
+
+In addition to the standard Applicability / Stop criteria / Escalation sections,
+a coordinator strategy must document:
+
+- **Persona derivation** — how the brain derives 2–8 task-specific arms from
+  the SPEC (not a fixed list); one arm per perspective/question.
+- **Perception brief** — the read-only brief each arm receives; explicitly
+  forbids editing.
+- **Perception findings contract** — arms return structured perceptions
+  (lens, phase, sensed risks/gaps, severity, recommendation); never artifacts.
+- **Sensing phases** — pre-build (feel the SPEC) and post-build (feel the
+  implementation), with a bounded rounds budget.
+
+### Adding a coordinator strategy to `@autonomous`
+
+Unlike single-agent strategies, a coordinator strategy requires `@autonomous` to
+be able to invoke it. Add `"<strategy-name>": allow` to `@autonomous`'s `task`
+permission map and to `EXPECTED_RULES` in `tests/verify_opencode.py`.
 
 ---
 
 ## Reference implementation
 
-`agents/karpathy.md` is the reference implementation of this contract. Read it
-alongside this document when authoring a new strategy.
+`agents/karpathy.md` is the reference implementation of the single-agent contract.
+`agents/octopus.md` is the reference implementation of the coordinator-class
+contract. Read the relevant one alongside this document when authoring a new
+strategy.

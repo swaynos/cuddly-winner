@@ -12,6 +12,12 @@
       "agent": "ralph-wiggum",
       "applicability": "Brute-force repeat-until-done for tasks with no automatable verifier; each iteration reads the current repo state, attempts progress, commits, and exits; memory is files and git; fresh context each iteration; bounded by a hard iteration cap.",
       "status": "active"
+    },
+    {
+      "name": "octopus",
+      "agent": "octopus",
+      "applicability": "Coordinator-class: the brain is the sole builder; N read-only persona arms feel the SPEC (pre-build) and implementation (post-build) through task-specific lenses, reporting sensed risks, gaps, and smells; brain integrates perceptions and builds once informed. For tasks with enough surface area to benefit from multi-perspective scrutiny.",
+      "status": "active"
     }
   ]
 }

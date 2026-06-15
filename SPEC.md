@@ -39,9 +39,14 @@ project-facing output is `SPEC.md` (and planning siblings); everything in the
 sandbox is disposable.
 
 **Enforcement note.** `edit`/`write` tools are config-blocked outside the
-sandbox and planning artifacts. Bash side-effects (a script writing to disk)
-are not interceptable by the permission layer — the sandbox is a behavioral and
-config contract, not an OS-level hermetic jail.
+sandbox and planning artifacts by the permission config. Bash side-effects (a
+script writing to disk) are not interceptable by the permission layer — the
+sandbox is a behavioral and config contract, not an OS-level hermetic jail.
+
+**Autonomous strategy directive.** On every intake, `@prometheus` writes an
+`## Autonomous Strategy` section to `AGENTS.md`, recording the strategy
+directive (`karpathy` by default, or an exotic strategy if instrumentation is
+genuinely impossible) and a one-line rationale.
 
 **Persistent outputs:** `SPEC.md`, `program.md`, `experiments.md`,
 `.opencode/karpathy.json`, `.opencode/immutable.json`, `AGENTS.md`.
@@ -49,6 +54,7 @@ config contract, not an OS-level hermetic jail.
 **Permissions:** `bash: ask` (with broad sandbox allows), `edit`/`write`
 scoped to planning artifacts and `/tmp/prometheus-spike/**`, `webfetch: allow`,
 `question: allow`. `task` allows only `@data-scientist` and `@grounder`.
+30 declared rules.
 
 ---
 
@@ -68,19 +74,26 @@ from `AGENTS.md` and invokes the appropriate strategy subagent.
 **Karpathy hard rule.** When a task has (or can be given) a scalar metric and a
 stable frozen evaluator, `@autonomous` must invoke `@karpathy`. It attempts to
 instrument unmeasurable tasks toward measurability before reaching for an exotic
-strategy.
+strategy. Exotic strategies are a last resort; the reason must be recorded in
+`progress.txt`.
+
+**Strategy registry.** `@autonomous` reads `.opencode/strategies.json` to
+discover selectable strategies. Registry presence never overrides the Karpathy
+hard rule.
 
 **Loop continuity.** The `opencode-autonomous-loop` plugin tracks run state and
 posts a continuation nudge when `@autonomous` ends a turn with unchecked
 `progress.txt` items and no promise token — preventing silent abandonment.
 
 **Promise contract** (enforced by `opencode-autonomous-gate`):
-- `COMPLETE` requires a spec, a green evidence block, and `@reviewer` APPROVE.
+- `COMPLETE` requires a spec, a green evidence block (`exit_code: 0`), and
+  `@reviewer` APPROVE (when reviewer/task available).
 - `WORK_STUCK` requires `progress.txt` updated with documented attempts.
 - `BLOCKED` is only valid when `bash` is unavailable.
 
 **Permissions:** `bash: ask` (with broad test/build allows), `task` allows
-`@data-scientist`, `@grounder`, `@reviewer`, `@karpathy`, `@ralph-wiggum`.
+`@data-scientist`, `@grounder`, `@reviewer`, `@karpathy`, `@ralph-wiggum`,
+`@octopus`. 23 declared rules.
 
 ---
 
@@ -96,8 +109,8 @@ Reads `program.md` and optionally `.opencode/karpathy.json` for deterministic
 loop configuration. Stops when `program.md`'s stop criteria are met, or after
 3 distinct strategy pivots each fail to produce a KEEP decision.
 
-Not user-facing. Users invoke `@autonomous`; the strategy directive in `AGENTS.md`
-routes to `@karpathy` when appropriate.
+Not user-facing. Users invoke `@autonomous`; the strategy directive in
+`AGENTS.md` routes to `@karpathy` when appropriate.
 
 ---
 
@@ -112,6 +125,28 @@ every round.
 
 ---
 
+### `@octopus` — Parallel-perception loop strategy (hidden subagent)
+
+Coordinator-class strategy. The brain (`@octopus` itself) is the **sole
+builder**. N read-only persona "arms" feel the SPEC and the implementation
+through task-specific lenses, reporting sensed risks, gaps, and smells. Personas
+are derived dynamically from the SPEC each run — not from a fixed list.
+
+**Two sensing phases around one build:**
+1. **Pre-build:** arms feel the SPEC to surface risks and gaps before a line
+   is written; the brain integrates their perceptions into a sharper plan.
+2. **Build once, informed** — the brain is the sole implementer.
+3. **Post-build:** arms feel the actual implementation; the brain revises until
+   perceptions are clean or the rounds budget (3) is exhausted.
+
+Arms are read-only — no sandbox, no `edit`/`write` grants. The coordinator owns
+all project mutation. Bounded by arm cap (8) and rounds budget (3).
+
+Suited to tasks with enough surface area that a single perspective misses
+things: security, edge cases, maintainability, spec-fidelity, UX.
+
+---
+
 ### `@data-scientist` — NotebookLM-grounded researcher (hidden subagent)
 
 Read-only. Queries a project-specified NotebookLM notebook via the NotebookLM
@@ -121,8 +156,8 @@ connection is authenticated. Falls back to `@grounder` when unavailable.
 
 The repo's registered notebook is `cuddly-winner-loop-strategies`
 (`63e72bfa-9025-435d-909c-1fd35db1d505`), which contains research on loop
-strategies, ant-foraging biology, Karpathy/autoresearch, Agile SPIKEs, and
-related material.
+strategies, ant-foraging biology, Karpathy/autoresearch, Agile SPIKEs,
+adversarial-debate pipelines, GRPO/verifiable-rewards, and related material.
 
 ---
 
@@ -159,9 +194,9 @@ notebook) → `@grounder`. Read-only; no edits, no bash mutations.
 
 Enforces `@autonomous`'s promise contract. Monitors assistant messages for
 promise tokens and posts a structured corrective back into the session when
-preconditions are not met. Detects and intercepts workaround-dump responses.
-Auto-disables the reviewer and evidence requirements when the relevant tools are
-unavailable in the session.
+preconditions are not met. Detects and intercepts workaround-dump responses
+(can't-do statement + code block without a promise token). Auto-disables the
+reviewer and evidence requirements when the relevant tools are unavailable.
 
 ### `opencode-autonomous-loop`
 
@@ -170,7 +205,8 @@ Treats each `@autonomous` session as a bounded worker. Persists run state
 promise emissions, spec presence, and progress-file touches per session. Posts
 a **continuation nudge** when `@autonomous` ends a turn with unchecked `[ ]`
 items in `progress.txt` and no promise token — the primary defence against
-premature loop exit. Nudge is deduplicated per turn and cannot busy-loop.
+premature loop exit. Nudge is deduplicated per turn and cannot busy-loop. Also
+posts a stale reminder after 15 minutes of inactivity.
 
 ### `immutability.ts`
 
@@ -205,23 +241,34 @@ their trigger. Core skills distributed by this repo:
 ## Strategy framework
 
 Loop strategies are hidden subagents that `@autonomous` invokes. Each conforms
-to `docs/STRATEGY-CONTRACT.md`: `mode: subagent`, `hidden: true`, `task` allows
-`autonomous` + `reviewer` and denies `*`, and the body contains Applicability /
-Stop criteria / Escalation sections. Strategies are registered in
-`.opencode/strategies.json`.
+to `docs/STRATEGY-CONTRACT.md` and is registered in `.opencode/strategies.json`.
 
-The selection principle: **force nondeterminism into a deterministic check.**
+**Two strategy classes:**
+
+**Single-agent strategies** — one subagent drives the loop alone.
+Required contract: `mode: subagent`, `hidden: true`, `task` allows
+`autonomous` + `reviewer` and denies `*`, body contains Applicability / Stop
+criteria / Escalation sections.
+
+**Coordinator-class strategies** — the brain is the sole builder; N read-only
+perception arms examine the task through derived personas. The coordinator
+dispatches arms via the `task` tool (requires `task: autonomous: allow`). Arms
+never build; the coordinator owns all mutation. Adding a coordinator strategy
+requires a `task: <name>: allow` entry in `@autonomous`.
+
+**The selection principle: force nondeterminism into a deterministic check.**
 Karpathy is mandatory when a frozen scalar evaluator exists or can be
 constructed. Instrument toward measurability before reaching for an exotic
 strategy. Exotic strategies are an admission the task resisted a deterministic
 check.
 
-Current registry:
+**Current registry:**
 
-| Strategy | Status | When |
-|---|---|---|
-| `karpathy` | reference | Scalar metric + frozen evaluator exist or can be constructed. Mandatory. |
-| `ralph-wiggum` | active | No automatable verifier; brute-force repeat-until-done. |
+| Strategy | Class | Status | When |
+|---|---|---|---|
+| `karpathy` | single-agent | reference | Scalar metric + frozen evaluator — mandatory. |
+| `ralph-wiggum` | single-agent | active | No automatable verifier; brute-force sequential. |
+| `octopus` | coordinator | active | Multi-perspective scrutiny; task has enough surface area to benefit from parallel persona arms. |
 
 ---
 
@@ -229,7 +276,7 @@ Current registry:
 
 | File | Owner | Purpose |
 |---|---|---|
-| `SPEC.md` | `@prometheus` | Current task specification for `@autonomous`. |
+| `SPEC.md` | `@prometheus` | Current task specification for `@autonomous` (or capability reference when no active task). |
 | `AGENTS.md` | `@prometheus` | Persistent operating contract: git rules, agent routing, autonomous strategy directive. |
 | `progress.txt` | `@autonomous` | Runtime run log: checklist, attempts, verification results, strategy selection. |
 | `program.md` | `@prometheus` | Karpathy loop objective, metric, constraints, stop criteria. |
@@ -237,7 +284,7 @@ Current registry:
 | `.opencode/immutable.json` | project | Per-project file mutation rules for the immutability plugin. |
 | `.opencode/strategies.json` | project | Strategy registry. |
 | `docs/STRATEGY-CONTRACT.md` | project | Contract every strategy subagent must satisfy. |
-| `foraging-log.md` | `@prometheus` | Discovery spike session log (sandbox artifact, may exist in project root after intake). |
+| `docs/strategy-template.md` | project | Copy-to-create scaffold for new strategy subagents. |
 
 ---
 
@@ -252,8 +299,10 @@ python3 tests/verify_opencode.py --skip-llm  # agent/permission/registry integra
 ```
 
 The validator runs checks A (preflight), A2 (strategy registry + contract),
-A3 (Prometheus sandbox contract), B–G (binary, isolation, deploy, agent list,
-permissions, plugin load), skipping H (plugin hook fires) and I (Prometheus
-identity) in `--skip-llm` mode. The `plugin_load` check (G) requires a live
-OpenCode startup log and fails deterministically in `--skip-llm` mode; this is
-a known, pre-existing limitation unrelated to the agent or plugin code.
+A3 (Prometheus sandbox contract), A4 (Octopus perception contract), B–G
+(binary, isolation, deploy, agent list, permissions, plugin load), skipping H
+(plugin hook fires) and I (Prometheus identity) in `--skip-llm` mode.
+
+The `plugin_load` check (G) requires a live OpenCode startup log and fails
+deterministically in `--skip-llm` mode; this is a known, pre-existing
+limitation unrelated to agent or plugin code. All other checks pass.

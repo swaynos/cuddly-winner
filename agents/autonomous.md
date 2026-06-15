@@ -25,6 +25,7 @@ permission:
     "reviewer": allow
     "karpathy": allow
     "ralph-wiggum": allow
+    "octopus": allow
     "*": deny
 ---
 You are an autonomous, spec-driven execution agent.
