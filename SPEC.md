@@ -219,8 +219,11 @@ posts a stale reminder after 15 minutes of inactivity.
 ### `immutability.ts`
 
 Enforces per-project file mutation rules declared in `.opencode/immutable.json`.
-Supports `readonly` (no agent may edit), `prometheus_only` (only `@prometheus`
-may write), and per-agent `write_allowlist`. Resolves agent identity from a
+Supports `readonly` (no agent may edit) and per-agent `write_allowlist`. The
+`prometheus_only` mode still exists in the plugin for general use but should
+not be applied to planning artifacts like `SPEC.md` — `@autonomous` must be
+able to write them when materializing Prometheus payloads. Resolves agent
+identity from a
 `chat.params` session cache (with `parentID` chain walk for subagent sessions)
 so child/delegated sessions inherit the originating agent's identity correctly.
 Applies a C1 fail-closed policy: unknown identity only blocks files explicitly
@@ -285,11 +288,11 @@ check.
 
 | File | Owner | Purpose |
 |---|---|---|
-| `SPEC.md` | `@prometheus` | Current task specification for `@autonomous` (or capability reference when no active task). |
-| `AGENTS.md` | `@prometheus` | Persistent operating contract: git rules, agent routing, autonomous strategy directive. |
+| `SPEC.md` | `@autonomous` | Current task specification (materialized from a Prometheus payload, or written directly). |
+| `AGENTS.md` | project | Persistent operating contract: git rules, agent routing, autonomous strategy directive. |
 | `progress.txt` | `@autonomous` | Runtime run log: checklist, attempts, verification results, strategy selection. |
-| `program.md` | `@prometheus` | Karpathy loop objective, metric, constraints, stop criteria. |
-| `.opencode/karpathy.json` | `@prometheus` | Deterministic Karpathy loop configuration. |
+| `program.md` | `@autonomous` | Karpathy loop objective, metric, constraints, stop criteria (materialized from a Prometheus payload). |
+| `.opencode/karpathy.json` | `@autonomous` | Deterministic Karpathy loop configuration (materialized from a Prometheus payload). |
 | `.opencode/immutable.json` | project | Per-project file mutation rules for the immutability plugin. |
 | `.opencode/strategies.json` | project | Strategy registry. |
 | `docs/STRATEGY-CONTRACT.md` | project | Contract every strategy subagent must satisfy. |
