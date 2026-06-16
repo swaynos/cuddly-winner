@@ -691,6 +691,63 @@ def check_prometheus_handoff() -> list[Failure]:
     return failures
 
 
+def check_prometheus_planning_contract() -> list[Failure]:
+    """Verify that agents/prometheus.md encodes the diverge-converge planning contract:
+    - requires the Approaches Considered section (≥2 candidates)
+    - forbids single-approach payloads (bounce protocol present)
+    - bounce references @ask or @plan
+    - no ant-foraging / parallel fan-out language
+    """
+    failures: list[Failure] = []
+    _print_header("A3b. Prometheus diverge-converge planning contract")
+
+    prometheus_path = AGENTS_DIR / "prometheus.md"
+    if not prometheus_path.exists():
+        failures.append(Failure("prometheus_planning", "agents/prometheus.md missing"))
+        _print_fail(failures[-1].message)
+        return failures
+
+    text = prometheus_path.read_text(encoding="utf-8")
+    body = text.split("---", 2)[-1] if text.count("---") >= 2 else text
+
+    checks = [
+        (
+            "Approaches Considered" in text,
+            "prometheus.md: must require an '## Approaches Considered' section in the SPEC payload",
+        ),
+        (
+            re.search(r"at least 2|minimum of 2|≥2|>=\s*2", text) is not None,
+            "prometheus.md: must state a minimum of 2 distinct candidate approaches",
+        ),
+        (
+            re.search(r"@ask|@plan", text) is not None,
+            "prometheus.md: bounce protocol must reference @ask or @plan",
+        ),
+        (
+            re.search(r"Bounce|bounce|decline|Decline|trivial", text) is not None,
+            "prometheus.md: must define a bounce/decline protocol for trivial requests",
+        ),
+        (
+            re.search(r"kill.reason|kill-reason|Kill.reason", text) is not None,
+            "prometheus.md: must require concrete kill-reasons for rejected approaches",
+        ),
+        (
+            not re.search(r"ant.foraging|like ants|parallel workers|fan.out", text, re.IGNORECASE),
+            "prometheus.md: must not imply parallel fan-out or ant-like worker behavior",
+        ),
+    ]
+
+    for passed, message in checks:
+        if not passed:
+            failures.append(Failure("prometheus_planning", message))
+            _print_fail(message)
+
+    if not failures:
+        _print_pass("Prometheus diverge-converge contract: ≥2 candidates, bounce, kill-reasons, no fan-out")
+
+    return failures
+
+
 def check_octopus_perception() -> list[Failure]:
     """Verify the Octopus coordinator-class brain/arm split:
 
@@ -1770,6 +1827,11 @@ def main() -> None:
 
     # A3. Prometheus read-only handoff contract (no sandbox needed)
     all_failures += check_prometheus_handoff()
+    if all_failures:
+        sys.exit(report(all_failures))
+
+    # A3b. Prometheus diverge-converge planning contract (no sandbox needed)
+    all_failures += check_prometheus_planning_contract()
     if all_failures:
         sys.exit(report(all_failures))
 

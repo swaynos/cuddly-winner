@@ -10,7 +10,7 @@
     {
       "name": "ralph-wiggum",
       "agent": "ralph-wiggum",
-      "applicability": "Brute-force repeat-until-done for tasks with no automatable verifier; each iteration reads the current repo state, attempts progress, commits, and exits; memory is files and git; fresh context each iteration; bounded by a hard iteration cap.",
+      "applicability": "Last resort among loop strategies; only after the instrument-first step fails (no scalar metric or frozen evaluator can be constructed). Brute-force repeat-until-done for tasks with no automatable verifier; each iteration reads the current repo state, attempts progress, commits, and exits; memory is files and git; fresh context each iteration; bounded by a hard iteration cap.",
       "status": "active"
     },
     {

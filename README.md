@@ -297,17 +297,21 @@ contract. The framework has four parts:
 - **Registry** (`.opencode/strategies.json`) — a declarative list of strategies
   with `name`, `agent`, `applicability`, and `status` (`active` / `reference` /
   `planned`). `@autonomous` reads this to discover selectable strategies.
-  `karpathy` is the `reference` entry; `ralph-wiggum` is a `planned` slot.
+  `karpathy` is the `reference` entry; `ralph-wiggum` and `octopus` are `active`.
 - **Template** (`docs/strategy-template.md`) — a copy-to-create scaffold with
   every required section as fill-in placeholders.
 - **Validation** — `tests/verify_opencode.py` loads the registry and fails any
   non-conformant or open-ended strategy.
 
-**Adding a strategy requires no edit to `@autonomous`.** Drop a conformant agent
-file in `agents/` (or `.opencode/agents/`), add a registry entry with status
-`active`, and restart OpenCode. The registry never overrides the Karpathy hard
-rule: if a task is measurable, Karpathy is mandatory regardless of what else the
-registry lists.
+**Adding a single-agent strategy requires no edit to `@autonomous`.** Drop a
+conformant agent file in `agents/` (or `.opencode/agents/`), add a registry entry
+with status `active`, and restart OpenCode. **Coordinator-class strategies** (a
+brain that dispatches its own arms, like `@octopus`) additionally require a
+`task: <brain>: allow` entry in `@autonomous`'s permission map and a matching
+`EXPECTED_RULES` entry in `tests/verify_opencode.py` — see
+`docs/STRATEGY-CONTRACT.md` section 5. The registry never overrides the Karpathy
+hard rule: if a task is measurable, Karpathy is mandatory regardless of what else
+the registry lists.
 
 `@karpathy` is the reference implementation — read it alongside the contract when
 authoring a new strategy.
