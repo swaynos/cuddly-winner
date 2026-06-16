@@ -24,6 +24,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import crypto from "node:crypto";
 import { evidencePasses, findAllEvidenceBlocks } from "../shared/evidence.js";
 
 const FLAG_REVIEWER = flag("OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER", true);
@@ -62,6 +63,129 @@ async function fileExists(p) {
   } catch {
     return false;
   }
+}
+
+function hashText(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+/**
+ * Parse the declared strategy from progress.txt content.
+ * Returns the strategy string (lowercased) or null if no Selected: line exists.
+ */
+function parseSelectedStrategy(progressContent) {
+  if (!progressContent) return null;
+  const m = progressContent.match(/^Selected:\s*(\S+)/m);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * Check whether the Karpathy strategy was actually executed.
+ * Returns null (passed) or a failure-reason string.
+ *
+ * A session passes if ANY of the following is true:
+ *   1. All three harness artifacts exist on disk:
+ *      program.md + .opencode/karpathy.json + experiments.md
+ *   2. A @karpathy delegation was observed in this session (karpathyDelegated=true)
+ */
+async function checkKarpathyExecution(directory, karpathyDelegated) {
+  if (karpathyDelegated) return null;
+
+  const hasProgram   = await fileExists(path.join(directory, "program.md"));
+  const hasKarpJson  = await fileExists(path.join(directory, ".opencode", "karpathy.json"));
+  const hasExpMd     = await fileExists(path.join(directory, "experiments.md"));
+
+  if (hasProgram && hasKarpJson && hasExpMd) return null;
+
+  const missing = [];
+  if (!hasProgram)  missing.push("program.md");
+  if (!hasKarpJson) missing.push(".opencode/karpathy.json");
+  if (!hasExpMd)    missing.push("experiments.md");
+
+  return (
+    "Selected: karpathy but no Karpathy execution evidence found. " +
+    "Need a @karpathy task delegation in this session, OR all three harness artifacts: " +
+    "program.md + .opencode/karpathy.json + experiments.md. " +
+    `Missing: ${missing.join(", ")}.`
+  );
+}
+
+/**
+ * Check strategy consistency:
+ *   - progress.txt must have a Selected: line
+ *   - If Selected: karpathy, must have Karpathy execution evidence
+ *   - Selected: direct / instrumentation / ralph-wiggum / octopus are always OK
+ *
+ * Returns null (passed) or a failure-reason string.
+ * Returns null (skipped) when progress.txt does not exist.
+ */
+async function checkStrategyConsistency(directory, karpathyDelegated) {
+  const progressPath = [
+    path.join(directory, "progress.txt"),
+    path.join(directory, "PROGRESS.txt"),
+  ];
+  let progressContent = null;
+  for (const p of progressPath) {
+    if (await fileExists(p)) {
+      progressContent = await fs.readFile(p, "utf-8").catch(() => null);
+      break;
+    }
+  }
+
+  // No progress.txt at all — skip strategy check (gate still requires evidence+reviewer)
+  if (progressContent === null) return null;
+
+  const selected = parseSelectedStrategy(progressContent);
+  if (selected === null) {
+    return (
+      "progress.txt exists but has no 'Selected: <strategy>' line. " +
+      "Record the strategy before emitting COMPLETE (e.g. 'Selected: direct')."
+    );
+  }
+
+  if (selected === "karpathy") {
+    return checkKarpathyExecution(directory, karpathyDelegated);
+  }
+
+  return null; // direct, instrumentation, ralph-wiggum, octopus, etc.
+}
+
+/**
+ * Extract the inner content of a <spec filename="SPEC.md">…</spec> payload
+ * from assistant text. Returns the trimmed inner string or null.
+ */
+function extractSpecPayload(text) {
+  if (!text) return null;
+  const m = text.match(/<spec\s+filename=["']SPEC\.md["']>\s*([\s\S]*?)\s*<\/spec>/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Check spec freshness: if a Prometheus <spec filename="SPEC.md"> payload was
+ * observed this session, verify that the on-disk SPEC.md content matches it.
+ *
+ * Returns null (passed / not applicable) or a failure-reason string.
+ */
+async function checkSpecFreshness(directory, prometheusPayloadHash) {
+  if (!prometheusPayloadHash) return null; // no payload observed this session
+
+  const specCandidates = ["SPEC.md", "spec.md"];
+  for (const c of specCandidates) {
+    const p = path.join(directory, c);
+    if (await fileExists(p)) {
+      const content = await fs.readFile(p, "utf-8").catch(() => null);
+      if (content !== null && hashText(content.trim()) === prometheusPayloadHash) {
+        return null; // matches
+      }
+      return (
+        "A Prometheus <spec filename=\"SPEC.md\"> payload was visible this session " +
+        "but the on-disk SPEC.md does not match it. " +
+        "Write the payload verbatim to SPEC.md before emitting COMPLETE."
+      );
+    }
+  }
+  // No spec file at all — the specPresent() check will handle that
+  return null;
 }
 
 async function specPresent(directory) {
@@ -178,6 +302,8 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       s = {
         progressTouched: false,
         reviewerApproved: false,
+        karpathyDelegated: false,      // true when @karpathy message observed
+        prometheusPayloadHash: null,   // SHA-256 of last Prometheus payload inner content
         lastAssistantText: "",
         recentTexts: [],
       };
@@ -279,6 +405,19 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     if (REVIEWER_APPROVE_PATTERN.test(text)) {
       if (String(agent || "").toLowerCase() === "reviewer") {
         st.reviewerApproved = true;
+      }
+    }
+
+    // Track @karpathy delegation: any message from the karpathy agent counts.
+    if (String(agent || "").toLowerCase() === "karpathy") {
+      st.karpathyDelegated = true;
+    }
+
+    // Track Prometheus payloads: capture the hash of the latest payload content.
+    if (String(agent || "").toLowerCase() === "prometheus") {
+      const payload = extractSpecPayload(text);
+      if (payload) {
+        st.prometheusPayloadHash = hashText(payload.trim());
       }
     }
 
@@ -396,6 +535,21 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       if (requireReviewer && !reviewerOk) {
         reasons.push("no @reviewer APPROVE in this session (Note: if the @reviewer/Task tool is unavailable in your environment, you can disable this check by setting the environment variable OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER=false)");
       }
+
+      // Strategy-consistency check: verify declared strategy actually executed.
+      const strategyFailure = await checkStrategyConsistency(
+        directory,
+        st.karpathyDelegated,
+      );
+      if (strategyFailure) reasons.push(strategyFailure);
+
+      // Spec-freshness check: if a Prometheus payload was observed, SPEC.md must match.
+      const freshnessFailure = await checkSpecFreshness(
+        directory,
+        st.prometheusPayloadHash,
+      );
+      if (freshnessFailure) reasons.push(freshnessFailure);
+
       if (reasons.length) {
         await log("warn", "Rejecting <promise>COMPLETE</promise>", { reasons });
         await postCorrective(

@@ -10,6 +10,7 @@ import AutonomousLoopPlugin, {
   normalizeRunId,
   normalizeSessionId,
   hasUncheckedItems,
+  parseSelectedStrategy,
 } from "../../plugins/opencode-autonomous-loop/index.js";
 
 async function withTempDir(fn) {
@@ -97,6 +98,15 @@ test("hasUncheckedItems: detects open checkbox in text", () => {
   assert.equal(hasUncheckedItems("- [x] done\n- [x] also done\n"), false);
   assert.equal(hasUncheckedItems("no checkboxes at all"), false);
   assert.equal(hasUncheckedItems(""), false);
+});
+
+test("parseSelectedStrategy: extracts strategy name from progress.txt", () => {
+  assert.equal(parseSelectedStrategy("## Strategy\nSelected: karpathy\n"), "karpathy");
+  assert.equal(parseSelectedStrategy("## Strategy\nSelected: direct\nReason: one-shot\n"), "direct");
+  assert.equal(parseSelectedStrategy("## Strategy\nSelected: ralph-wiggum\n"), "ralph-wiggum");
+  assert.equal(parseSelectedStrategy("## Log\nno selected line\n"), null);
+  assert.equal(parseSelectedStrategy(""), null);
+  assert.equal(parseSelectedStrategy(null), null);
 });
 
 // ---------------------------------------------------------------------------

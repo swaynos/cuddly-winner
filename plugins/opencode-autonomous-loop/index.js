@@ -101,6 +101,16 @@ export function hasUncheckedItems(text) {
   return /^- \[ \]/m.test(text || "");
 }
 
+/**
+ * Parse the declared strategy from progress.txt content.
+ * Returns the strategy string (lowercased) or null if no Selected: line exists.
+ */
+export function parseSelectedStrategy(text) {
+  if (!text) return null;
+  const m = text.match(/^Selected:\s*(\S+)/m);
+  return m ? m[1].toLowerCase() : null;
+}
+
 export const AutonomousLoopPlugin = async ({ client, directory }) => {
   const runsPath = path.join(directory, RUN_STATE_FILE);
   const statusPath = path.join(directory, STATUS_FILE);
@@ -195,6 +205,7 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
       complete_count: 0,
       stuck_count: 0,
       progress_touched: false,
+      selected_strategy: null,
       spec_present: false,
       spec_file: null,
       spec_hash: null,
@@ -316,14 +327,25 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
       if (base !== "progress.txt" && base !== "PROGRESS.txt") return;
       const sid = input?.sessionID || input?.sessionId || null;
       const spec = await getSpecHash();
+
+      // Parse the declared strategy from progress.txt for durable tracking.
+      let selectedStrategy = null;
+      try {
+        const content = await fs.readFile(String(p), "utf-8");
+        selectedStrategy = parseSelectedStrategy(content);
+      } catch {
+        // File may not be readable yet; not fatal.
+      }
+
       await updateRun(sid, (r) => ({
         ...r,
         status: "running",
         progress_touched: true,
+        selected_strategy: selectedStrategy ?? r.selected_strategy ?? null,
         ...spec,
         history: [
           ...(r.history || []).slice(-49),
-          { ts: unixTs(), event: "progress_edited", path: String(p) },
+          { ts: unixTs(), event: "progress_edited", path: String(p), selected_strategy: selectedStrategy },
         ],
       }));
     },
@@ -336,7 +358,30 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
 
       const sid = extractSessionId(input) || extractSessionId(msg);
       const agent = extractAgent(input) || extractAgent(msg);
-      if (String(agent || "").toLowerCase() !== AGENT_NAME.toLowerCase()) {
+
+      // Record observed subagent delegation events (any strategy subagent message).
+      // These are stored in the run history for the autonomous parent session.
+      const agentLower = String(agent || "").toLowerCase();
+      const STRATEGY_AGENTS = ["karpathy", "ralph-wiggum", "octopus", "octopus-arm", "reviewer"];
+      if (agentLower !== AGENT_NAME.toLowerCase() && STRATEGY_AGENTS.includes(agentLower)) {
+        // Find the most recently active autonomous run to attach the delegation to.
+        const state = await loadState().catch(() => ({ version: 1, runs: {} }));
+        const runningKeys = Object.keys(state.runs).filter(
+          (k) => state.runs[k].status === "running",
+        );
+        for (const runId of runningKeys) {
+          await updateRun(runId, (r) => ({
+            ...r,
+            history: [
+              ...(r.history || []).slice(-49),
+              { ts: unixTs(), event: "subagent_message", agent: agentLower },
+            ],
+          }));
+        }
+        return;
+      }
+
+      if (agentLower !== AGENT_NAME.toLowerCase()) {
         return;
       }
 

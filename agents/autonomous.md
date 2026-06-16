@@ -73,7 +73,9 @@ resourcefulness. It is the wrong behaviour.
 
 # Spec file (required)
 
-If the user message contains a Prometheus payload of this exact form:
+If the current user message, or the immediately preceding visible Prometheus
+response in this same conversation, contains a Prometheus payload of this exact
+form:
 
 ```xml
 <spec filename="SPEC.md">
@@ -85,7 +87,15 @@ then your first action after confirming `bash` is available is to write the
 enclosed content verbatim to `SPEC.md` before implementing anything. Do not
 summarize, reinterpret, normalize, or "improve" the payload while materializing
 it. If `SPEC.md` already exists and differs from the payload, overwrite it with
-the payload exactly; the current user invocation is the authoritative handoff.
+the payload exactly; the newest visible Prometheus payload is the authoritative
+handoff.
+
+Do not ignore a visible Prometheus payload because it was produced by the previous
+assistant message rather than pasted into the current user message. If more than
+one unmaterialized payload is visible and you cannot determine which is newest,
+ask one clarification question before editing. If a visible Prometheus payload
+differs from the on-disk `SPEC.md`, treating the on-disk spec as authoritative is
+a workflow failure.
 
 After materializing the payload, read `SPEC.md` from disk and continue normally.
 
@@ -114,17 +124,41 @@ from `AGENTS.md` if it exists. Use it as the starting strategy directive.
 3. The `## Autonomous Strategy` directive in `AGENTS.md`.
 4. Your own context-based classification (see hard rule below).
 
-**Hard rule — Karpathy is mandatory when the task is measurable:**
-If the task has (or can be given) a scalar metric and a stable frozen evaluator,
-you MUST use the Karpathy strategy. Invoke `@karpathy` via the task tool and
-delegate the loop to it. Do not substitute a different strategy on a measurable
-task without stating why Karpathy cannot apply.
+**Hard rule — Karpathy is mandatory for measurable optimization loops:**
+If the task is an iterative optimization/search problem and has (or can be given)
+a scalar metric plus a stable frozen evaluator, you MUST use the Karpathy
+strategy. Invoke `@karpathy` via the task tool and delegate the loop to it. Do not
+substitute a different strategy on a measurable optimization loop without stating
+why Karpathy cannot apply.
+
+A normal implementation task with tests is not automatically a Karpathy loop. If
+the spec only asks you to implement checklist items and run verification commands,
+and it does not define a metric objective, baseline command, score source, noise
+probe, mutable targets, and immutable targets, record `Selected: direct` unless
+the spec first asks you to build those Karpathy artifacts.
 
 **Instrument before going exotic:**
 If a task is not obviously measurable, first try to make it measurable — add a
 scalar metric and a frozen evaluator before concluding that an exotic strategy is
 required. Only if instrumentation genuinely cannot be done may you fall back to
 an exotic strategy (such as Ralph Wiggum). Record the reason in `progress.txt`.
+
+**Karpathy admission gate:**
+Before recording `Selected: karpathy`, verify that all of these are true, or that
+the current SPEC checklist explicitly builds them before Karpathy is invoked:
+- `program.md` exists or will be created by the instrumentation checklist;
+- `.opencode/karpathy.json` exists or will be created by the instrumentation
+  checklist;
+- there is a baseline command;
+- there is a scalar score source and direction;
+- there is a noise probe;
+- mutable targets and immutable/frozen targets are identified.
+
+`Selected: karpathy` is a commitment to invoke `@karpathy` after this gate is
+satisfied. It is not a label for directly running `pytest` yourself. If the gate
+is not satisfied and the SPEC does not build the missing artifacts, record
+`Selected: direct` for ordinary implementation work, or `Selected: instrumentation`
+when your job is only to build the Karpathy harness.
 
 **Exotic strategies are last-resort subagents:**
 An exotic strategy is an admission that the task resisted a deterministic check.
@@ -146,6 +180,14 @@ the first loop iteration:
     ## Strategy
     Selected: <strategy name>
     Reason: <one sentence — why this strategy, or why the AGENTS.md directive was overridden>
+
+If `Selected: karpathy`, also append:
+
+    Karpathy gate: PASS
+    Artifacts: program.md=<present|to-create>, karpathy.json=<present|to-create>, score_source=<present|to-create>, noise_probe=<present|to-create>
+    Next action: invoke @karpathy via task after required artifacts exist
+
+If the Karpathy gate is not satisfied, do not write `Selected: karpathy`.
 
 On any strategy pivot mid-run, append:
 

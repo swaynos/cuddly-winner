@@ -674,9 +674,24 @@ def check_prometheus_handoff() -> list[Failure]:
             "prometheus.md: must include the exact autonomous handoff sentence",
         ),
         (
+            "Do not include explanatory prose" in text
+            and "before the payload block" in text,
+            "prometheus.md: must forbid prose before the SPEC payload block",
+        ),
+        (
             "<spec filename=\"SPEC.md\">" in autonomous_text
             and "enclosed content verbatim to `SPEC.md`" in autonomous_text,
             "autonomous.md: must materialize Prometheus SPEC payloads verbatim before implementation",
+        ),
+        (
+            "immediately preceding visible Prometheus" in autonomous_text
+            and "treating the on-disk spec as authoritative is" in autonomous_text,
+            "autonomous.md: must materialize visible same-session Prometheus payloads, not only current user-message payloads",
+        ),
+        (
+            "Karpathy admission gate" in autonomous_text
+            and "Selected: karpathy` is a commitment to invoke `@karpathy`" in autonomous_text,
+            "autonomous.md: must require a Karpathy admission gate and real @karpathy invocation",
         ),
     ]
 
@@ -684,6 +699,57 @@ def check_prometheus_handoff() -> list[Failure]:
         if not passed:
             failures.append(Failure("prometheus_handoff", message))
             _print_fail(message)
+
+    # Gate plugin contract markers: verify the plugin enforces strategy-consistency
+    # and spec-freshness as COMPLETE preconditions.
+    gate_path = PLUGINS_DIR / "opencode-autonomous-gate" / "index.js"
+    if gate_path.exists():
+        gate_text = gate_path.read_text(encoding="utf-8")
+        gate_checks = [
+            (
+                "checkStrategyConsistency" in gate_text,
+                "opencode-autonomous-gate: must implement checkStrategyConsistency",
+            ),
+            (
+                "checkSpecFreshness" in gate_text,
+                "opencode-autonomous-gate: must implement checkSpecFreshness",
+            ),
+            (
+                "karpathyDelegated" in gate_text,
+                "opencode-autonomous-gate: must track @karpathy delegation in session state",
+            ),
+            (
+                "prometheusPayloadHash" in gate_text,
+                "opencode-autonomous-gate: must track Prometheus payload hash for freshness check",
+            ),
+        ]
+        for passed, message in gate_checks:
+            if not passed:
+                failures.append(Failure("prometheus_handoff", message))
+                _print_fail(message)
+
+    # Loop plugin contract markers: verify strategy + delegation tracking.
+    loop_path = PLUGINS_DIR / "opencode-autonomous-loop" / "index.js"
+    if loop_path.exists():
+        loop_text = loop_path.read_text(encoding="utf-8")
+        loop_checks = [
+            (
+                "parseSelectedStrategy" in loop_text,
+                "opencode-autonomous-loop: must export parseSelectedStrategy for durable strategy tracking",
+            ),
+            (
+                "selected_strategy" in loop_text,
+                "opencode-autonomous-loop: must persist selected_strategy in run state",
+            ),
+            (
+                "subagent_message" in loop_text,
+                "opencode-autonomous-loop: must record observed subagent delegation events in history",
+            ),
+        ]
+        for passed, message in loop_checks:
+            if not passed:
+                failures.append(Failure("prometheus_handoff", message))
+                _print_fail(message)
 
     if not failures:
         _print_pass("Prometheus is read-only; Autonomous materializes SPEC payloads")

@@ -1,0 +1,508 @@
+#!/usr/bin/env python3
+"""
+audit_run.py — Autonomous loop behavior auditor.
+
+Automates the manual investigation procedure from docs/testing-methodology.md.
+Queries the OpenCode SQLite database and project artifacts to emit
+PASS / PARTIAL / FAIL verdicts for a given project session.
+
+Usage:
+    python3 tests/audit_run.py --project /path/to/project
+    python3 tests/audit_run.py --project /path/to/project --session ses_abc123
+    python3 tests/audit_run.py --project /path/to/project --list
+    python3 tests/audit_run.py --help
+
+Outputs a Runtime Validation Report to stdout.
+Exit codes: 0 = PASS or NOT_APPLICABLE, 1 = PARTIAL, 2 = FAIL, 3 = error/missing data.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sqlite3
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+DEFAULT_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+
+KARPATHY_ARTIFACTS = ["program.md", "experiments.md", ".opencode/karpathy.json"]
+
+# Agent names that indicate strategy subagent execution.
+STRATEGY_SUBAGENTS = {"karpathy", "ralph-wiggum", "octopus", "octopus-arm"}
+
+
+# ---------------------------------------------------------------------------
+# Data structures
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SessionRow:
+    id: str
+    parent_id: Optional[str]
+    agent: Optional[str]
+    slug: Optional[str]
+    directory: Optional[str]
+    created: str
+    updated: str
+
+
+@dataclass
+class PartRow:
+    tool: Optional[str]
+    hint: str
+    created: str
+
+
+@dataclass
+class AgentSwitch:
+    agent: str
+    created: str
+
+
+@dataclass
+class Verdict:
+    label: str   # PASS | PARTIAL | FAIL | NOT_APPLICABLE | NOT_SELECTED
+    evidence: list[str] = field(default_factory=list)
+    interpretation: str = ""
+
+
+# ---------------------------------------------------------------------------
+# DB helpers
+# ---------------------------------------------------------------------------
+
+def open_db(db_path: Path) -> sqlite3.Connection:
+    if not db_path.exists():
+        raise FileNotFoundError(f"OpenCode database not found: {db_path}")
+    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+
+
+def list_sessions(conn: sqlite3.Connection, project: str, limit: int = 10) -> list[SessionRow]:
+    rows = conn.execute(
+        """
+        SELECT id, parent_id, agent, slug, directory,
+               datetime(time_created/1000,'unixepoch','localtime') AS created,
+               datetime(time_updated/1000,'unixepoch','localtime') AS updated
+        FROM session
+        WHERE directory = ?
+        ORDER BY time_updated DESC
+        LIMIT ?
+        """,
+        (project, limit),
+    ).fetchall()
+    return [SessionRow(*r) for r in rows]
+
+
+def get_session(conn: sqlite3.Connection, session_id: str) -> Optional[SessionRow]:
+    row = conn.execute(
+        """
+        SELECT id, parent_id, agent, slug, directory,
+               datetime(time_created/1000,'unixepoch','localtime') AS created,
+               datetime(time_updated/1000,'unixepoch','localtime') AS updated
+        FROM session WHERE id = ?
+        """,
+        (session_id,),
+    ).fetchone()
+    return SessionRow(*row) if row else None
+
+
+def get_child_sessions(conn: sqlite3.Connection, session_id: str) -> list[SessionRow]:
+    rows = conn.execute(
+        """
+        SELECT id, parent_id, agent, slug, directory,
+               datetime(time_created/1000,'unixepoch','localtime') AS created,
+               datetime(time_updated/1000,'unixepoch','localtime') AS updated
+        FROM session WHERE parent_id = ?
+        ORDER BY time_created
+        """,
+        (session_id,),
+    ).fetchall()
+    return [SessionRow(*r) for r in rows]
+
+
+def get_tool_calls(conn: sqlite3.Connection, session_id: str) -> list[PartRow]:
+    rows = conn.execute(
+        """
+        SELECT json_extract(data,'$.tool') AS tool,
+               substr(coalesce(
+                 json_extract(data,'$.state.input.filePath'),
+                 json_extract(data,'$.state.input.command'),
+                 json_extract(data,'$.state.input.pattern'),
+                 json_extract(data,'$.state.input.description'),
+                 ''
+               ), 1, 120) AS hint,
+               datetime(time_created/1000,'unixepoch','localtime') AS created
+        FROM part
+        WHERE session_id = ?
+          AND json_extract(data,'$.type') = 'tool'
+        ORDER BY time_created
+        """,
+        (session_id,),
+    ).fetchall()
+    return [PartRow(*r) for r in rows]
+
+
+def get_agent_switches(conn: sqlite3.Connection, session_id: str) -> list[AgentSwitch]:
+    rows = conn.execute(
+        """
+        SELECT json_extract(data,'$.agent') AS agent,
+               datetime(time_created/1000,'unixepoch','localtime') AS created
+        FROM session_message
+        WHERE session_id = ? AND type = 'agent-switched'
+        ORDER BY seq
+        """,
+        (session_id,),
+    ).fetchall()
+    return [AgentSwitch(r[0] or "", r[1]) for r in rows]
+
+
+def has_promise_token(conn: sqlite3.Connection, session_id: str, token: str) -> bool:
+    count = conn.execute(
+        "SELECT count(*) FROM message WHERE session_id = ? AND data LIKE ?",
+        (session_id, f"%{token}%"),
+    ).fetchone()[0]
+    return count > 0
+
+
+def has_prometheus_payload(conn: sqlite3.Connection, session_id: str) -> bool:
+    count = conn.execute(
+        """SELECT count(*) FROM part
+           WHERE session_id = ?
+             AND json_extract(data,'$.type') = 'text'
+             AND json_extract(data,'$.text') LIKE '%<spec filename=%'""",
+        (session_id,),
+    ).fetchone()[0]
+    return count > 0
+
+
+# ---------------------------------------------------------------------------
+# Artifact helpers
+# ---------------------------------------------------------------------------
+
+def read_progress_strategy(project: str) -> Optional[str]:
+    for name in ("progress.txt", "PROGRESS.txt"):
+        p = Path(project) / name
+        if p.exists():
+            text = p.read_text(encoding="utf-8", errors="replace")
+            m = re.search(r"^Selected:\s*(\S+)", text, re.MULTILINE)
+            return m.group(1).lower() if m else None
+    return None
+
+
+def spec_has_approaches_considered(project: str) -> bool:
+    for name in ("SPEC.md", "spec.md"):
+        p = Path(project) / name
+        if p.exists():
+            return "## Approaches Considered" in p.read_text(encoding="utf-8", errors="replace")
+    return False
+
+
+def karpathy_artifacts_present(project: str) -> dict[str, bool]:
+    return {a: (Path(project) / a).exists() for a in KARPATHY_ARTIFACTS}
+
+
+def experiments_has_baseline(project: str) -> bool:
+    p = Path(project) / "experiments.md"
+    if not p.exists():
+        return False
+    return "Run 0" in p.read_text(encoding="utf-8", errors="replace")
+
+
+# ---------------------------------------------------------------------------
+# Verdict builders
+# ---------------------------------------------------------------------------
+
+def verdict_prometheus(
+    conn: sqlite3.Connection,
+    session: SessionRow,
+    switches: list[AgentSwitch],
+    tool_calls: list[PartRow],
+    project: str,
+) -> Verdict:
+    prometheus_switches = [s for s in switches if s.agent == "prometheus"]
+    if not prometheus_switches:
+        return Verdict("NOT_APPLICABLE", evidence=["No agent-switched to prometheus found"])
+
+    # Check read-only: no edit/write/bash tool calls during prometheus phase
+    forbidden = [t for t in tool_calls if t.tool in ("edit", "write", "apply_patch", "bash")]
+    payload_present = has_prometheus_payload(conn, session.id)
+    approaches_ok = spec_has_approaches_considered(project)
+
+    evidence = [
+        f"Prometheus agent-switched at {prometheus_switches[0].created}",
+        f"Prometheus payload in session: {'yes' if payload_present else 'no'}",
+        f"SPEC.md has ## Approaches Considered: {'yes' if approaches_ok else 'no'}",
+    ]
+    if forbidden:
+        evidence.append(f"Forbidden tool calls during session: {[t.tool for t in forbidden[:5]]}")
+
+    if forbidden:
+        return Verdict("FAIL", evidence=evidence,
+                       interpretation="Prometheus made edit/write/bash calls — violates read-only contract.")
+    if payload_present and approaches_ok:
+        return Verdict("PASS", evidence=evidence,
+                       interpretation="Prometheus ran read-only and returned a payload with Approaches Considered.")
+    if payload_present and not approaches_ok:
+        return Verdict("PARTIAL", evidence=evidence,
+                       interpretation="Prometheus returned a payload but SPEC.md is missing ## Approaches Considered.")
+    return Verdict("PARTIAL", evidence=evidence,
+                   interpretation="Prometheus switched into session but no payload or Approaches Considered found.")
+
+
+def verdict_autonomous_strategy(
+    conn: sqlite3.Connection,
+    session: SessionRow,
+    switches: list[AgentSwitch],
+    child_sessions: list[SessionRow],
+    project: str,
+) -> Verdict:
+    autonomous_switches = [s for s in switches if s.agent == "autonomous"]
+    if not autonomous_switches:
+        return Verdict("NOT_APPLICABLE", evidence=["No agent-switched to autonomous found"])
+
+    declared = read_progress_strategy(project)
+    child_agents = {c.agent.lower() for c in child_sessions if c.agent}
+    delegated_to = child_agents & STRATEGY_SUBAGENTS
+
+    evidence = [
+        f"Declared strategy (progress.txt Selected:): {declared or 'not recorded'}",
+        f"Child session agents: {sorted(child_agents) or 'none'}",
+        f"Strategy subagent delegations observed: {sorted(delegated_to) or 'none'}",
+    ]
+
+    if declared is None:
+        return Verdict("FAIL", evidence=evidence,
+                       interpretation="No 'Selected:' line in progress.txt — strategy was not recorded before execution.")
+
+    if declared == "karpathy":
+        arts = karpathy_artifacts_present(project)
+        has_baseline = experiments_has_baseline(project)
+        has_delegation = "karpathy" in delegated_to
+        evidence += [f"Karpathy artifacts: {arts}", f"experiments.md has baseline: {has_baseline}",
+                     f"@karpathy child session: {has_delegation}"]
+        if has_delegation and has_baseline:
+            return Verdict("PASS", evidence=evidence,
+                           interpretation="@karpathy delegated and experiments.md has baseline run.")
+        if has_delegation:
+            return Verdict("PARTIAL", evidence=evidence,
+                           interpretation="@karpathy child session exists but experiments.md missing or no baseline.")
+        if all(arts.values()) and has_baseline:
+            return Verdict("PARTIAL", evidence=evidence,
+                           interpretation="Karpathy artifacts present but no @karpathy child session — delegation may not have occurred.")
+        return Verdict("FAIL", evidence=evidence,
+                       interpretation="Selected: karpathy but neither @karpathy delegation nor Karpathy artifacts found.")
+
+    if declared in ("ralph-wiggum", "octopus"):
+        expected_agent = declared
+        if expected_agent in delegated_to:
+            return Verdict("PASS", evidence=evidence,
+                           interpretation=f"@{expected_agent} child session found, matching declared strategy.")
+        return Verdict("FAIL", evidence=evidence,
+                       interpretation=f"Selected: {declared} but no @{expected_agent} child session found.")
+
+    # direct / instrumentation / other
+    if delegated_to:
+        return Verdict("PASS", evidence=evidence,
+                       interpretation=f"Selected: {declared}; strategy is direct/instrumentation (no subagent required).")
+    return Verdict("PASS", evidence=evidence,
+                   interpretation=f"Selected: {declared} — direct execution, no subagent delegation required.")
+
+
+def verdict_karpathy(
+    conn: sqlite3.Connection,
+    child_sessions: list[SessionRow],
+    project: str,
+) -> Verdict:
+    karpathy_children = [c for c in child_sessions if (c.agent or "").lower() == "karpathy"]
+    if not karpathy_children:
+        return Verdict("NOT_SELECTED", evidence=["No @karpathy child session found"])
+
+    arts = karpathy_artifacts_present(project)
+    has_baseline = experiments_has_baseline(project)
+    has_noise = False
+    has_keep_revert = False
+    exp_path = Path(project) / "experiments.md"
+    if exp_path.exists():
+        exp_text = exp_path.read_text(encoding="utf-8", errors="replace")
+        has_noise = "noise" in exp_text.lower() or "stddev" in exp_text.lower()
+        has_keep_revert = "KEEP" in exp_text or "REVERT" in exp_text
+
+    evidence = [
+        f"@karpathy child sessions: {len(karpathy_children)}",
+        f"program.md: {arts.get('program.md')}",
+        f".opencode/karpathy.json: {arts.get('.opencode/karpathy.json')}",
+        f"experiments.md: {arts.get('experiments.md')} (baseline: {has_baseline}, noise: {has_noise}, KEEP/REVERT: {has_keep_revert})",
+    ]
+
+    if has_baseline and has_noise and has_keep_revert:
+        return Verdict("PASS", evidence=evidence,
+                       interpretation="Karpathy executed: baseline, noise floor, and KEEP/REVERT decisions recorded.")
+    if has_baseline:
+        return Verdict("PARTIAL", evidence=evidence,
+                       interpretation="Karpathy started (baseline recorded) but noise floor or KEEP/REVERT decisions missing.")
+    return Verdict("FAIL", evidence=evidence,
+                   interpretation="@karpathy child session exists but experiments.md lacks baseline run.")
+
+
+def verdict_octopus(child_sessions: list[SessionRow]) -> Verdict:
+    octopus_children = [c for c in child_sessions if (c.agent or "").lower() == "octopus"]
+    arm_children = [c for c in child_sessions if (c.agent or "").lower() == "octopus-arm"]
+    if not octopus_children:
+        return Verdict("NOT_SELECTED", evidence=["No @octopus child session found"])
+
+    evidence = [
+        f"@octopus child sessions: {len(octopus_children)}",
+        f"@octopus-arm child sessions: {len(arm_children)}",
+    ]
+    if arm_children:
+        return Verdict("PASS", evidence=evidence,
+                       interpretation="Octopus brain and arm sessions both present.")
+    return Verdict("PARTIAL", evidence=evidence,
+                   interpretation="@octopus session found but no @octopus-arm sessions — arm dispatch may not have occurred.")
+
+
+# ---------------------------------------------------------------------------
+# Report formatting
+# ---------------------------------------------------------------------------
+
+VERDICT_EXIT = {"PASS": 0, "NOT_APPLICABLE": 0, "NOT_SELECTED": 0, "PARTIAL": 1, "FAIL": 2}
+
+
+def _fmt_verdict(v: Verdict) -> str:
+    lines = [f"  Verdict: {v.label}"]
+    for e in v.evidence:
+        lines.append(f"    - {e}")
+    if v.interpretation:
+        lines.append(f"  Interpretation: {v.interpretation}")
+    return "\n".join(lines)
+
+
+def print_report(
+    session: SessionRow,
+    child_sessions: list[SessionRow],
+    prom_v: Verdict,
+    auto_v: Verdict,
+    karp_v: Verdict,
+    octo_v: Verdict,
+    complete_emitted: bool,
+    reviewer_approved: bool,
+) -> int:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    print(f"""
+Runtime Validation Report
+Generated: {now}
+
+Target session: {session.id} (slug: {session.slug})
+Time window:    {session.created} – {session.updated} (localtime)
+Project:        {session.directory}
+Agent:          {session.agent}
+Child sessions: {len(child_sessions)}
+COMPLETE emitted: {'yes' if complete_emitted else 'no'}
+Reviewer APPROVE: {'yes' if reviewer_approved else 'no'}
+
+---
+
+Prometheus verdict:
+{_fmt_verdict(prom_v)}
+
+Autonomous strategy verdict:
+{_fmt_verdict(auto_v)}
+
+Karpathy verdict:
+{_fmt_verdict(karp_v)}
+
+Octopus verdict:
+{_fmt_verdict(octo_v)}
+
+Material difference verdict: {'YES' if child_sessions else 'NO'}
+  Evidence: {'Child sessions present: ' + ', '.join(c.agent or '?' for c in child_sessions) if child_sessions else 'No child sessions found.'}
+""".strip())
+    verdicts = [prom_v, auto_v, karp_v, octo_v]
+    worst = max(
+        (VERDICT_EXIT.get(v.label, 0) for v in verdicts),
+        default=0,
+    )
+    return worst
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Audit an @autonomous session against the cuddly-winner runtime contract.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    p.add_argument("--project", required=True, help="Absolute path to the project directory.")
+    p.add_argument("--session", default=None, help="Session ID to audit. Defaults to the most recent autonomous session.")
+    p.add_argument("--list", action="store_true", help="List recent sessions for the project and exit.")
+    p.add_argument("--db", default=str(DEFAULT_DB), help=f"Path to opencode.db (default: {DEFAULT_DB})")
+    return p.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    project = str(Path(args.project).resolve())
+    db_path = Path(args.db)
+
+    try:
+        conn = open_db(db_path)
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 3
+
+    sessions = list_sessions(conn, project, limit=20)
+    if not sessions:
+        print(f"No OpenCode sessions found for project: {project}", file=sys.stderr)
+        return 3
+
+    if args.list:
+        print(f"{'Session ID':<40} {'Agent':<16} {'Slug':<20} {'Updated'}")
+        print("-" * 100)
+        for s in sessions:
+            print(f"{s.id:<40} {(s.agent or '?'):<16} {(s.slug or '?'):<20} {s.updated}")
+        return 0
+
+    if args.session:
+        session = get_session(conn, args.session)
+        if not session:
+            print(f"Session not found: {args.session}", file=sys.stderr)
+            return 3
+    else:
+        # Pick most recent autonomous session.
+        autonomous = [s for s in sessions if (s.agent or "").lower() == "autonomous"]
+        session = autonomous[0] if autonomous else sessions[0]
+
+    child_sessions = get_child_sessions(conn, session.id)
+    tool_calls = get_tool_calls(conn, session.id)
+    switches = get_agent_switches(conn, session.id)
+
+    complete_emitted = has_promise_token(conn, session.id, "<promise>COMPLETE</promise>")
+    reviewer_approved = has_promise_token(conn, session.id, "APPROVE")
+
+    prom_v  = verdict_prometheus(conn, session, switches, tool_calls, project)
+    auto_v  = verdict_autonomous_strategy(conn, session, switches, child_sessions, project)
+    karp_v  = verdict_karpathy(conn, child_sessions, project)
+    octo_v  = verdict_octopus(child_sessions)
+
+    exit_code = print_report(
+        session, child_sessions, prom_v, auto_v, karp_v, octo_v,
+        complete_emitted, reviewer_approved,
+    )
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

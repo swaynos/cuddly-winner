@@ -108,6 +108,9 @@ start with `<spec filename="SPEC.md">` on its own line and end with `</spec>` on
 its own line.
 
 Rules:
+- Do not include explanatory prose before the payload block. That means no
+  summaries, caveats, or approach notes before `<spec filename="SPEC.md">`. Put
+  all audit material inside the payload, especially in `## Approaches Considered`.
 - The payload content must be the complete file content, not a summary.
 - Do not wrap the payload in a Markdown code fence.
 - Do not include placeholder text, TBDs, or instructions for the user to fill in.
@@ -152,15 +155,36 @@ an `## Autonomous Strategy` section inside the `SPEC.md` payload. `@autonomous`
 uses the spec-level strategy directive before falling back to `AGENTS.md`.
 
 **Karpathy is the mandatory default.** Use it whenever:
-- The task has a scalar metric (or one can be constructed), AND
-- A stable frozen evaluator exists (or can be written).
+- The task is an iterative optimization/search problem, AND
+- It has a scalar metric (or one can be constructed), AND
+- A stable frozen evaluator exists (or can be written), AND
+- There is or will be a Karpathy loop harness: `program.md`, score source,
+  baseline command, noise probe, immutable targets, and mutable targets.
 
-Record `strategy: karpathy` and a one-line rationale in the `SPEC.md` payload.
+Do not mark ordinary one-shot implementation work as `strategy: karpathy` merely
+because it has tests. A test suite is required verification for `@autonomous`; it
+is not by itself a Karpathy optimization harness.
+
+Record `strategy: karpathy` and a one-line rationale in the `SPEC.md` payload
+only when the payload either includes the Karpathy loop artifacts (Track B) or
+the SPEC checklist first builds the missing harness before invoking Karpathy.
 
 **Instrument before going exotic.** If the task is not obviously measurable,
 first consider whether a scalar metric and frozen evaluator can be added. If
 instrumentation is feasible, record `strategy: karpathy` and note that
 instrumentation is needed first (write a SPEC for it).
+
+If you record `strategy: karpathy` in a SPEC-track instrumentation payload, the
+first checklist items must create or update, as applicable:
+- `program.md` with objective, metric, constraints, stop criteria, mutable and
+  immutable targets;
+- `.opencode/karpathy.json` with baseline command, score source, noise probe,
+  mutable targets, and immutable targets;
+- a frozen evaluator/score source if none exists;
+- `.opencode/immutable.json` for frozen evaluator targets.
+
+Then the checklist must explicitly say `@autonomous` invokes `@karpathy` after
+those artifacts exist. Without these artifacts, `strategy: karpathy` is invalid.
 
 **Exotic only when instrumentation is impossible.** If no scalar metric can
 meaningfully be constructed for the task, record the exotic strategy name (e.g.

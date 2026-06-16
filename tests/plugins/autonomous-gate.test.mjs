@@ -343,3 +343,363 @@ test("workaround dump: cant-do alone (no code block) is not intercepted", async 
     assert.equal(prompts.length, 0, "cant-do statement alone should not trigger interception");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Strategy-consistency enforcement
+// ---------------------------------------------------------------------------
+
+test("strategy: COMPLETE rejected when Selected: karpathy but no artifacts and no delegation", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    // progress.txt claims karpathy but no program.md / karpathy.json / experiments.md exist
+    await writeFile(
+      path.join(directory, "progress.txt"),
+      "## Strategy\nSelected: karpathy\nReason: has tests\n",
+      "utf-8",
+    );
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    // Provide reviewer APPROVE and a passing evidence block — everything else satisfied
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-karp-no-artifacts",
+      agent: "reviewer",
+      text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-karp-no-artifacts",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 1, "should reject COMPLETE due to missing Karpathy evidence");
+    assert.match(prompts[0], /karpathy/i);
+    assert.match(prompts[0], /experiments\.md|program\.md|karpathy\.json/i);
+  });
+});
+
+test("strategy: COMPLETE accepted when Selected: karpathy and all three artifacts exist", async () => {
+  await withTempDir(async (directory) => {
+    const dotOpencode = path.join(directory, ".opencode");
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(
+      path.join(directory, "progress.txt"),
+      "## Strategy\nSelected: karpathy\nKarpathy gate: PASS\n",
+      "utf-8",
+    );
+    await writeFile(path.join(directory, "program.md"), "# program\n", "utf-8");
+    await writeFile(path.join(directory, "experiments.md"), "## Run 0 — Baseline\nScore: 0.72\n", "utf-8");
+    // mkdir .opencode and write karpathy.json
+    await import("node:fs/promises").then(({ mkdir }) =>
+      mkdir(dotOpencode, { recursive: true }),
+    );
+    await writeFile(
+      path.join(dotOpencode, "karpathy.json"),
+      '{"baseline_command":"python train.py"}\n',
+      "utf-8",
+    );
+
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-karp-artifacts",
+      agent: "reviewer",
+      text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-karp-artifacts",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"python train.py","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 0, "should accept COMPLETE when Karpathy artifacts exist");
+  });
+});
+
+test("strategy: COMPLETE accepted when Selected: karpathy and @karpathy delegation observed", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(
+      path.join(directory, "progress.txt"),
+      "## Strategy\nSelected: karpathy\nKarpathy gate: PASS\n",
+      "utf-8",
+    );
+    // No artifacts on disk — but the session observed a karpathy delegation
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    // Simulate @karpathy delegation by triggering the delegation-observed signal
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-karp-delegation",
+      agent: "karpathy",
+      text: "## Run 0 — Baseline\nScore: 0.72\nDecision: BASELINE",
+    });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-karp-delegation",
+      agent: "reviewer",
+      text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-karp-delegation",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"python train.py","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 0, "should accept COMPLETE when @karpathy delegation was observed");
+  });
+});
+
+test("strategy: COMPLETE accepted when Selected: direct", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(
+      path.join(directory, "progress.txt"),
+      "## Strategy\nSelected: direct\nReason: one-shot implementation with tests\n",
+      "utf-8",
+    );
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-direct",
+      agent: "reviewer",
+      text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-direct",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 0, "should accept COMPLETE when Selected: direct");
+  });
+});
+
+test("strategy: COMPLETE rejected when progress.txt has no Selected: line", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(
+      path.join(directory, "progress.txt"),
+      "## Log\n- did some things\n",
+      "utf-8",
+    );
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-no-selected",
+      agent: "reviewer",
+      text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-no-selected",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 1, "should reject when no Selected: line");
+    assert.match(prompts[0], /Selected:|strategy/i);
+  });
+});
+
+test("strategy: COMPLETE accepted when progress.txt is absent (strategy check skipped)", async () => {
+  // If the project has no progress.txt at all the strategy check should not
+  // fire a false rejection — the evidence + reviewer checks cover this case.
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    // No progress.txt
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-no-progress",
+      agent: "reviewer",
+      text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-no-progress",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 0, "should not fail when progress.txt is absent entirely");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec-freshness enforcement
+// ---------------------------------------------------------------------------
+
+test("spec freshness: COMPLETE rejected when Prometheus payload visible but SPEC.md not updated", async () => {
+  await withTempDir(async (directory) => {
+    // SPEC.md has old content
+    await writeFile(path.join(directory, "SPEC.md"), "# old spec\n", "utf-8");
+    await writeFile(
+      path.join(directory, "progress.txt"),
+      "## Strategy\nSelected: direct\n",
+      "utf-8",
+    );
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    // Prometheus payload observed in session — content differs from on-disk SPEC.md
+    const newSpecContent = "# new spec from Prometheus\n## Problem\nA different problem.\n";
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-stale-spec",
+      agent: "prometheus",
+      text: `Here is the plan.\n\n<spec filename="SPEC.md">\n${newSpecContent}</spec>\n\nInvoke @autonomous to write this SPEC.md verbatim and execute it.`,
+    });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-stale-spec",
+      agent: "reviewer",
+      text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-stale-spec",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 1, "should reject COMPLETE when Prometheus payload was not materialized");
+    assert.match(prompts[0], /SPEC\.md|payload|materializ/i);
+  });
+});
+
+test("spec freshness: COMPLETE accepted when SPEC.md matches the Prometheus payload", async () => {
+  await withTempDir(async (directory) => {
+    const newSpecContent = "# new spec from Prometheus\n## Problem\nA different problem.\n";
+    // SPEC.md already has the correct content (materialized before COMPLETE)
+    await writeFile(path.join(directory, "SPEC.md"), newSpecContent, "utf-8");
+    await writeFile(
+      path.join(directory, "progress.txt"),
+      "## Strategy\nSelected: direct\n",
+      "utf-8",
+    );
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-fresh-spec",
+      agent: "prometheus",
+      text: `<spec filename="SPEC.md">\n${newSpecContent}</spec>\n\nInvoke @autonomous to write this SPEC.md verbatim and execute it.`,
+    });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-fresh-spec",
+      agent: "reviewer",
+      text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-fresh-spec",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 0, "should accept COMPLETE when SPEC.md matches the Prometheus payload");
+  });
+});
+
+test("spec freshness: COMPLETE accepted when no Prometheus payload was observed this session", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# any spec\n", "utf-8");
+    await writeFile(
+      path.join(directory, "progress.txt"),
+      "## Strategy\nSelected: direct\n",
+      "utf-8",
+    );
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+    // No Prometheus message observed this session
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-no-prometheus",
+      agent: "reviewer",
+      text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-no-prometheus",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 0, "should not fail when no Prometheus payload was seen this session");
+  });
+});
