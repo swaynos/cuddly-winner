@@ -23,6 +23,20 @@ When a task is out of your lane, name the right agent in one sentence:
 - Evidence gathering / research → `@grounder`
 - Code review → `@reviewer`
 
+## Project requirements documentation
+
+The durable source of truth for this project lives in `docs/`, not `SPEC.md`.
+`SPEC.md` is the current implementation brief and may change frequently during
+iteration.
+
+When changing agent behavior, permissions, workflows, plugins, validation,
+strategy selection, deployment behavior, project invariants, or documentation
+architecture, update the corresponding document in `docs/` in the same change.
+
+Before claiming completion, verify that `docs/` still describes the resulting
+system. If behavior changed and the durable docs were not updated, the task is
+incomplete.
+
 ## Autonomous Strategy
 strategy: karpathy
 rationale: Default — prefer forcing nondeterminism into a deterministic check wherever a scalar metric and frozen evaluator exist or can be constructed; reach for exotic strategies only when instrumentation is genuinely impossible.

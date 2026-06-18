@@ -89,6 +89,39 @@ test("plugin marks complete and stores last evidence", async () => {
   });
 });
 
+test("plugin records builder subagent messages in autonomous run history", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    const client = { app: { log: async () => {} } };
+    const hooks = await AutonomousLoopPlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "session-builder-parent",
+      agent: "autonomous",
+      text: "Working on step 1",
+    });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "session-builder-child",
+      agent: "builder",
+      text: "BUILDER RESULT: DONE",
+    });
+
+    const runs = JSON.parse(
+      await readFile(
+        path.join(directory, ".opencode", "autonomous-loop", "runs.json"),
+        "utf-8",
+      ),
+    );
+    const run = runs.runs["session-builder-parent"];
+    assert.ok(run.history.some((entry) => (
+      entry.event === "subagent_message" && entry.agent === "builder"
+    )));
+  });
+});
+
 // ---------------------------------------------------------------------------
 // hasUncheckedItems helper
 // ---------------------------------------------------------------------------

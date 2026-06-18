@@ -220,6 +220,27 @@ Evidence: <DB child sessions, part rows, perception artifacts>
 Interpretation: <whether coordinator-class behavior actually occurred>
 ```
 
+### Builder worker delegation
+
+Only applicable when `agent=builder` child sessions exist. Builder is not a loop
+strategy; it is a worker subagent invoked by `@autonomous` for a scoped
+implementation unit.
+
+| Check | Strong signal |
+|---|---|
+| Builder launched | Child session with `agent=builder` and an Autonomous parent |
+| Scoped task call | Parent `part` row: `tool='task'` and input names `builder` with objective and file boundary |
+| Builder stayed in scope | Builder session edit/write rows touch only declared files |
+| Builder did not own progress | No builder edit/write row targeting `progress.txt` |
+| Builder did not review or delegate | No builder `task` rows for reviewer or other subagents |
+| Autonomous verified after return | Autonomous session has `git diff`/verification command after builder child activity |
+
+```text
+Builder delegation verdict: PASS | PARTIAL | FAIL | NOT_APPLICABLE
+Evidence: <DB child sessions, task inputs, part rows, progress/log artifacts>
+Interpretation: <whether builder acted as a scoped worker under Autonomous ownership>
+```
+
 ---
 
 ## Evaluation Procedure
@@ -277,6 +298,12 @@ check for a matching child session.
 Follow the Karpathy or Octopus checklist above against child session data and
 runtime artifacts.
 
+### Step 6b — Validate worker subagents (if applicable)
+
+If `agent=builder` child sessions exist, follow the Builder worker delegation
+checklist above. Do not count builder as strategy execution; it is evidence of
+worker delegation under the Autonomous contract.
+
 ### Step 7 — Material difference verdict
 
 Decide: did this run exercise the multi-agent architecture in an observable way,
@@ -302,6 +329,8 @@ Strongest contrary evidence: <specific DB rows or absence of expected signals>
 - For Karpathy: baseline, noise floor, and KEEP/REVERT records are in `experiments.md`.
 - For Octopus: pre-build and post-build arm phases present; arms read-only; brain
   sole builder.
+- For Builder: child session present when delegated, declared scope respected,
+  and Autonomous verified after return.
 - All runtime artifacts corroborate logs.
 
 ### Partial Pass

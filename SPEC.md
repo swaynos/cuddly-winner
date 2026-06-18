@@ -1,356 +1,193 @@
-# Cuddly Winner — Project Reference
+# @builder Subagent — Delegated Implementation Worker
 
-`cuddly-winner` is a deployable OpenCode agent suite for spec-driven autonomous
-implementation. It packages a core agent roster, loop-strategy subagents,
-runtime-enforcement plugins, reusable skills, examples, and a validation suite.
+## Problem
 
-## Repository Layout
+`@autonomous` currently implements every checklist item directly in its own
+context. For large specs this causes two problems:
 
-```text
-.
-|-- AGENTS.md                         Project-level agent rules and defaults
-|-- README.md                         User-facing workflow and install docs
-|-- agents/                           Core agents and hidden strategy subagents
-|-- docs/
-|   |-- STRATEGY-CONTRACT.md          Contract every strategy subagent must satisfy
-|   |-- CONVENTIONS.md                Shell/script portability rules (macOS + Linux)
-|   `-- testing-methodology.md        Runtime evidence evaluation procedure
-|-- examples/
-|   |-- immutable.json.example        Immutability plugin marker template
-|   |-- trusted-project.json.example  Project-scoped trusted-mode config template
-|   |-- karpathy.json.example         Karpathy loop config template
-|   |-- memory-template/              Project-local memory note template
-|   `-- ml-loop/                      Runnable Karpathy loop demo (stdlib only)
-|-- plugins/
-|   |-- immutability.ts               File-mutation enforcement plugin
-|   |-- opencode-autonomous-gate/     Promise-semantics enforcement plugin
-|   |-- opencode-autonomous-loop/     Durable run-state supervisor plugin
-|   `-- shared/evidence.js            Shared evidence-block parser
-|-- scripts/
-|   `-- deploy-opencode-agents.sh     Install / status / remove the suite
-|-- tests/
-|   |-- verify_opencode.py            Sandbox-isolated integration validator
-|   |-- audit_run.py                  Runtime behavior auditor (DB + artifacts)
-|   |-- test_skill_coverage.py        Skill frontmatter and structure validator
-|   |-- test_skill_pressure.py        Skill pressure/scenario tests
-|   `-- plugins/                      Node plugin unit tests
-`-- .opencode/
-    |-- strategies.json               Strategy registry
-    |-- skills/                       Core reusable skills
-    `-- package.json                  Plugin dependency manifest
-```
+1. **Context bloat.** The agent's window fills with line-by-line implementation
+   detail for every function, class, and test it writes. Planning and verification
+   reasoning competes with output noise.
+2. **No safe parallelism.** Independent checklist items that touch disjoint files
+   must be executed sequentially by the same agent, even when there is no logical
+   dependency between them.
 
-## Agents
+A natural fix is for `@autonomous` to hand off discrete, self-contained
+implementation units ("build a function that does A, B, C") to a lightweight
+worker subagent, wait for the result, verify it, and continue. When multiple
+independent units are identified up front, they can be delegated concurrently.
 
-Ten core agents in `agents/`. All deployed globally via the deploy script.
+## Goals
 
-| Agent | Mode | Role |
-|---|---|---|
-| `@ask` | primary | Lightweight question-answering; escalates to `@data-scientist` or `@grounder` for evidence. |
-| `@prometheus` | primary | Read-only diverge–converge planner. Returns one vetted `SPEC.md` payload (≥2 candidate approaches, concrete kill-reasons) or bounces trivial work to `@ask`/`@plan`. No `bash`, `edit`, or `write`. |
-| `@autonomous` | all | Spec-driven execution agent. Reads `SPEC.md`, records strategy in `progress.txt` before the first edit, executes the checklist, runs verification, calls `@reviewer`, and emits promise tokens only when plugin preconditions hold. |
-| `@karpathy` | subagent (hidden) | Metric-driven loop strategy. Measures baseline, noise floor, proposes one change, KEEP/REVERT per iteration. Reference implementation of the strategy contract. |
-| `@ralph-wiggum` | subagent (hidden) | Brute-force repeat-until-done strategy. Fresh context each iteration; state in files and git; hard iteration cap. |
-| `@octopus` | subagent (hidden) | Coordinator-class strategy. Sole builder; dispatches read-only `@octopus-arm` perception lenses pre-build and post-build; admission-gated. |
-| `@octopus-arm` | subagent (hidden) | Read-only perception arm for `@octopus`. Returns one structured perception; cannot build, edit, write, or delegate. |
-| `@data-scientist` | subagent (hidden) | NotebookLM-grounded research. Supersedes `@grounder` when a valid project notebook is configured and the NotebookLM MCP connection is authenticated. |
-| `@grounder` | subagent (hidden) | Read-only local/external evidence researcher with citations. Fallback when NotebookLM context is unavailable. |
-| `@reviewer` | subagent (hidden) | Strict read-only reviewer. Returns `APPROVE` or `REQUEST_CHANGES` with evidence. Invoked by `@autonomous` before `COMPLETE` and by `@karpathy` after each experiment. |
+- Add a `@builder` hidden subagent that accepts a focused brief from `@autonomous`
+  and implements exactly one self-contained unit (a function, a class, a test
+  module, a config file, etc.).
+- Allow `@autonomous` to delegate to `@builder` for any discrete implementation
+  step where: (a) the scope is well-defined, (b) the unit can be described in a
+  short brief, and (c) the verification command is known in advance.
+- Allow `@autonomous` to fan out **multiple** `@builder` delegations in parallel
+  when the units are confirmed to be disjoint (non-overlapping file sets with no
+  shared state).
+- Keep all contract obligations — evidence block, reviewer APPROVE, strategy
+  selection, promise semantics — owned entirely by `@autonomous`. `@builder` does
+  not emit promises or call `@reviewer`.
+- Ensure every delegated build is verified by `@autonomous` before its checklist
+  item is marked `[x]`.
 
-## Strategy System
+## Non-goals
 
-**Karpathy-first invariant:** Karpathy is mandatory whenever a task is an
-iterative optimization/search problem with a scalar metric and a stable frozen
-evaluator. Exotic strategies may only be selected after the instrument-first
-step fails, with the reason recorded in `progress.txt`.
+- `@builder` is not a replacement for `@autonomous`. It cannot read `SPEC.md`,
+  select a strategy, update `progress.txt`, call `@reviewer`, or emit promises.
+- `@builder` is not a strategy subagent. It is not registered in
+  `.opencode/strategies.json` and does not satisfy the strategy contract.
+- Parallel delegation is not allowed for units with overlapping file sets or
+  shared state. `@autonomous` must declare the file set before delegating.
+- `@builder` does not replace the existing `@karpathy` → `@autonomous` delegation
+  pattern (where `@karpathy` owns strategy and delegates implementation back).
+  That relationship is unchanged.
+- No changes to plugin enforcement scope — the gate and loop plugins remain
+  scoped to `@autonomous`.
 
-**Selection precedence:** explicit user instruction > `strategy:` in `SPEC.md` >
-`## Autonomous Strategy` in `AGENTS.md` > context default.
+## Constraints
 
-**Karpathy is not a label for ordinary implementation.** A test suite is required
-verification for `@autonomous`; it is not a Karpathy optimization harness. Karpathy
-requires `program.md`, `.opencode/karpathy.json`, a baseline command, a score
-source, a noise probe, and identified mutable/immutable targets.
+- `@builder` must be `mode: subagent`, `hidden: true`.
+- `@builder` permissions: `edit: allow`, `write: allow`, `bash: ask` with specific
+  allow-patterns for test runners and search tools. No `task` delegation.
+- `@autonomous` must add `"builder": allow` to its `task` permission map.
+- `EXPECTED_RULES` in `tests/verify_opencode.py` must be updated to assert the new
+  `task: builder: allow` rule in `@autonomous` and `@builder`'s own permission set.
+- `EXPECTED_AGENT_FILES` must add `builder.md`.
+- `docs/STRATEGY-CONTRACT.md` is unchanged — `@builder` is not a strategy.
+- The loop plugin's `STRATEGY_AGENTS` constant must add `"builder"` so delegation
+  events are recorded in run history.
+- `python3 tests/verify_opencode.py --skip-llm` must pass all checks except the
+  known pre-existing `plugin_load` failure.
+- `node --test tests/plugins/*.test.mjs` must pass with no regressions.
 
-Current registry (`.opencode/strategies.json`):
+## Grounding
 
-| Strategy | Status | Applicability |
-|---|---|---|
-| `karpathy` | reference | Iterative optimization with scalar metric + frozen evaluator; keep only if improvement > 2× noise floor. |
-| `ralph-wiggum` | active | Last-resort after instrumentation fails; no automatable verifier; fresh context each iteration. |
-| `octopus` | active | Admission-gated coordinator for high-risk, multi-lens tasks where Karpathy is inapplicable. |
+- `agents/autonomous.md`: current `task` permission map allows `data-scientist`,
+  `grounder`, `reviewer`, `karpathy`, `ralph-wiggum`, `octopus`; denies `*`. Adding
+  `builder` is a one-line frontmatter change plus a `EXPECTED_RULES` update.
+- `tests/verify_opencode.py` `EXPECTED_AGENT_FILES` currently lists 10 agents;
+  `EXPECTED_RULES["autonomous"]` has 23 rules. Both need updating.
+- `plugins/opencode-autonomous-loop/index.js` `STRATEGY_AGENTS` set tracks
+  delegations for audit; `builder` must be added.
+- `@karpathy` delegates non-trivial implementation back to `@autonomous` via task
+  (`agents/karpathy.md:167`). `@builder` follows the same outbound-delegation
+  shape, but in reverse: `@autonomous` → `@builder`.
 
-Strategy contract requirements (`docs/STRATEGY-CONTRACT.md`):
-- `mode: subagent`, `hidden: true`.
-- Task posture: allows `reviewer`, denies `*`, plus delegation target.
-- Body must contain: applicability, bounded stop criteria, escalation.
-- Open-ended strategies are invalid.
+## Approaches Considered
 
-Coordinator-class strategies additionally require separated brain/arm permissions,
-an admission test, arm count default 3 / cap 8, and a bounded rounds budget (3).
+### Approach 1 — Delegate to built-in OpenCode `build` agent
+`@autonomous` adds `task: build: allow` and delegates implementation units to
+OpenCode's built-in `build` primary agent.
 
-## Prometheus Contract
+**Status:** Rejected
 
-`@prometheus` is read-only and payload-based:
+**Kill-reason:** Built-in `build` is a generic primary agent with no contract
+discipline: no evidence block, no promise semantics, no spec awareness. Work done
+under `build` is invisible to the gate and loop plugins (scoped to `autonomous`),
+breaks the audit trail in `tests/audit_run.py`, and can sidestep immutability
+identity resolution. The exact failure class this repo exists to prevent —
+"work happened in `build` outside the contract" — is what the `gmail-scanner`
+post-mortem already diagnosed.
 
-- Permissions: `bash: deny`, `edit: deny`, `write: deny`.
-- Runs the diverge–converge loop internally: generate ≥2 distinct-shape candidates,
-  compare, validate the front-runner, silently reconsider if it dies.
-- Two exits only: a vetted `<spec filename="SPEC.md">` payload, or a bounce to
-  `@ask`/`@plan` for genuinely trivial requests.
-- Payload rules: no explanatory prose before the `<spec>` block; all audit material
-  inside the payload under `## Approaches Considered`; ends with:
-  `Invoke @autonomous to write this SPEC.md verbatim and execute it.`
-- `strategy: karpathy` is only valid in a payload when the payload includes the
-  Karpathy harness artifacts or the checklist explicitly builds them first.
+### Approach 2 — Repo-owned `@builder` hidden subagent (chosen)
+Add a repo-owned `agents/builder.md` (`mode: subagent`, `hidden: true`) with
+a focused permission set and a strict brief contract. `@autonomous` delegates
+discrete units to it via the existing task tool. All contract obligations remain
+with `@autonomous`.
 
-## Autonomous Contract
+**Status:** Chosen
 
-`@autonomous` owns implementation and looping:
+**Rationale:** The worker is ours: auditable, permission-scoped, deployable with
+the rest of the suite, and invisible to users (hidden). The delegation pattern
+is identical to the existing `@karpathy` → `@autonomous` direction, just reversed.
+The loop plugin can track `@builder` sessions as subagent delegation events.
+Immutability identity resolution works via the existing parent-session walk.
 
-- Materializes any visible Prometheus `<spec filename="SPEC.md">` payload verbatim
-  before implementing. A visible same-session payload takes precedence over the
-  on-disk `SPEC.md`.
-- Reads `SPEC.md`, mirrors its checklist into `progress.txt`, records strategy
-  selection before the first edit (see Karpathy admission gate below).
-- Runs perceive → plan → act → observe until the full checklist is done and all
-  verification commands last ran exit 0.
-- Calls `@reviewer` before `COMPLETE`; iterates on `REQUEST_CHANGES`.
+### Approach 3 — `@autonomous` delegates to a fresh `@autonomous` child
+`@autonomous` delegates implementation back to another `@autonomous` instance
+via task. Full guardrails apply to the worker.
 
-**Karpathy admission gate:** Before recording `Selected: karpathy`, all of the
-following must be true (or the SPEC checklist explicitly creates them):
+**Status:** Rejected
 
-- `program.md` present
-- `.opencode/karpathy.json` present
-- baseline command defined
-- scalar score source and direction defined
-- noise probe defined
-- mutable and immutable targets identified
+**Kill-reason:** `@autonomous` carries the full spec contract (strategy selection,
+`progress.txt`, promise ceremony, reviewer). Spawning it as a lightweight worker
+for a function or small module is disproportionately heavy, and nesting two
+contract-bearing agents in a parent-child relationship creates ambiguous ownership
+of `progress.txt` and promise emission in the child.
 
-`Selected: karpathy` is a commitment to invoke `@karpathy` via the task tool.
-For ordinary implementation work, record `Selected: direct`.
+## Acceptance Criteria
 
-**Strategy pivot:** If mid-run the strategy changes, append `## Strategy pivot`
-to `progress.txt` with `From:`, `To:`, and `Reason:`.
+1. `agents/builder.md` exists with `mode: subagent`, `hidden: true`,
+   `edit: allow`, `write: allow`, and a `task` block that denies `*`.
+2. `agents/builder.md` body defines: (a) the brief format it accepts from
+   `@autonomous`, (b) that it implements exactly one self-contained unit and
+   returns a structured result summary, (c) that it never emits promise tokens,
+   calls `@reviewer`, or updates `progress.txt`.
+3. `agents/autonomous.md` frontmatter `task` map includes `"builder": allow`.
+4. `agents/autonomous.md` body documents: (a) when to delegate to `@builder`
+   (discrete, well-scoped unit with a known verification command), (b) the
+   parallel delegation rule (disjoint file sets only, file set declared up front),
+   (c) that `@autonomous` must verify every delegated build (run the verification
+   command, inspect the diff) before marking the checklist item `[x]`.
+5. `tests/verify_opencode.py` `EXPECTED_AGENT_FILES` includes `builder.md`.
+6. `tests/verify_opencode.py` `EXPECTED_RULES["autonomous"]` includes
+   `{"permission": "task", "action": "allow", "pattern": "builder"}`.
+7. `tests/verify_opencode.py` `EXPECTED_RULES` includes a `"builder"` entry
+   asserting the correct permission posture.
+8. `tests/verify_opencode.py` `EXPECTED_MODES` includes `"builder": "subagent"`.
+9. `plugins/opencode-autonomous-loop/index.js` `STRATEGY_AGENTS` set includes
+   `"builder"` so delegation events are recorded in run history.
+10. `python3 tests/verify_opencode.py --skip-llm` passes all checks except the
+    known pre-existing `plugin_load` failure.
+11. `node --test tests/plugins/*.test.mjs` passes with no regressions.
 
-## Promise Contract
-
-Enforced by `opencode-autonomous-gate`. All three tokens are used by `@autonomous`:
-
-**`<promise>COMPLETE</promise>`** requires all of:
-1. A spec file exists.
-2. Latest message contains a fenced JSON evidence block with `exit_code: 0`.
-3. `@reviewer` produced `APPROVE` in this session (when `task` tool available).
-4. `progress.txt` contains a `Selected: <strategy>` line (if `progress.txt` exists).
-5. If `Selected: karpathy`: either a `@karpathy` delegation was observed this
-   session, or `program.md` + `.opencode/karpathy.json` + `experiments.md` all exist.
-6. If a Prometheus `<spec filename="SPEC.md">` payload was observed this session,
-   the on-disk `SPEC.md` content must match it.
-
-**`<promise>WORK_STUCK</promise>`** requires: spec file present, `progress.txt`
-updated this session, ≥3 documented approaches exhausted.
-
-**`<promise>BLOCKED</promise>`** is the only valid exit when `bash` is unavailable.
-Rejected when `bash` is available.
-
-**Workaround dumps** (can't-do statement + code block, no promise token, bash
-absent) are intercepted and rejected with a BLOCKED corrective.
-
-Evidence block format (strict):
-```json
-{
-  "command": "<exact command>",
-  "exit_code": 0,
-  "excerpt": "<tail of stdout/stderr>"
-}
-```
-
-## Plugins
-
-### `plugins/immutability.ts`
-
-Marker-gated global plugin (no-op unless `.opencode/immutable.json` exists).
-Supported rules: `readonly` (all agents denied), `prometheus_only` (only `@prometheus`
-allowed), `write_allowlist` (named agent may only write listed files).
-Also protects canonical filename casing (e.g. rejects `spec.md` when `SPEC.md` is
-declared canonical).
-
-### `plugins/opencode-autonomous-gate/`
-
-Enforces `@autonomous` promise semantics. Watches assistant messages for promise
-tokens; posts structured corrective messages when preconditions are unmet.
-Tracks per-session state: `reviewerApproved`, `karpathyDelegated`,
-`prometheusPayloadHash`, `progressTouched`.
-
-Environment flags (all default `true`):
-- `OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER`
-- `OPENCODE_AUTONOMOUS_REQUIRE_EVIDENCE`
-- `OPENCODE_AUTONOMOUS_REQUIRE_PROGRESS_UPDATE`
-- `OPENCODE_AUTONOMOUS_AGENT_NAME` (default `autonomous`)
-
-### `plugins/opencode-autonomous-loop/`
-
-Durable supervisor-state plugin. Persists run state in `.opencode/autonomous-loop/`:
-- `runs.json`: per-run records including `selected_strategy`, `spec_hash`,
-  `reviewer_approved`, iteration counts, promise counts, and `history` entries
-  (progress edits, subagent delegation events, promise tokens).
-- `status.json`: machine-readable snapshot for external tooling.
-
-Behaviors:
-- Detects stale runs (default 900 s inactivity) and posts recovery nudges.
-- Posts continuation nudges when a turn ends with unchecked `[ ]` items in
-  `progress.txt` and no promise token.
-- Records observed subagent delegation events (`karpathy`, `reviewer`, `octopus`,
-  etc.) in run history.
-- Parses and persists `Selected:` strategy from `progress.txt` edits.
-
-### `plugins/shared/evidence.js`
-
-Exports `findAllEvidenceBlocks`, `findLastEvidenceBlock`, and `evidencePasses`.
-Used by both autonomous plugins to parse fenced JSON evidence blocks.
-
-## Skills
-
-Core skill pack under `.opencode/skills/`:
-
-| Skill | Trigger |
-|---|---|
-| `project-agent-scaffolding` | Deriving project-local agents/skills from a repo's requirements and architecture. |
-| `verification-before-completion` | Requiring fresh command evidence before any completion claim. |
-| `systematic-debugging` | Root-cause-first diagnosis of failing tests or runtime errors. |
-| `test-driven-development` | Failing-test-first discipline for testable production changes. |
-| `subagent-driven-development` | Dispatching focused subagents with explicit briefs and review. |
-| `writing-skills` | Creating or revising OpenCode skills with validation. |
-| `playwright-image-generation` | Automating web AI image generation/editing safely with Playwright. |
-| `local-word-document` | Creating local `.docx` documents from structured content via pandoc. |
-
-Skill validation rules: lowercase kebab-case name matching directory; description
-starts with `Use when` or `Use ONLY when`; only supported frontmatter keys accepted.
-
-Note: `local-word-document` is present in `.opencode/skills/` but not yet listed
-in `EXPECTED_SKILL_FILES` in `tests/verify_opencode.py`.
-
-## Deployment
-
-`scripts/deploy-opencode-agents.sh` — actions: `install` (default), `status`, `remove`.
-
-Install targets:
-- `agents/` (always)
-- `plugins/` with `--with-plugins`
-- `.opencode/skills/` with `--with-skills`
-- `tools/` with `--with-tools` (no `tools/` directory currently exists)
-
-Default mode is symlink; `--mode copy` for copy installs. Existing files are
-backed up before symlink install. Config resolution precedence: CLI flags >
-environment variables > `.opencode-deploy.local.env` > `opencode debug paths` >
-script defaults.
-
-## Examples
-
-| Path | Purpose |
-|---|---|
-| `examples/immutable.json.example` | Immutability plugin marker template |
-| `examples/trusted-project.json.example` | Project-scoped trusted-mode OpenCode config |
-| `examples/karpathy.json.example` | Deterministic Karpathy loop config |
-| `examples/memory-template/` | Project-local memory note template |
-| `examples/ml-loop/` | Runnable stdlib-only Karpathy loop demo (binary classification, baseline ~72%, target ≥85%) |
-
-`examples/ml-loop/` components: frozen evaluator `prepare.py`, mutable target
-`train.py`, objectives `program.md`, config `.opencode/karpathy.json`, immutability
-marker `.opencode/immutable.json`, score artifact `logs/latest_score.txt`.
-
-## Testing and Verification
+## Verification
 
 ```bash
-node --test tests/plugins/*.test.mjs       # 58 plugin unit tests
-python3 tests/verify_opencode.py --skip-llm # sandbox-isolated integration validator
-python3 tests/test_skill_coverage.py --skip-llm
-python3 tests/test_skill_pressure.py
+python3 tests/verify_opencode.py --skip-llm
+node --test tests/plugins/*.test.mjs
+rg -n "builder" agents/autonomous.md
+rg -n "builder" agents/builder.md
+rg -n '"builder"' tests/verify_opencode.py
+rg -n "builder" plugins/opencode-autonomous-loop/index.js
 ```
 
-### `tests/verify_opencode.py`
+## Implementation Checklist
 
-Sandbox-isolated integration validator. Downloads a fresh OpenCode binary into a
-disposable temp dir, installs the suite, and asserts:
+- [x] Write `agents/builder.md`: `mode: subagent`, `hidden: true`, focused
+      permissions (`edit: allow`, `write: allow`, bash allow-patterns for test
+      runners and search, `task: "*": deny`); body defines brief format, single-unit
+      contract, no promise/reviewer/progress.txt responsibility.
+- [x] Add `"builder": allow` to `agents/autonomous.md` frontmatter `task` map.
+- [x] Add delegation guidance to `agents/autonomous.md` body: when to use
+      `@builder`, the disjoint-file-set rule for parallel delegation, and the
+      mandatory post-delegation verification step.
+- [x] Add `"builder.md"` to `EXPECTED_AGENT_FILES` in `tests/verify_opencode.py`.
+- [x] Add `{"permission": "task", "action": "allow", "pattern": "builder"}` to
+      `EXPECTED_RULES["autonomous"]` in `tests/verify_opencode.py`.
+- [x] Add `"builder"` entry to `EXPECTED_RULES` in `tests/verify_opencode.py`
+      asserting its permission posture.
+- [x] Add `"builder": "subagent"` to `EXPECTED_MODES` in `tests/verify_opencode.py`.
+- [x] Add `"builder"` to `STRATEGY_AGENTS` in
+      `plugins/opencode-autonomous-loop/index.js`.
+- [x] Run both verification commands; confirm only `plugin_load` fails.
 
-- All expected agent files present with correct modes.
-- All declared permission rules resolve.
-- Plugin and skill files present and well-formed.
-- Strategy registry conformance (contract sections, task posture, bounded stop criteria).
-- Prometheus read-only handoff contract (bash/edit/write denied, payload format,
-  handoff sentence, no prose before payload, same-session materialization, Karpathy
-  admission gate).
-- Prometheus diverge–converge planning contract (≥2 candidates, bounce, kill-reasons,
-  no fan-out language).
-- Octopus brain/arm split.
-- Gate and loop plugin contract markers (strategy-consistency, spec-freshness,
-  karpathy delegation tracking, parseSelectedStrategy, selected_strategy,
-  subagent event recording).
-- Deploy script install/status/remove behavior.
-- Shell script portability via `shellcheck`.
-- Optional LLM/plugin hook-fire test (skipped with `--skip-llm`).
+## Autonomous Strategy
 
-Known pre-existing failure: `G. Plugin load` — `immutability.ts` does not appear
-in OpenCode startup logs (package plugins are not logged in this mode).
+strategy: direct
+rationale: This is a one-shot spec-driven implementation task — add an agent file,
+update frontmatter and permissions, extend the validator and loop plugin. There is
+no scalar metric to optimize and no iterative experimentation required.
 
-### `tests/plugins/` — Node unit tests (58 tests)
+## Change Log
 
-- `evidence.test.mjs`: evidence block parsing.
-- `immutability.test.mjs`: readonly, prometheus_only, write_allowlist, case-variant,
-  identity resolution (chat.params cache, messages API fallback, parent session walk).
-- `autonomous-gate.test.mjs`: COMPLETE/WORK_STUCK/BLOCKED preconditions, workaround-dump
-  detection, strategy-consistency enforcement (karpathy with/without artifacts,
-  karpathy with delegation, direct, no Selected: line, absent progress.txt),
-  spec-freshness enforcement (stale payload, matching payload, no payload).
-- `autonomous-loop.test.mjs`: run state persistence, continuation nudge guards,
-  parseSelectedStrategy helper.
-
-### `tests/audit_run.py`
-
-On-demand runtime behavior auditor. Queries the OpenCode SQLite database
-(`~/.local/share/opencode/opencode.db`) and project artifacts to emit
-PASS / PARTIAL / FAIL verdicts for a given project session.
-
-```bash
-python3 tests/audit_run.py --project /path/to/project          # most recent autonomous session
-python3 tests/audit_run.py --project /path/to/project --list   # list recent sessions
-python3 tests/audit_run.py --project /path/to/project --session ses_abc123
-```
-
-Verdicts produced: Prometheus (read-only, payload, Approaches Considered),
-Autonomous strategy (declared vs. observed, delegation evidence), Karpathy
-(baseline, noise floor, KEEP/REVERT in `experiments.md`), Octopus (brain + arm
-sessions). Exit codes: 0 = PASS/NA, 1 = PARTIAL, 2 = FAIL, 3 = data error.
-
-## NotebookLM Grounding
-
-Active project notebook: **Cuddly Winner — Loop Strategies**
-(`https://notebooklm.google.com/notebook/63e72bfa-9025-435d-909c-1fd35db1d505`)
-
-`@data-scientist` queries this notebook when the NotebookLM MCP connection is
-authenticated. `@grounder` is the read-only fallback.
-
-Documented strategy patterns from the notebook (not yet implemented as registered
-strategies — each requires a conformant agent, registry entry, and validator
-updates per `docs/STRATEGY-CONTRACT.md`):
-
-- Parallel workers via git worktrees
-- Steering pipelines (cooperative arbitration)
-- Behavior trees (reactive planning)
-- Stigmergy / pheromone foraging
-- Automatic context compaction
-- Commit-and-Reset / Chain-of-Vibes
-- Adversarial debate (Hunter/Skeptic/Referee)
-- Model-routed specialist swarm (Coordinator/Implementer/Reviewer)
-- Preservation assembly-line agents
-
-## Conventions
-
-- `SPEC.md` is uppercase. The immutability plugin rejects case variants.
-- Shell commands in specs, `progress.txt`, and agent instructions must be
-  POSIX-compatible, explicitly bash-invoked, or delegated to Python. See
-  `docs/CONVENTIONS.md`.
-- New shell scripts must pass `shellcheck -s bash`.
-- Runtime behavior claims require runtime evidence (DB sessions, artifacts);
-  agent files alone are design intent, not proof of execution.
-- No git commits unless the user explicitly asks.
+- 2026-06-16: Initial spec. Adds `@builder` as a repo-owned hidden implementation
+  worker subagent, delegated to by `@autonomous` for discrete self-contained units
+  with optional parallel fan-out for disjoint file sets.
+- 2026-06-17: Implemented `@builder`, autonomous delegation rules, validator
+  contract checks, loop-plugin delegation tracking, runtime-audit docs, and
+  durable docs updates.

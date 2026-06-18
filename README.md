@@ -2,6 +2,18 @@
 
 A multi-agent autonomous workflow for OpenCode.
 
+## Documentation Source Of Truth
+
+The durable requirements and architecture for this project live in `docs/`.
+`SPEC.md` is the current implementation brief and changes as the project
+iterates; do not treat it as the long-term requirements record.
+
+Start with `docs/README.md` if you need to rebuild or modify the project. The
+canonical requirements are in `docs/REQUIREMENTS.md`, system structure is in
+`docs/ARCHITECTURE.md`, agent taxonomy is in `docs/AGENT-ARCHITECTURE.md`,
+workflows are in `docs/WORKFLOWS.md`, plugin behavior is in `docs/PLUGINS.md`,
+and validation expectations are in `docs/VALIDATION.md`.
+
 ## Agents
 
 | Agent | Mode | Role |
@@ -9,6 +21,7 @@ A multi-agent autonomous workflow for OpenCode.
 | `@ask` | primary | Quick questions and concise answers from session context first. |
 | `@prometheus` | primary | Read-only front-door planner: interviews, gathers evidence, and returns a complete `<spec filename="SPEC.md">...</spec>` payload or loop artifact payloads for `@autonomous`. |
 | `@autonomous` | primary + subagent | Materializes Prometheus SPEC payloads, then executes against `SPEC.md` in a relentless loop until done. Owns looping — selects and invokes the appropriate loop strategy subagent. |
+| `@builder` | subagent (hidden) | Scoped implementation worker invoked by `@autonomous` for component-sized build units. Implements locally, reports evidence, and never owns completion, review, strategy, or `progress.txt`. |
 | `@karpathy` | subagent (hidden) | Karpathy loop strategy — mandatory when a task has a scalar metric and a stable frozen evaluator. |
 | `@ralph-wiggum` | subagent (hidden) | Ralph Wiggum loop strategy — brute-force repeat-until-done; fresh context each iteration; memory is files + git; bounded by a hard iteration cap. For tasks that resist instrumentation. |
 | `@octopus` | subagent (hidden) | Octopus brain — coordinator-class sole builder. Dispatches read-only `@octopus-arm` persona lenses to feel the SPEC and implementation, integrates evidence-backed perceptions, and builds. Admission-gated; default 3 arms, 3 rounds. |
@@ -29,11 +42,13 @@ A multi-agent autonomous workflow for OpenCode.
 |-- agents/
 |   |-- ask.md
 |   |-- autonomous.md
+|   |-- builder.md
 |   |-- data-scientist.md
 |   |-- grounder.md
 |   |-- karpathy.md
 |   |-- prometheus.md
 |   `-- reviewer.md
+|-- docs/                           Durable requirements, architecture, workflows, validation
 |-- .opencode/
 |   `-- skills/                       Core OpenCode skills distributed by this repo
 |-- plugins/
@@ -329,6 +344,12 @@ summary. Blocked agents end their message with `STATUS: BLOCKED — <reason>`.
 implementation with NotebookLM-backed cited evidence when valid notebook context
 exists; `@grounder` handles the non-NotebookLM fallback. `@reviewer` is spawned
 by `@autonomous` and `@karpathy` for reflection and final quality gates.
+
+**`@builder` is a worker, not Build mode.** `@autonomous` may invoke hidden
+`@builder` for component-scoped implementation units with declared file and
+verification boundaries. `@builder` may provide local evidence, but `@autonomous`
+inspects the diff, reruns verification, updates `progress.txt`, calls reviewer,
+and owns completion.
 
 **`@reviewer` is composable.** Both `@autonomous` and `@karpathy` spawn it.
 The caller passes the rubric as Task input — acceptance criteria for Autonomous,

@@ -48,6 +48,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 AGENTS_DIR = REPO_ROOT / "agents"
 SKILLS_DIR = REPO_ROOT / ".opencode" / "skills"
 PLUGINS_DIR = REPO_ROOT / "plugins"
+DOCS_DIR = REPO_ROOT / "docs"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 AGENTS_MD = REPO_ROOT / "AGENTS.md"
 STRATEGIES_FILE = REPO_ROOT / ".opencode" / "strategies.json"
@@ -61,7 +62,72 @@ AGENTS_MD_REQUIRED = [
     "BLOCKED",         # BLOCKED promise reference
     "@autonomous",     # agent routing
     "@prometheus",     # agent routing
+    "docs/",           # durable requirements source of truth
+    "SPEC.md",         # volatile implementation brief contrast
+    "durable source of truth",
 ]
+
+REQUIRED_DOCS: dict[str, list[str]] = {
+    "README.md": [
+        "durable source of truth",
+        "REQUIREMENTS.md",
+        "AGENT-ARCHITECTURE.md",
+    ],
+    "REQUIREMENTS.md": [
+        "Core Invariants",
+        "Karpathy First",
+        "Runtime Evidence Beats Design Intent",
+        "Rebuild Bar",
+    ],
+    "ARCHITECTURE.md": [
+        "Repository Layout",
+        "Deployment Model",
+        "Runtime Artifacts",
+        "Restart Requirement",
+    ],
+    "AGENT-ARCHITECTURE.md": [
+        "Agent Classes",
+        "Built-In Build Mode Vs Repo `@builder`",
+        "Verification Ownership",
+        "Adding Or Changing Agents",
+    ],
+    "WORKFLOWS.md": [
+        "Prometheus To Autonomous",
+        "Karpathy Loop Workflow",
+        "Worker Delegation Workflow",
+        "Documentation Workflow",
+    ],
+    "STRATEGY-CONTRACT.md": [
+        "Loop Strategy Contract",
+        "Karpathy-first invariant",
+        "Coordinator-class strategies",
+    ],
+    "PLUGINS.md": [
+        "Immutability Plugin",
+        "Autonomous Gate Plugin",
+        "Autonomous Loop Plugin",
+        "Limitations",
+    ],
+    "VALIDATION.md": [
+        "Standard Commands",
+        "Static Validator Responsibilities",
+        "Documentation Validation",
+        "Runtime Audit Responsibilities",
+    ],
+    "CONVENTIONS.md": [
+        "Shell and Script Portability Conventions",
+        "Agent-emitted commands",
+    ],
+    "strategy-template.md": [
+        "Applicability",
+        "Stop criteria",
+        "Escalation",
+    ],
+    "testing-methodology.md": [
+        "Testing Methodology",
+        "Runtime Validation Report",
+    ],
+}
 
 # Shell scripts tracked for shellcheck linting.
 # Each entry is (rel_path_from_repo_root, shellcheck_dialect).
@@ -80,6 +146,7 @@ EXPECTED_AGENT_FILES = [
     "octopus-arm.md",
     "data-scientist.md",
     "grounder.md",
+    "builder.md",
     "reviewer.md",
 ]
 EXPECTED_SKILL_FILES = [
@@ -96,6 +163,7 @@ EXPECTED_PLUGIN_FILES = [
     "opencode-autonomous-gate",
     "opencode-autonomous-loop",
 ]
+REQUIRED_EXAMPLE_FILES: dict[str, list[str]] = {}
 SUPPORTED_SKILL_FRONTMATTER = {"name", "description", "license", "compatibility", "metadata"}
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -177,6 +245,28 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "task",  "action": "allow", "pattern": "karpathy"},
         {"permission": "task",  "action": "allow", "pattern": "ralph-wiggum"},
         {"permission": "task",  "action": "allow", "pattern": "octopus"},
+        {"permission": "task",  "action": "allow", "pattern": "builder"},
+        {"permission": "task",  "action": "deny",  "pattern": "*"},
+    ],
+    "builder": [
+        {"permission": "bash",  "action": "ask",   "pattern": "*"},
+        {"permission": "bash",  "action": "allow", "pattern": "python *"},
+        {"permission": "bash",  "action": "allow", "pattern": "python3 *"},
+        {"permission": "bash",  "action": "allow", "pattern": "uv run *"},
+        {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
+        {"permission": "bash",  "action": "allow", "pattern": "npm test*"},
+        {"permission": "bash",  "action": "allow", "pattern": "npm run *"},
+        {"permission": "bash",  "action": "allow", "pattern": "pnpm test*"},
+        {"permission": "bash",  "action": "allow", "pattern": "bun test*"},
+        {"permission": "bash",  "action": "allow", "pattern": "go test *"},
+        {"permission": "bash",  "action": "allow", "pattern": "cargo test*"},
+        {"permission": "bash",  "action": "allow", "pattern": "make test*"},
+        {"permission": "bash",  "action": "allow", "pattern": "rg *"},
+        {"permission": "bash",  "action": "allow", "pattern": "git status*"},
+        {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
+        {"permission": "bash",  "action": "allow", "pattern": "git log*"},
+        {"permission": "edit",  "action": "allow", "pattern": "*"},
+        {"permission": "write", "action": "allow", "pattern": "*"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
     "karpathy": [
@@ -302,6 +392,7 @@ EXPECTED_MODES: dict[str, str] = {
     "octopus-arm":    "subagent",
     "data-scientist": "subagent",
     "grounder":       "subagent",
+    "builder":        "subagent",
     "reviewer":       "subagent",
 }
 
@@ -902,6 +993,111 @@ def check_octopus_perception() -> list[Failure]:
     return failures
 
 
+def check_builder_delegation_contract() -> list[Failure]:
+    """Verify the @autonomous -> @builder worker delegation contract.
+
+    Builder is deliberately not a strategy. It is a scoped implementation worker
+    with no authority over progress, reviewer, task delegation, strategy, or
+    promise completion.
+    """
+    failures: list[Failure] = []
+    _print_header("A5. Builder worker delegation contract")
+
+    builder_path = AGENTS_DIR / "builder.md"
+    autonomous_path = AGENTS_DIR / "autonomous.md"
+    loop_path = PLUGINS_DIR / "opencode-autonomous-loop" / "index.js"
+
+    for path_obj, label in (
+        (builder_path, "agents/builder.md"),
+        (autonomous_path, "agents/autonomous.md"),
+        (loop_path, "plugins/opencode-autonomous-loop/index.js"),
+    ):
+        if not path_obj.exists():
+            failures.append(Failure("builder", f"{label} missing"))
+
+    if failures:
+        for f in failures:
+            _print_fail(f.message)
+        return failures
+
+    builder_text = builder_path.read_text(encoding="utf-8")
+    builder_fm = _frontmatter_block(builder_text)
+    builder_body = builder_text.split("---", 2)[-1].lower()
+    autonomous_text = autonomous_path.read_text(encoding="utf-8")
+    autonomous_fm = _frontmatter_block(autonomous_text)
+    autonomous_body = autonomous_text.split("---", 2)[-1].lower()
+    loop_text = loop_path.read_text(encoding="utf-8")
+
+    checks = [
+        (
+            "mode: subagent" in builder_fm,
+            "builder.md: must be mode: subagent",
+        ),
+        (
+            "hidden: true" in builder_fm,
+            "builder.md: must be hidden",
+        ),
+        (
+            re.search(r'edit\s*:\s*allow', builder_fm) is not None,
+            "builder.md: edit must be allowed",
+        ),
+        (
+            re.search(r'write\s*:\s*allow', builder_fm) is not None,
+            "builder.md: write must be allowed",
+        ),
+        (
+            re.search(r'"\*"\s*:\s*deny', builder_fm) is not None,
+            "builder.md: task must deny '*'",
+        ),
+        (
+            "progress.txt" in builder_body and "do not update" in builder_body,
+            "builder.md: must forbid progress.txt ownership",
+        ),
+        (
+            "do not call `@reviewer`" in builder_body,
+            "builder.md: must forbid reviewer authority",
+        ),
+        (
+            "do not emit promise tokens" in builder_body,
+            "builder.md: must forbid promise authority",
+        ),
+        (
+            "SCOPE_EXPANSION_NEEDED" in builder_text,
+            "builder.md: must report required scope expansion instead of widening silently",
+        ),
+        (
+            re.search(r'"builder"\s*:\s*allow', autonomous_fm) is not None,
+            "autonomous.md: task must allow builder",
+        ),
+        (
+            "component-scoped" in autonomous_body and "@builder" in autonomous_text,
+            "autonomous.md: must document when to use @builder",
+        ),
+        (
+            "disjoint" in autonomous_body and "parallel" in autonomous_body,
+            "autonomous.md: must document disjoint file sets for parallel builder delegation",
+        ),
+        (
+            "inspect the diff" in autonomous_body and "rerun" in autonomous_body,
+            "autonomous.md: must require post-builder diff inspection and verification",
+        ),
+        (
+            "builder" in loop_text and "subagent_message" in loop_text,
+            "autonomous-loop plugin: must track builder subagent messages",
+        ),
+    ]
+
+    for passed, message in checks:
+        if not passed:
+            failures.append(Failure("builder", message))
+            _print_fail(message)
+
+    if not failures:
+        _print_pass("Builder: hidden worker, scoped delegation, no completion authority, tracked in loop history")
+
+    return failures
+
+
 # ---------------------------------------------------------------------------
 # A. Preflight
 # ---------------------------------------------------------------------------
@@ -942,6 +1138,24 @@ def check_preflight() -> list[Failure]:
         else:
             _print_pass(f".opencode/skills/{name}")
 
+    for rel_path, markers in REQUIRED_EXAMPLE_FILES.items():
+        p = REPO_ROOT / rel_path
+        if not p.exists():
+            failures.append(Failure("examples", f"Missing required example file: {rel_path}"))
+            _print_fail(rel_path)
+            continue
+        content = p.read_text(encoding="utf-8")
+        missing_markers = [marker for marker in markers if marker not in content]
+        if missing_markers:
+            failures.append(Failure(
+                "examples",
+                f"{rel_path} is missing required content markers",
+                diff=[f"  missing: {marker}" for marker in missing_markers],
+            ))
+            _print_fail(f"{rel_path} (missing markers)")
+        else:
+            _print_pass(rel_path)
+
     if not DEPLOY_SCRIPT.exists():
         failures.append(Failure("preflight", f"Deploy script missing: {DEPLOY_SCRIPT}"))
         _print_fail("scripts/deploy-opencode-agents.sh")
@@ -964,6 +1178,25 @@ def check_preflight() -> list[Failure]:
             _print_fail(f"AGENTS.md (missing: {', '.join(missing_phrases)})")
         else:
             _print_pass("AGENTS.md")
+
+    # Durable docs architecture
+    for name, markers in REQUIRED_DOCS.items():
+        p = DOCS_DIR / name
+        if not p.exists():
+            failures.append(Failure("docs", f"Missing required docs file: docs/{name}"))
+            _print_fail(f"docs/{name}")
+            continue
+        content = p.read_text(encoding="utf-8")
+        missing_markers = [marker for marker in markers if marker not in content]
+        if missing_markers:
+            failures.append(Failure(
+                "docs",
+                f"docs/{name} is missing required content markers",
+                diff=[f"  missing: {marker}" for marker in missing_markers],
+            ))
+            _print_fail(f"docs/{name} (missing markers)")
+        else:
+            _print_pass(f"docs/{name}")
 
     # shellcheck linting
     failures.extend(_check_shellcheck())
@@ -1903,6 +2136,11 @@ def main() -> None:
 
     # A4. Octopus perception contract (no sandbox needed)
     all_failures += check_octopus_perception()
+    if all_failures:
+        sys.exit(report(all_failures))
+
+    # A5. Builder worker delegation contract (no sandbox needed)
+    all_failures += check_builder_delegation_contract()
     if all_failures:
         sys.exit(report(all_failures))
 
