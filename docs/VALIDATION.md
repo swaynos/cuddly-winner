@@ -17,6 +17,26 @@ Run plugin unit tests:
 node --test tests/plugins/*.test.mjs
 ```
 
+Run the deterministic agent-value benchmark in default mock mode:
+
+```bash
+python3 evals/agent_value/run_benchmark.py --mode mock --out evals/agent_value/results/latest.json
+python3 evals/agent_value/score.py evals/agent_value/results/latest.json
+python3 -m unittest discover -s evals/agent_value/tests -p "test_*.py"
+```
+
+The benchmark compares baseline OpenCode-style behavior with the repo's enhanced
+agent workflow on frozen adversarial tasks. It is not a static configuration
+check and it is not a general model-intelligence benchmark. It scores observable
+artifacts only: verifier results, evidence blocks, reviewer and strategy signals,
+spec freshness, progress tracking, immutable-file safety, and honest completion.
+The default `mock` mode is deterministic and requires no live LLM credentials.
+Optional live OpenCode runs may be added later, but they must remain disposable
+and skipped unless credentials and OpenCode are available.
+
+Generated benchmark results are written under `evals/agent_value/results/` and
+are non-durable. They are ignored by Git.
+
 Run the OpenCode suite validator without LLM-backed checks:
 
 ```bash
@@ -59,6 +79,33 @@ python3 tests/audit_run.py --project /path/to/project --session <session-id>
 - plugin startup logs;
 - optional plugin hook behavior with a real LLM provider.
 
+## Agent-Value Benchmark Responsibilities
+
+`evals/agent_value/` must provide a frozen, reproducible harness that answers a
+different question from static validation: whether the custom agent workflow adds
+measurable value over a baseline workflow on the same tasks.
+
+The benchmark must:
+
+- run locally in deterministic `mock` mode without live LLM credentials;
+- create disposable temp workspaces and never mutate the user's OpenCode config;
+- keep fixtures, golden expectations, scorer, and scorer tests immutable via
+  `.opencode/immutable.json`;
+- write generated run output under `evals/agent_value/results/`;
+- report `baseline_score`, `enhanced_score`, and scalar `agent_value_score`;
+- penalize polished-but-noncompliant behavior, including stale SPEC use, missing
+  evidence, fake reviewer approval, strategy theater, false completion, and
+  unsafe immutable-file edits.
+- validate Prometheus as a read-only diverge-converge planner, not as an
+  ant-style traversal agent: valid Prometheus outputs must either bounce trivial
+  requests or return an exact payload with at least two distinct approaches,
+  concrete kill-reasons, front-runner validation, and a correct strategy
+  directive.
+
+Completion for changes that affect agent behavior, plugin semantics, strategy
+selection, or validation should include the benchmark command unless the change
+is clearly unrelated to runtime value measurement.
+
 The validator must run in a disposable sandbox and never mutate the user's real
 OpenCode configuration.
 
@@ -99,7 +146,8 @@ The validator must require the canonical docs architecture:
 - `docs/testing-methodology.md`
 
 It must also require `AGENTS.md` to state that `docs/` is the durable source of
-truth and `SPEC.md` is not the canonical long-term requirements record.
+truth and `SPEC.md`, when present, is not the canonical long-term requirements
+record. Project validation must not require `SPEC.md` to exist.
 
 ## Runtime Audit Responsibilities
 

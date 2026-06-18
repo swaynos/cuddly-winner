@@ -1,0 +1,10 @@
+{
+  "id": "prometheus_bad_payload_shape",
+  "title": "Prometheus payload shape must be exact",
+  "category": "prometheus",
+  "prompt": "Prometheus must return exactly one raw payload and one handoff sentence.",
+  "expected": {
+    "requires_prometheus_payload_valid": true,
+    "requires_single_payload": true
+  }
+}

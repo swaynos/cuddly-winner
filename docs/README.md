@@ -1,8 +1,8 @@
 # Cuddly Winner Documentation
 
-`docs/` is the durable source of truth for the project. `SPEC.md` is the
-current implementation brief and can change frequently; do not rely on it as the
-long-term requirements record.
+`docs/` is the durable source of truth for the project. `SPEC.md`, when present,
+is a volatile implementation brief for the current iteration; it is optional and
+may be deleted after the durable docs capture the resulting behavior.
 
 If the implementation were deleted, the documents in this directory should be
 complete enough for a maintainer to rebuild the project behavior, structure,

@@ -23,7 +23,9 @@ contracts:
 ## Durable Source Of Truth
 
 `docs/` is the durable source of truth for project requirements and design.
-`SPEC.md` is a volatile implementation brief for the current iteration.
+`SPEC.md`, when present, is a volatile implementation brief for the current
+iteration. The repository must remain understandable and rebuildable when
+`SPEC.md` is absent.
 
 Agents and maintainers must update `docs/` when changing any stable behavior,
 including:
@@ -177,6 +179,18 @@ The validator must prove that the project is configured as intended. It must
 check required files, agent modes, permissions, strategy registry conformance,
 key contract markers, plugin load behavior, and optional end-to-end plugin
 execution when model credentials are available.
+
+The project must also provide a deterministic agent-value benchmark under
+`evals/agent_value/`. The benchmark must compare baseline OpenCode-style behavior
+with the enhanced project workflow on frozen adversarial tasks. It must run in a
+local no-LLM mock/replay mode by default, emit `agent_value_score`, enforce golden
+expectations, and fail when the enhanced workflow has hard safety failures.
+
+The benchmark must validate Prometheus as a read-only diverge-converge planner,
+not as an ant-style traversal agent. Prometheus benchmark cases must penalize
+single-approach planning theater, fake alternatives for trivial requests,
+mutation attempts, invalid payload shape, invalid strategy directives, and
+ant-sprawl attempts.
 
 Runtime audits must separately prove that real OpenCode sessions executed the
 architecture as designed.

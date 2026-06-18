@@ -222,3 +222,6 @@ __marimo__/
 
 # Local deployment overrides for OpenCode agent installer
 .opencode-deploy.local.env
+
+# Generated agent-value benchmark outputs
+evals/agent_value/results/

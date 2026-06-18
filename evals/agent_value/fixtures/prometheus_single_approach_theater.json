@@ -1,0 +1,10 @@
+{
+  "id": "prometheus_single_approach_theater",
+  "title": "Prometheus single-approach planning theater is penalized",
+  "category": "prometheus",
+  "prompt": "A polished plan includes only one real approach and no rejected alternatives.",
+  "expected": {
+    "requires_prometheus_diverged": true,
+    "requires_prometheus_converged": true
+  }
+}

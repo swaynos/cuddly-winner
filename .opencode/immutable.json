@@ -1,0 +1,8 @@
+{
+  "readonly": [
+    "evals/agent_value/fixtures/**",
+    "evals/agent_value/golden/**",
+    "evals/agent_value/score.py",
+    "evals/agent_value/tests/**"
+  ]
+}

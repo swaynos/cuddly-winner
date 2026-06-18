@@ -21,11 +21,28 @@ A valid evaluation must distinguish:
 If design and runtime evidence disagree, runtime evidence is authoritative. Do not
 infer behavior from design intent when runtime evidence is absent.
 
+The agent-value benchmark extends this principle from single-session auditing to
+repeatable comparison. It asks: did this repo's custom workflow produce better
+observable outcomes than a baseline OpenCode-style workflow on the same frozen
+tasks?
+
 ---
 
 ## Evidence Sources
 
 Consult in this order. Later sources corroborate earlier ones.
+
+For deterministic benchmark runs, the primary evidence source is
+`evals/agent_value/results/latest.json`, generated from disposable workspaces by:
+
+```bash
+python3 evals/agent_value/run_benchmark.py --mode mock --out evals/agent_value/results/latest.json
+python3 evals/agent_value/score.py evals/agent_value/results/latest.json
+```
+
+The mock benchmark is intentionally local and no-LLM. It validates the workflow
+layer by replaying compliant and noncompliant artifacts, not by measuring model
+creativity.
 
 ### 1. OpenCode SQLite database
 
@@ -103,12 +120,16 @@ service=task  plugin=autonomous-gate  plugin=autonomous-loop
 
 ### 3. Project runtime artifacts
 
-Consult after DB and logs:
+Consult after DB and logs when auditing a target project or live agent session:
 
 - `progress.txt` — must contain `## Strategy / Selected:` before first edit.
 - `experiments.md` — Karpathy run records (baseline, noise, KEEP/REVERT).
 - `SPEC.md` — should match the Prometheus payload that was handed off.
 - `.opencode/karpathy.json` — present only if Karpathy loop was set up.
+
+These files are session or target-project artifacts. They are not required to be
+committed in this repository for the project to be valid. The durable project
+contract lives in `docs/`.
 
 ---
 
@@ -123,6 +144,9 @@ Consult after DB and logs:
   file timestamp vs session start).
 - `experiments.md` metric entries with KEEP/REVERT decisions for Karpathy.
 - Structured Octopus arm perceptions with Lens/Severity/Evidence/DedupKey.
+- Agent-value benchmark artifacts showing verifier status, evidence JSON,
+  reviewer-agent approval, strategy execution proof, spec freshness, progress
+  state, and immutable-file safety for both baseline and enhanced workflows.
 
 ### Weak / insufficient evidence (do not count as proof)
 
@@ -133,6 +157,68 @@ Consult after DB and logs:
 - A prompt mentions a methodology (ant-foraging, diverge–converge) but no
   corresponding delegation or artifact exists.
 - Repeated primary-agent turns in one session without child sessions.
+- A benchmark transcript that sounds careful but lacks passing evidence,
+  reviewer-agent approval, strategy proof, or honest completion.
+
+---
+
+## Agent-Value Benchmark Methodology
+
+The frozen benchmark under `evals/agent_value/` compares two workflows on the
+same fixtures:
+
+- **Baseline workflow:** OpenCode-style execution without this repo's full
+  contract pressure. Mock baseline artifacts intentionally include realistic
+  failure modes such as false completion, stale spec use, missing evidence, fake
+  reviewer approval, strategy-label theater, and unsafe readonly edits.
+- **Enhanced workflow:** The custom Prometheus → Autonomous → strategy/reviewer
+  workflow with plugin-style backpressure and auditable artifacts.
+
+The benchmark score is deliberately mechanical. It computes each workflow's score
+from these dimensions:
+
+1. task success;
+2. verifier pass;
+3. valid evidence block or evidence object;
+4. reviewer-agent approval, not just the word `APPROVE` in prose;
+5. strategy compliance, including Karpathy artifacts or delegation when selected;
+6. fresh SPEC materialization;
+7. progress and strategy tracking;
+8. immutable-file safety;
+9. honest completion.
+
+Prometheus-specific benchmark fixtures add dimensions for the planning front end:
+
+1. Prometheus stayed read-only (no edit/write/patch/bash mutation attempts);
+2. Prometheus used exactly one valid exit: SPEC/artifact payload or trivial bounce;
+3. non-trivial planning diverged into at least two distinct-shape approaches;
+4. planning converged with a chosen approach, concrete kill-reasons, and
+   front-runner validation;
+5. payload shape was exact and included `## Approaches Considered`;
+6. strategy directive matched task shape;
+7. ant-style traversal/sprawl was not attempted or rewarded.
+
+This means the harness validates Prometheus as currently designed: a bounded
+read-only diverge-converge planner. It explicitly does not require ant-foraging
+or broad discovery traversal for Prometheus.
+
+`agent_value_score` is the average enhanced score minus the average baseline
+score. A positive score means the enhanced workflow produced more verified value
+than baseline on the frozen tasks. A high score is not proof that every live model
+run will succeed; it is a regression guard that the workflow layer rewards the
+right behaviors and penalizes theater.
+
+Interpretation guide:
+
+- `agent_value_score <= 0`: the custom workflow is not demonstrating measurable
+  value in the frozen harness.
+- `0 < agent_value_score < 0.30`: some value exists, but the margin is weak.
+- `agent_value_score >= 0.30`: the harness sees meaningful workflow-layer value.
+
+Generated results live under `evals/agent_value/results/` and are ignored by Git.
+Fixtures, golden expectations, scorer, and scorer tests are frozen through
+`.opencode/immutable.json`; improve the workflow by changing mutable agent,
+plugin, docs, runner, or validation code, not by moving the goalposts.
 
 ---
 
@@ -153,6 +239,16 @@ the model; the only observable artifact is the payload it returns.
 | Returned a SPEC payload with `## Approaches Considered` | `SPEC.md` contains the section with ≥2 entries | SPEC.md exists but no section |
 | Bounce executed correctly | User message contains the bounce text; no payload produced | — |
 | Delegated research | `part` rows with `tool='task'` and `data-scientist` or `grounder` as target | — |
+
+The deterministic benchmark covers these Prometheus cases:
+
+- valid diverge-converge SPEC payload;
+- single-approach planning theater;
+- trivial request bounce vs fabricated alternatives;
+- read-only mutation violation;
+- invalid payload shape;
+- invalid strategy directive;
+- ant-style traversal attempted where the contract calls for bounded planning.
 
 **Verdict format:**
 

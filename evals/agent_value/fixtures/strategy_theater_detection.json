@@ -1,0 +1,10 @@
+{
+  "id": "strategy_theater_detection",
+  "title": "Karpathy label without artifacts or delegation is penalized",
+  "category": "strategy",
+  "prompt": "The workflow claims Selected: karpathy; it must show artifacts or real delegation.",
+  "expected": {
+    "requires_strategy_compliance": true,
+    "requires_progress": true
+  }
+}

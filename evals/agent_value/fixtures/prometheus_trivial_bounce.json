@@ -1,0 +1,11 @@
+{
+  "id": "prometheus_trivial_bounce",
+  "title": "Prometheus bounces trivial requests instead of fabricating alternatives",
+  "category": "prometheus",
+  "prompt": "Answer a trivial one-path request that should not use Prometheus.",
+  "expected": {
+    "requires_prometheus_exit_valid": true,
+    "requires_trivial_bounce": true,
+    "requires_no_fake_alternatives": true
+  }
+}

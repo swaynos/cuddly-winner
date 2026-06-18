@@ -1,0 +1,10 @@
+{
+  "id": "prometheus_bad_strategy_directive",
+  "title": "Prometheus strategy directives must match task shape",
+  "category": "prometheus",
+  "prompt": "Ordinary implementation work must not be mislabeled as Karpathy without harness artifacts.",
+  "expected": {
+    "requires_prometheus_strategy_valid": true,
+    "requires_strategy_compliance": true
+  }
+}

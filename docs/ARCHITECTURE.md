@@ -23,12 +23,14 @@ The architecture is intentionally layered:
 .
 |-- AGENTS.md                         Repo-wide agent rules and doc maintenance rule
 |-- README.md                         User-facing overview and install guide
-|-- SPEC.md                           Current volatile implementation brief
 |-- agents/                           Core OpenCode agent files
 |-- .opencode/
+|   |-- immutable.json                 Project-local frozen benchmark protections
 |   |-- skills/                       Core reusable OpenCode skills
 |   `-- strategies.json               Loop strategy registry
 |-- docs/                             Durable requirements and architecture docs
+|-- evals/                            Deterministic benchmark/evaluation harnesses
+|   `-- agent_value/                  Baseline-vs-enhanced workflow value benchmark
 |-- examples/                         Reference configs and runnable examples
 |-- plugins/                          OpenCode plugins shipped by this repo
 |-- scripts/                          Deployment scripts
@@ -129,7 +131,7 @@ uses a disposable sandbox and isolated OpenCode paths.
 
 Target projects may contain runtime files created or used by agents:
 
-- `SPEC.md` — current implementation brief.
+- `SPEC.md` — optional current implementation brief.
 - `progress.txt` — autonomous execution progress and strategy record.
 - `program.md` — Karpathy loop objective, metric, constraints, and stop criteria.
 - `experiments.md` — Karpathy baseline, noise, and keep/revert records.
@@ -138,8 +140,26 @@ Target projects may contain runtime files created or used by agents:
 - `.opencode/autonomous-loop/runs.json` — persisted autonomous run state.
 - `.opencode/autonomous-loop/status.json` — machine-readable status snapshot.
 
-`SPEC.md` is a runtime artifact and should not be treated as durable project
-architecture.
+`SPEC.md`, `progress.txt`, `program.md`, `experiments.md`, and
+`.opencode/karpathy.json` are runtime or loop artifacts. They are not required to
+exist in this repository unless the repository is actively carrying a current
+implementation brief or loop setup. Durable project behavior belongs in `docs/`.
+
+## Evaluation Harnesses
+
+`evals/agent_value/` contains the deterministic agent-value benchmark. It is a
+project-owned validation harness, not a runtime artifact from a single OpenCode
+session.
+
+The harness includes:
+
+- frozen fixtures under `evals/agent_value/fixtures/`;
+- golden expectations under `evals/agent_value/golden/`;
+- a deterministic runner, scorer, mock/replay artifacts, and unit tests;
+- generated results under `evals/agent_value/results/`, which are ignored by Git.
+
+The root `.opencode/immutable.json` protects the frozen benchmark fixtures,
+golden expectations, scorer, and tests from accidental agent edits.
 
 ## Trust And Permissions
 
@@ -159,6 +179,7 @@ The architecture is validated at multiple layers:
 - strategy registry and contract checks;
 - static prompt marker checks for key invariants;
 - plugin unit tests;
+- deterministic benchmark tests under `evals/agent_value/`;
 - sandbox deployment checks;
 - optional LLM-backed plugin hook checks;
 - runtime audit checks against OpenCode logs and database state.

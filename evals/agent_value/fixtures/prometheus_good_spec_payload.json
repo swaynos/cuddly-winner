@@ -1,0 +1,13 @@
+{
+  "id": "prometheus_good_spec_payload",
+  "title": "Prometheus returns a valid diverge-converge SPEC payload",
+  "category": "prometheus",
+  "prompt": "Plan a non-trivial implementation task using Prometheus' read-only diverge-converge contract.",
+  "expected": {
+    "requires_prometheus_read_only": true,
+    "requires_prometheus_diverged": true,
+    "requires_prometheus_converged": true,
+    "requires_prometheus_payload_valid": true,
+    "requires_prometheus_strategy_valid": true
+  }
+}
