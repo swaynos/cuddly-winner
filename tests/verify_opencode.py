@@ -107,6 +107,7 @@ REQUIRED_DOCS: dict[str, list[str]] = {
         "Autonomous Gate Plugin",
         "Autonomous Loop Plugin",
         "Limitations",
+        "mutation",
     ],
     "VALIDATION.md": [
         "Standard Commands",
@@ -126,6 +127,7 @@ REQUIRED_DOCS: dict[str, list[str]] = {
     "testing-methodology.md": [
         "Testing Methodology",
         "Runtime Validation Report",
+        "mutation",
     ],
 }
 
@@ -164,6 +166,20 @@ EXPECTED_PLUGIN_FILES = [
     "opencode-autonomous-loop",
 ]
 REQUIRED_EXAMPLE_FILES: dict[str, list[str]] = {}
+
+# Evaluation harness files that must exist.
+REQUIRED_EVAL_FILES: list[str] = [
+    "evals/mutation/run_mutation.py",
+    "evals/agent_value/run_benchmark.py",
+    "evals/agent_value/score.py",
+    "evals/seed_build/test_planning.py",
+    "evals/seed_build/test_build.py",
+    "evals/seed_build/oracle/CANONICAL_SPEC.md",
+    "evals/seed_build/oracle/planning_checks.py",
+    "evals/seed_build/oracle/failure_modes.py",
+    "evals/seed_build/oracle/reference/rules_engine.py",
+    "evals/seed_build/oracle/acceptance/test_rules_engine.py",
+]
 SUPPORTED_SKILL_FRONTMATTER = {"name", "description", "license", "compatibility", "metadata"}
 SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -1153,6 +1169,14 @@ def check_preflight() -> list[Failure]:
                 diff=[f"  missing: {marker}" for marker in missing_markers],
             ))
             _print_fail(f"{rel_path} (missing markers)")
+        else:
+            _print_pass(rel_path)
+
+    for rel_path in REQUIRED_EVAL_FILES:
+        p = REPO_ROOT / rel_path
+        if not p.exists():
+            failures.append(Failure("evals", f"Missing required eval file: {rel_path}"))
+            _print_fail(rel_path)
         else:
             _print_pass(rel_path)
 

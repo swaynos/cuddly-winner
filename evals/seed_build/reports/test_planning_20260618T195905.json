@@ -1,0 +1,7 @@
+{
+  "test_name": "test_planning",
+  "verdict": "SKIPPED",
+  "checks": [],
+  "evidence": {},
+  "error": "no model provider credentials found in environment"
+}

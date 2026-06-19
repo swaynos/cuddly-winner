@@ -79,6 +79,25 @@ The plugin cannot prevent the text of a promise token from appearing. It reacts
 after the message and posts corrective pressure so the agent must continue until
 the contract is satisfied.
 
+### Mutation gate
+
+When `.opencode/mutation.json` exists and `enabled: true`, the gate adds a
+**mutation-rigor precondition** to `COMPLETE`:
+
+- The result artifact at `result_path` must exist.
+- Its `score` must be `>= score_threshold`.
+- The result must be fresh: `generated_at` must be newer than the mtime of every
+  source file listed in the result's `files` array.
+
+The gate reads the JSON artifact directly; a transcript claim of a passing score
+does not satisfy it.
+
+The mutation config itself must be declared `readonly` in `.opencode/immutable.json`
+so the implementer cannot lower the threshold or exclude files to game the score.
+
+The gate is inert when `.opencode/mutation.json` is absent or `enabled: false`,
+making this feature opt-in per project.
+
 Feature flags:
 
 ```text

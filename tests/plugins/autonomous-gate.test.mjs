@@ -703,3 +703,177 @@ test("spec freshness: COMPLETE accepted when no Prometheus payload was observed 
     assert.equal(prompts.length, 0, "should not fail when no Prometheus payload was seen this session");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Mutation gate
+// ---------------------------------------------------------------------------
+
+async function setupMutationConfig(directory, cfg) {
+  const oc = path.join(directory, ".opencode");
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(oc, { recursive: true }));
+  await writeFile(path.join(oc, "mutation.json"), JSON.stringify(cfg), "utf-8");
+}
+
+async function writeMutationResult(directory, result) {
+  const oc = path.join(directory, ".opencode");
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(oc, { recursive: true }));
+  await writeFile(
+    path.join(oc, "mutation-result.json"),
+    JSON.stringify(result),
+    "utf-8",
+  );
+}
+
+const COMPLETE_WITH_EVIDENCE = [
+  "```json",
+  '{"command":"pytest -q","exit_code":0}',
+  "```",
+  "<promise>COMPLETE</promise>",
+].join("\n");
+
+test("mutation gate: inert when .opencode/mutation.json is absent", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-inert", agent: "reviewer", text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-inert", agent: "autonomous",
+      text: COMPLETE_WITH_EVIDENCE,
+    });
+
+    assert.equal(prompts.length, 0, "gate should be inert when mutation.json absent");
+  });
+});
+
+test("mutation gate: inert when enabled=false", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await setupMutationConfig(directory, { enabled: false, result_path: ".opencode/mutation-result.json", score_threshold: 0.70 });
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-disabled", agent: "reviewer", text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-disabled", agent: "autonomous",
+      text: COMPLETE_WITH_EVIDENCE,
+    });
+
+    assert.equal(prompts.length, 0, "gate should be inert when enabled=false");
+  });
+});
+
+test("mutation gate: blocks COMPLETE when result artifact is missing", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await setupMutationConfig(directory, { enabled: true, result_path: ".opencode/mutation-result.json", score_threshold: 0.70 });
+    // No result file written
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-missing", agent: "reviewer", text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-missing", agent: "autonomous",
+      text: COMPLETE_WITH_EVIDENCE,
+    });
+
+    assert.equal(prompts.length, 1, "should block when result is missing");
+    assert.match(prompts[0], /mutation/i);
+  });
+});
+
+test("mutation gate: blocks COMPLETE when score below threshold", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await setupMutationConfig(directory, { enabled: true, result_path: ".opencode/mutation-result.json", score_threshold: 0.70 });
+    await writeMutationResult(directory, {
+      score: 0.40, killed: 4, survived: 6, total: 10, files: [], generated_at: new Date().toISOString(), passed: false,
+    });
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-low", agent: "reviewer", text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-low", agent: "autonomous",
+      text: COMPLETE_WITH_EVIDENCE,
+    });
+
+    assert.equal(prompts.length, 1, "should block when score < threshold");
+    assert.match(prompts[0], /threshold|mutation/i);
+  });
+});
+
+test("mutation gate: blocks COMPLETE when result is stale", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    // Write a source file
+    const srcFile = path.join(directory, "src.py");
+    await writeFile(srcFile, "x = 1\n", "utf-8");
+
+    await setupMutationConfig(directory, { enabled: true, result_path: ".opencode/mutation-result.json", score_threshold: 0.70 });
+
+    // Result was generated BEFORE the source file (use a past timestamp)
+    const pastTs = new Date(Date.now() - 10000).toISOString();
+    await writeMutationResult(directory, {
+      score: 0.85, killed: 17, survived: 3, total: 20,
+      files: [srcFile],
+      generated_at: pastTs,
+      passed: true,
+    });
+
+    // Touch the source file to make it newer than the result
+    const now = new Date();
+    await import("node:fs/promises").then(({ utimes }) => utimes(srcFile, now, now));
+
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-stale", agent: "reviewer", text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-stale", agent: "autonomous",
+      text: COMPLETE_WITH_EVIDENCE,
+    });
+
+    assert.equal(prompts.length, 1, "should block when result is stale");
+    assert.match(prompts[0], /stale|mutation/i);
+  });
+});
+
+test("mutation gate: accepts COMPLETE when score passes and result is fresh", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await setupMutationConfig(directory, { enabled: true, result_path: ".opencode/mutation-result.json", score_threshold: 0.70 });
+    await writeMutationResult(directory, {
+      score: 0.85, killed: 17, survived: 3, total: 20, files: [], generated_at: new Date().toISOString(), passed: true,
+    });
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-pass", agent: "reviewer", text: "APPROVE",
+    });
+    await hooks["message.part.updated"]({
+      role: "assistant", sessionId: "s-mut-pass", agent: "autonomous",
+      text: COMPLETE_WITH_EVIDENCE,
+    });
+
+    assert.equal(prompts.length, 0, "should accept COMPLETE when mutation gate passes");
+  });
+});

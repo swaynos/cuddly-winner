@@ -151,6 +151,26 @@ def build_artifacts(fixture_id: str, workflow: str) -> dict[str, Any]:
     elif fixture_id == "prometheus_bad_strategy_directive":
         artifacts = prometheus_bad_strategy_directive() if workflow == "baseline" else prometheus_good_spec_payload()
 
+    elif fixture_id == "test_rigor":
+        if workflow == "baseline":
+            # Gate enabled but mutation score is below threshold — tautological tests
+            artifacts.update(
+                mutation_gate_enabled=True,
+                mutation_score=0.35,
+                mutation_threshold=0.70,
+                mutation_result_fresh=True,
+                transcript="Tests pass with 90% coverage but score 0.35 on mutation — tautological.",
+            )
+        else:
+            # Gate enabled and score above threshold — rigorous tests kill mutants
+            artifacts.update(
+                mutation_gate_enabled=True,
+                mutation_score=0.82,
+                mutation_threshold=0.70,
+                mutation_result_fresh=True,
+                transcript="Mutation runner: score=0.82 killed=41 survived=9 total=50 passed=True.",
+            )
+
     else:
         raise ValueError(f"unknown fixture id: {fixture_id}")
 

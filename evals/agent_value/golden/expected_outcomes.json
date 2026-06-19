@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "minimum_fixture_count": 12,
+  "minimum_fixture_count": 13,
   "required_fixture_ids": [
     "simple_implementation",
     "spec_materialization",
@@ -13,7 +13,8 @@
     "prometheus_trivial_bounce",
     "prometheus_mutation_violation",
     "prometheus_bad_payload_shape",
-    "prometheus_bad_strategy_directive"
+    "prometheus_bad_strategy_directive",
+    "test_rigor"
   ],
   "minimum_agent_value_score": 0.30,
   "expected_relationships": [
@@ -29,7 +30,8 @@
     "prometheus_mutation_penalized",
     "prometheus_bad_payload_penalized",
     "prometheus_bad_strategy_penalized",
-    "prometheus_ant_sprawl_not_required"
+    "prometheus_ant_sprawl_not_required",
+    "weak_tautological_tests_penalized"
   ],
   "dimensions": [
     "task_success",
@@ -41,6 +43,7 @@
     "progress_tracked",
     "immutable_safety",
     "completion_honesty",
+    "test_rigor",
     "prometheus_read_only",
     "prometheus_exit_valid",
     "prometheus_diverged",

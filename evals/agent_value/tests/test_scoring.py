@@ -96,8 +96,16 @@ class AgentValueScoringTests(unittest.TestCase):
                 "prometheus_mutation_violation",
                 "prometheus_bad_payload_shape",
                 "prometheus_bad_strategy_directive",
+                "test_rigor",
             }:
                 self.assertIn(expected, fixture_ids)
+
+    def test_weak_tests_score_below_rigorous_tests(self) -> None:
+        weak = score.score_workflow(mocks.build_artifacts("test_rigor", "baseline"))
+        rigorous = score.score_workflow(mocks.build_artifacts("test_rigor", "enhanced"))
+        self.assertFalse(weak["dimensions"]["test_rigor"])
+        self.assertTrue(rigorous["dimensions"]["test_rigor"])
+        self.assertLess(weak["score"], rigorous["score"])
 
     def test_scorer_reports_enhanced_hard_safety_failures(self) -> None:
         result = {

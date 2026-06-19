@@ -185,7 +185,15 @@ from these dimensions:
 6. fresh SPEC materialization;
 7. progress and strategy tracking;
 8. immutable-file safety;
-9. honest completion.
+9. honest completion;
+10. test rigor (mutation gate result meets threshold when gate is enabled).
+
+The `test_rigor` dimension closes the "self-graded paper" gap: when a mutation
+gate is required, a workflow that produces only tautological tests scores lower
+than one that proves tests survive mutation. A weak test suite with high coverage
+but a low mutation kill score fails this dimension; a rigorous suite that kills
+most mutants passes. The scorer reads the `mutation_score` field from workflow
+artifacts, not from transcript text.
 
 Prometheus-specific benchmark fixtures add dimensions for the planning front end:
 
@@ -514,3 +522,79 @@ Prometheus and Autonomous contract updates that followed.
 
 This baseline documents the known gap and is the reference against which future
 runs should be compared to confirm the contracts are holding.
+
+---
+
+## Seed-to-Build Live Tests
+
+The harness under `evals/seed_build/` provides two live end-to-end tests that
+exercise the two key handoffs the framework exists to perform.
+
+### Test 1 — loose idea → @prometheus → well-formed SPEC
+
+`evals/seed_build/test_planning.py` feeds the seed idea
+(`evals/seed_build/seed/idea.md`: "Build a workflow automation tool for real
+estate teams") to a live `@prometheus` agent in a disposable workspace. It
+captures the SPEC `@prometheus` returns and scores it against the frozen planning
+oracle (`oracle/planning_checks.py`), checking:
+
+- scope narrowed (UI/email/DB in Non-goals or absent from Goals);
+- >=2 distinct approaches with concrete kill-reasons;
+- explicit security/authorization constraint;
+- objective, placeholder-free acceptance criteria;
+- single complete SPEC payload;
+- strategy directive present.
+
+The seed is deliberately vague and over-ambitious ("workflow automation tool for
+real estate teams"). Test 1 validates that `@prometheus` performs its core job:
+scoping, diverge–converge, and returning a plan the team would actually ship.
+
+### Test 2 — canonical SPEC → @autonomous → great build
+
+`evals/seed_build/test_build.py` feeds the frozen canonical SPEC
+(`oracle/CANONICAL_SPEC.md`) to a live `@autonomous` agent in a disposable
+workspace. It validates the produced implementation against:
+
+- the frozen behavioral acceptance suite (`oracle/acceptance/test_rules_engine.py`):
+  deterministic output, typed rejection, ownership/authorization enforced, no
+  network/DB side effects;
+- failure-mode checks (`oracle/failure_modes.py`): hardcoded secrets, auth bypass,
+  silent failure, duplicated logic, network side effects in core path;
+- workflow-contract compliance: `progress.txt` updated, strategy recorded, evidence
+  block present.
+
+The canonical SPEC (`oracle/CANONICAL_SPEC.md`) is the shared seam between the
+two tests: Test 1 must converge toward it; Test 2 consumes it. This keeps
+planning quality and build quality independently diagnosable.
+
+### Oracle self-consistency
+
+`evals/seed_build/tests/test_oracle_selfcheck.py` is a deterministic (no-LLM)
+self-test proving the oracle is satisfiable and self-consistent:
+
+- the reference implementation passes all acceptance tests;
+- the reference passes all failure-mode checks;
+- the canonical SPEC passes all planning checks;
+- a deliberately vulnerable reference is flagged by failure-mode checks;
+- a deliberately weak SPEC fails planning checks.
+
+Run before the live tests: `python3 -m unittest discover -s evals/seed_build/tests -p "test_*.py"`.
+
+### Live-only, SKIPPED when unavailable
+
+Both live tests require OpenCode on PATH and at least one model provider
+credential. When absent they print SKIPPED and exit 0. They are never included
+in `python3 tests/verify_opencode.py --skip-llm` or `node --test`.
+
+### Verdict format
+
+Each live test emits PASS/PARTIAL/FAIL/SKIPPED to stdout and writes a timestamped
+JSON report under `evals/seed_build/reports/`. Exit code is 0 for PASS or SKIPPED,
+1 for FAIL or PARTIAL.
+
+| Verdict | Meaning |
+|---|---|
+| PASS | All checks passed |
+| PARTIAL | ≥50% checks passed; investigate degraded behavior |
+| FAIL | <50% checks passed; agent produced an inadequate result |
+| SKIPPED | OpenCode or credentials not available |

@@ -66,9 +66,34 @@ The standard execution workflow is:
 5. Autonomous reads `SPEC.md` and records strategy selection in `progress.txt`.
 6. Autonomous executes directly or invokes the selected strategy subagent.
 7. Autonomous verifies after changes.
-8. Autonomous calls `@reviewer` with the spec, diff summary, and evidence.
-9. Autonomous continues on `REQUEST_CHANGES` or completes on `APPROVE` plus valid
-   evidence.
+8. When `.opencode/mutation.json` is present and enabled, autonomous runs the
+   mutation runner diff-scoped, feeds surviving mutants back as failing test
+   requirements, and commits the result artifact before proceeding to review.
+9. Autonomous calls `@reviewer` with the spec, diff summary, and evidence.
+10. Autonomous continues on `REQUEST_CHANGES` or completes on `APPROVE` plus valid
+    evidence (and a passing mutation result when required).
+
+If no `SPEC.md` exists and there is no current visible spec payload,
+`@autonomous` should tell the user to run `@prometheus` first.
+
+## Test-Rigor Lifecycle (when mutation gate is enabled)
+
+When a project has `.opencode/mutation.json` with `enabled: true`, autonomous
+must follow this additional sequence to prevent the "self-graded paper" failure
+(writing weak tests that pass only because they don't challenge the implementation):
+
+1. **Red-first:** author tests before implementation; confirm they fail first.
+2. **Review:** get tests reviewed against the spec acceptance criteria.
+3. **Freeze:** add tests and `.opencode/mutation.json` to `readonly` in
+   `.opencode/immutable.json`.
+4. **Implement:** write code until frozen tests go green.
+5. **Mutation run:** execute `evals/mutation/run_mutation.py` diff-scoped; feed
+   survivors back as failing targets until kill score ≥ threshold.
+6. **Commit result:** write the JSON result artifact; the gate reads it.
+7. **Complete:** emit `COMPLETE` once gate, reviewer, and evidence all pass.
+
+There is no implementer unfreeze path. A genuinely wrong frozen test requires
+re-running the test-authoring and review cycle, recorded in `progress.txt`.
 
 If no `SPEC.md` exists and there is no current visible spec payload,
 `@autonomous` should tell the user to run `@prometheus` first.

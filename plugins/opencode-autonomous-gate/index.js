@@ -196,6 +196,89 @@ async function specPresent(directory) {
   return false;
 }
 
+/**
+ * Check mutation gate:
+ *   - Inert when .opencode/mutation.json is absent or enabled=false.
+ *   - When enabled, reads the result artifact at result_path.
+ *   - Blocks COMPLETE if:
+ *       * result artifact is missing
+ *       * score < score_threshold
+ *       * result is stale (generated_at is older than the newest mtime of
+ *         the files listed in the result)
+ *
+ * Returns null (passed / not applicable) or a failure-reason string.
+ */
+async function checkMutationGate(directory) {
+  const configPath = path.join(directory, ".opencode", "mutation.json");
+  if (!(await fileExists(configPath))) return null;
+
+  let config;
+  try {
+    config = JSON.parse(await fs.readFile(configPath, "utf-8"));
+  } catch {
+    return "Failed to parse .opencode/mutation.json — check JSON syntax.";
+  }
+
+  if (!config.enabled) return null; // opt-out
+
+  const resultRelPath = config.result_path || ".opencode/mutation-result.json";
+  const resultPath = path.join(directory, resultRelPath);
+
+  if (!(await fileExists(resultPath))) {
+    return (
+      "Mutation gate enabled but no result artifact found at " +
+      `${resultRelPath}. ` +
+      "Run the mutation runner (evals/mutation/run_mutation.py) and commit " +
+      "the result before emitting COMPLETE."
+    );
+  }
+
+  let result;
+  try {
+    result = JSON.parse(await fs.readFile(resultPath, "utf-8"));
+  } catch {
+    return `Failed to parse mutation result at ${resultRelPath} — check JSON syntax.`;
+  }
+
+  const threshold = config.score_threshold ?? 0.70;
+  const score = Number(result.score ?? 0);
+
+  if (score < threshold) {
+    return (
+      `Mutation gate: score ${score.toFixed(4)} is below threshold ${threshold.toFixed(2)}. ` +
+      "Strengthen the tests until surviving mutants are killed, then re-run the " +
+      "mutation runner and commit the updated result. " +
+      `Survivors to fix: ${(result.survived || 0)} mutant(s) survived.`
+    );
+  }
+
+  // Staleness check: generated_at must be after the mtime of all listed files.
+  if (result.generated_at && Array.isArray(result.files) && result.files.length > 0) {
+    const resultTs = new Date(result.generated_at).getTime();
+    if (!isNaN(resultTs)) {
+      for (const relFile of result.files) {
+        const absFile = path.isAbsolute(relFile)
+          ? relFile
+          : path.join(directory, relFile);
+        try {
+          const stat = await fs.stat(absFile);
+          if (stat.mtimeMs > resultTs) {
+            return (
+              `Mutation result is stale: ${relFile} was modified after the result was ` +
+              `generated (result: ${result.generated_at}, file mtime: ${new Date(stat.mtimeMs).toISOString()}). ` +
+              "Re-run the mutation runner and commit the updated result."
+            );
+          }
+        } catch {
+          // File not found — not a staleness failure; the result may list a deleted file.
+        }
+      }
+    }
+  }
+
+  return null; // passed
+}
+
 async function reviewerAvailable(directory) {
   // Check local agent folders first
   const local1 = path.join(directory, ".opencode/agents/reviewer.md");
@@ -549,6 +632,10 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
         st.prometheusPayloadHash,
       );
       if (freshnessFailure) reasons.push(freshnessFailure);
+
+      // Mutation gate: inert unless .opencode/mutation.json exists and enabled.
+      const mutationFailure = await checkMutationGate(directory);
+      if (mutationFailure) reasons.push(mutationFailure);
 
       if (reasons.length) {
         await log("warn", "Rejecting <promise>COMPLETE</promise>", { reasons });

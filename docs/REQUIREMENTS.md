@@ -100,6 +100,27 @@ Completion claims require fresh evidence. At minimum, `@autonomous` must provide
 a strict fenced JSON evidence block with the verification command, exit code, and
 excerpt expected by the autonomous gate plugin.
 
+### Test Rigor (Mutation Gate)
+
+An agent that both writes the code and authors the tests that verify it can write
+weak or tautological tests to force `exit_code 0` without proving correct behavior.
+This "self-graded paper" failure is not caught by the adversarial review pipeline,
+which evaluates source-code defects rather than test quality.
+
+When a project opts in by providing `.opencode/mutation.json` with `enabled: true`,
+`@autonomous` must also satisfy a mutation-rigor precondition before `COMPLETE` is
+accepted:
+
+- Tests must be authored in a red-first (TDD) phase before implementation.
+- Tests must be reviewed before being frozen.
+- Once frozen (via `.opencode/immutable.json` readonly), tests may not be weakened
+  by the implementer.
+- The mutation runner must be executed diff-scoped on changed files, produce a
+  committed result artifact, and the kill score must meet the configured threshold.
+- The mutation config itself must be frozen as a readonly immutable judge so the
+  implementer cannot lower the threshold or exclude files to game the score.
+- The gate reads the committed artifact; a transcript claim does not suffice.
+
 ### Progress Is Durable
 
 `@autonomous` must maintain `progress.txt` during execution. Strategy selection

@@ -339,6 +339,39 @@ COMPLETE requires ALL of:
 - The latest message contains an evidence block for the final verification run
   with `exit_code: 0`.
 - `@reviewer` produced an `APPROVE` verdict in this session (if the `task` tool is available in the session).
+- When `.opencode/mutation.json` exists and `enabled: true`, a mutation-result
+  artifact at `result_path` must exist, have `score >= score_threshold`, and be
+  fresh (generated after the last change to the mutated source files). The gate
+  reads the artifact on disk; a transcript claim does not satisfy this check.
+
+# Test-rigor lifecycle (when .opencode/mutation.json is present)
+
+To close the "self-graded paper" failure mode — where the implementer both writes
+the code and the tests that verify it — follow this lifecycle when a project has
+enabled the mutation gate:
+
+1. **Author tests first (red phase).** Write tests that fail before any
+   implementation. Confirm they fail. This proves the tests are testing something
+   real, not vacuously passing.
+2. **Get tests reviewed.** Invoke `@review-hunter` / `@review-skeptic` /
+   `@reviewer` on the test code against the spec's acceptance criteria before
+   any implementation begins.
+3. **Freeze tests and mutation config.** Add the test files and
+   `.opencode/mutation.json` to the `readonly` list in `.opencode/immutable.json`.
+   Record this in `progress.txt`.
+4. **Implement until tests go green.** The frozen tests cannot be weakened.
+5. **Run the mutation runner (diff-scoped).** Feed any surviving mutants back as
+   additional failing test requirements and iterate until the kill score exceeds
+   the threshold.
+6. **Commit the mutation-result JSON.** The gate reads this artifact; do not rely
+   on transcript evidence for mutation results.
+7. **Emit COMPLETE** with the standard evidence block after the gate accepts.
+
+**No implementer unfreeze.** There is no mechanism for the implementer to edit a
+frozen test mid-implementation. If a frozen test is genuinely wrong (not merely
+hard to pass), the correct action is to record the justification in `progress.txt`
+and re-run the full test-authoring + review cycle before freezing again. This is
+by design: the cost of re-review is the safeguard against metric gaming.
 
 WORK_STUCK requires ALL of:
 - A spec file exists.

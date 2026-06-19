@@ -19,6 +19,23 @@ node --test tests/plugins/*.test.mjs
 
 Run the deterministic agent-value benchmark in default mock mode:
 
+Run the oracle deterministic self-tests (no credentials required):
+
+```bash
+python3 -m unittest discover -s evals/seed_build/tests -p "test_*.py"
+python3 evals/seed_build/oracle/reference/selfcheck.py
+```
+
+Run the live seed-to-build tests (require OpenCode + model credentials):
+
+```bash
+python3 evals/seed_build/test_planning.py   # Test 1: idea → @prometheus → SPEC
+python3 evals/seed_build/test_build.py      # Test 2: SPEC → @autonomous → build
+```
+
+Both live tests print SKIPPED and exit 0 when OpenCode or credentials are absent.
+They are never part of the deterministic CI suite.
+
 ```bash
 python3 evals/agent_value/run_benchmark.py --mode mock --out evals/agent_value/results/latest.json
 python3 evals/agent_value/score.py evals/agent_value/results/latest.json
