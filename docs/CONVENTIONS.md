@@ -4,6 +4,23 @@ This project targets **macOS and Linux** with identical behavior on both.
 
 ---
 
+## Python environment — MANDATORY
+
+**NEVER run against the system Python. NEVER use pixi, poetry, pipenv, conda, or pdm.**
+
+This project uses **pyenv + virtualenv** exclusively. Before running any `python3`
+command in a script or agent:
+
+1. Confirm a virtualenv is active:
+   `python3 -c "import sys; assert sys.prefix != sys.base_prefix, 'NOT IN A VENV'"`
+2. If no venv is active, stop and surface an error. Do not fall back to system Python.
+3. Never create a virtualenv with any tool other than pyenv.
+
+Violating this rule corrupts the user's system Python and poisons test results.
+This is not a suggestion. It is a hard rule enforced at the top of `AGENTS.md`.
+
+---
+
 ## The core rule
 
 > **Detect the shell. Delegate to the right interpreter. Never assume.**

@@ -1,5 +1,18 @@
 # Agent Rules
 
+## Python environment — MANDATORY
+
+**NEVER run against the system Python. NEVER use pixi, poetry, pipenv, conda, or pdm.**
+
+This project uses **pyenv + virtualenv** exclusively.
+
+Before running any `python3` command:
+1. Confirm a virtualenv is active: `python3 -c "import sys; assert sys.prefix != sys.base_prefix, 'NOT IN A VENV'"`.
+2. If no venv is active, stop and tell the user to activate one.
+3. Never fall back to system Python. Never create a venv with a package manager other than pyenv.
+
+Violating this rule corrupts the user's system Python and poisons test results.
+
 ## Git commits
 
 Do NOT commit to Git unless the user explicitly asks you to.
