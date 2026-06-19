@@ -53,4 +53,5 @@ Thumbs.db
 
 # Project-specific paths
 evals/agent_value/results/
+evals/seed_build/reports/
 *.log

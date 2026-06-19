@@ -30,7 +30,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _harness import (
     PASS, PARTIAL, FAIL, SKIPPED,
-    TestReport, make_workspace, write_report, should_skip, run_opencode_agent,
+    TestReport, make_workspace, write_report, should_skip,
+    run_opencode_agent, dry_run_autonomous,
 )
 
 ORACLE    = Path(__file__).resolve().parent / "oracle"
@@ -43,22 +44,26 @@ ROOT      = Path(__file__).resolve().parents[2]
 def _load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod  # register before exec so @dataclass resolves annotations
     spec.loader.exec_module(mod)
     return mod
 
 
 def _find_rules_engine(workspace: Path) -> Path | None:
-    """Locate the built rules_engine.py in the workspace."""
-    candidates = list(workspace.rglob("rules_engine.py"))
-    if candidates:
-        return candidates[0]
-    return None
+    """Locate the built rules_engine.py in the workspace, excluding the oracle copy."""
+    oracle_readonly = workspace / ".oracle_readonly"
+    candidates = [
+        p for p in workspace.rglob("rules_engine.py")
+        if not str(p).startswith(str(oracle_readonly))
+    ]
+    return candidates[0] if candidates else None
 
 
 def _run_acceptance_suite(engine_path: Path) -> tuple[bool, str]:
-    """Run the frozen acceptance tests against the built engine."""
+    """Run the frozen acceptance tests against the built engine using unittest."""
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", str(ACCEPTANCE), "-q", "--tb=short"],
+        [sys.executable, "-m", "unittest", "discover",
+         "-s", str(ACCEPTANCE), "-p", "test_*.py", "-v"],
         env={**os.environ, "RULES_ENGINE_PATH": str(engine_path)},
         capture_output=True,
         text=True,
@@ -126,7 +131,7 @@ def _check_contract_compliance(workspace: Path) -> list[dict]:
     return checks
 
 
-def run_test(workspace: Path) -> TestReport:
+def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     report = TestReport(test_name="test_build")
 
     # Copy the canonical SPEC into the workspace
@@ -137,18 +142,21 @@ def run_test(workspace: Path) -> TestReport:
     oracle_dest = workspace / ".oracle_readonly"
     shutil.copytree(ORACLE, oracle_dest)
 
-    # Run @autonomous against the canonical SPEC
-    prompt = (
-        "Materialize the SPEC.md in this workspace verbatim and execute it. "
-        "Implement the workflow rules engine as specified. "
-        "Write tests, verify, review, and emit COMPLETE when done."
-    )
-    rc, stdout, stderr = run_opencode_agent(
-        agent="autonomous",
-        prompt=prompt,
-        workspace=workspace,
-        timeout_seconds=900,
-    )
+    if dry_run:
+        rc, stdout, stderr = dry_run_autonomous(workspace)
+    else:
+        # Run @autonomous against the canonical SPEC
+        prompt = (
+            "Materialize the SPEC.md in this workspace verbatim and execute it. "
+            "Implement the workflow rules engine as specified. "
+            "Write tests, verify, review, and emit COMPLETE when done."
+        )
+        rc, stdout, stderr = run_opencode_agent(
+            agent="autonomous",
+            prompt=prompt,
+            workspace=workspace,
+            timeout_seconds=900,
+        )
 
     report.evidence["opencode_exit_code"] = rc
     report.evidence["stdout_tail"] = stdout[-3000:] if stdout else ""
@@ -214,23 +222,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=None, help="Path to write JSON report")
     parser.add_argument("--keep-workspace", action="store_true",
                         help="Do not delete the workspace after the run")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Use stub agent responses to exercise all scoring logic without live agents")
     args = parser.parse_args(argv)
 
-    skip, reason = should_skip()
-    if skip:
-        report = TestReport(
-            test_name="test_build",
-            verdict=SKIPPED,
-            error=reason,
-        )
-        print(report.render())
-        out_path = write_report(report, Path(args.out).parent if args.out else REPORTS)
-        print(f"Report: {out_path}")
-        return 0
+    if not args.dry_run:
+        skip, reason = should_skip()
+        if skip:
+            report = TestReport(
+                test_name="test_build",
+                verdict=SKIPPED,
+                error=reason,
+            )
+            print(report.render())
+            out_path = write_report(report, Path(args.out).parent if args.out else REPORTS)
+            print(f"Report: {out_path}")
+            return 0
 
     workspace = make_workspace("build")
     try:
-        report = run_test(workspace)
+        report = run_test(workspace, dry_run=args.dry_run)
     except Exception as e:
         report = TestReport(test_name="test_build", verdict=FAIL, error=str(e))
     finally:

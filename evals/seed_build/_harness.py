@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+ORACLE = Path(__file__).resolve().parent / "oracle"
 
 # Verdict constants matching docs/testing-methodology.md
 PASS    = "PASS"
@@ -27,7 +28,7 @@ SKIPPED = "SKIPPED"
 @dataclass
 class TestReport:
     test_name: str
-    verdict: str
+    verdict: str = ""
     checks: list[dict] = field(default_factory=list)
     evidence: dict = field(default_factory=dict)
     error: str = ""
@@ -60,13 +61,15 @@ def opencode_available() -> bool:
 
 
 def credentials_available() -> bool:
-    """Heuristic: at least one model provider env var is set."""
-    provider_keys = [
-        "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
-        "AWS_PROFILE", "AWS_ACCESS_KEY_ID",
-        "GOOGLE_API_KEY", "GEMINI_API_KEY",
+    """Heuristic: a real model API key (not just a profile name) is set."""
+    real_key_vars = [
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+        "AWS_ACCESS_KEY_ID",   # real key, not just a profile name
     ]
-    return any(os.environ.get(k) for k in provider_keys)
+    return any(os.environ.get(k) for k in real_key_vars)
 
 
 def should_skip() -> tuple[bool, str]:
@@ -99,14 +102,13 @@ def run_opencode_agent(
     timeout_seconds: int = 600,
 ) -> tuple[int, str, str]:
     """
-    Run `opencode run --agent <agent> --message <prompt>` in workspace.
+    Run `opencode run --agent <agent> <prompt>` in workspace.
     Returns (exit_code, stdout, stderr).
     """
     cmd = [
         "opencode", "run",
         "--agent", agent,
-        "--message", prompt,
-        "--no-interactive",
+        prompt,
     ]
     try:
         result = subprocess.run(
@@ -121,3 +123,56 @@ def run_opencode_agent(
         return 1, "", f"Timed out after {timeout_seconds}s"
     except FileNotFoundError:
         return 1, "", "opencode binary not found"
+
+
+# ---------------------------------------------------------------------------
+# Dry-run stubs — exercise all scoring/validation logic without live agents
+# ---------------------------------------------------------------------------
+
+def dry_run_prometheus(workspace: Path) -> tuple[int, str, str]:
+    """
+    Stub for dry-run mode: simulate a @prometheus response by copying the
+    canonical SPEC into the workspace as SPEC.md.
+    Returns (exit_code, stdout, stderr) matching run_opencode_agent signature.
+    """
+    canonical = ORACLE / "CANONICAL_SPEC.md"
+    (workspace / "SPEC.md").write_text(
+        canonical.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    stub_stdout = (
+        "Stub @prometheus response for dry-run.\n"
+        "<spec filename=\"SPEC.md\">\n"
+        + canonical.read_text(encoding="utf-8")
+        + "\n</spec>\n"
+        "Invoke @autonomous to write this SPEC.md verbatim and execute it."
+    )
+    return 0, stub_stdout, ""
+
+
+def dry_run_autonomous(workspace: Path) -> tuple[int, str, str]:
+    """
+    Stub for dry-run mode: simulate a @autonomous response by copying the
+    reference implementation into the workspace.
+    Returns (exit_code, stdout, stderr) matching run_opencode_agent signature.
+    """
+    ref_engine = ORACLE / "reference" / "rules_engine.py"
+    (workspace / "rules_engine.py").write_text(
+        ref_engine.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    # Write a minimal progress.txt with strategy and evidence block
+    (workspace / "progress.txt").write_text(
+        "## Strategy\nSelected: direct\nReason: Dry-run stub.\n\n"
+        "## Verification\n"
+        "```json\n"
+        '{"command": "python3 -m unittest discover", "exit_code": 0, "excerpt": "OK"}\n'
+        "```\n",
+        encoding="utf-8",
+    )
+    stub_stdout = (
+        "Stub @autonomous response for dry-run.\n"
+        "```json\n"
+        '{"command": "python3 -m unittest discover", "exit_code": 0, "excerpt": "OK"}\n'
+        "```\n"
+        "<promise>COMPLETE</promise>\n"
+    )
+    return 0, stub_stdout, ""

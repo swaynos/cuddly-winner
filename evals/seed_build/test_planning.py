@@ -26,7 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _harness import (
     PASS, PARTIAL, FAIL, SKIPPED,
-    TestReport, make_workspace, write_report, should_skip, run_opencode_agent,
+    TestReport, make_workspace, write_report, should_skip,
+    run_opencode_agent, dry_run_prometheus,
 )
 
 ORACLE   = Path(__file__).resolve().parent / "oracle"
@@ -44,24 +45,27 @@ def _extract_spec_payload(text: str) -> str | None:
     return None
 
 
-def run_test(workspace: Path) -> TestReport:
+def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     report = TestReport(test_name="test_planning")
 
     # Copy seed into workspace
     seed_text = SEED.read_text(encoding="utf-8")
     (workspace / "idea.md").write_text(seed_text, encoding="utf-8")
 
-    # Run @prometheus with the loose idea as the prompt
-    prompt = (
-        "Read idea.md and use the @prometheus workflow to plan this project. "
-        "Return a complete <spec filename=\"SPEC.md\"> payload."
-    )
-    rc, stdout, stderr = run_opencode_agent(
-        agent="prometheus",
-        prompt=prompt,
-        workspace=workspace,
-        timeout_seconds=600,
-    )
+    if dry_run:
+        rc, stdout, stderr = dry_run_prometheus(workspace)
+    else:
+        # Run @prometheus with the loose idea as the prompt
+        prompt = (
+            "Read idea.md and use the @prometheus workflow to plan this project. "
+            "Return a complete <spec filename=\"SPEC.md\"> payload."
+        )
+        rc, stdout, stderr = run_opencode_agent(
+            agent="prometheus",
+            prompt=prompt,
+            workspace=workspace,
+            timeout_seconds=600,
+        )
 
     report.evidence["opencode_exit_code"] = rc
     report.evidence["stdout_tail"] = stdout[-3000:] if stdout else ""
@@ -97,6 +101,7 @@ def run_test(workspace: Path) -> TestReport:
     spec_path = ORACLE / "planning_checks.py"
     mod_spec = importlib.util.spec_from_file_location("planning_checks", spec_path)
     planning = importlib.util.module_from_spec(mod_spec)
+    sys.modules["planning_checks"] = planning  # register before exec for @dataclass compat
     mod_spec.loader.exec_module(planning)
 
     planning_report = planning.score_spec(spec_text)
@@ -129,23 +134,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", default=None, help="Path to write JSON report")
     parser.add_argument("--keep-workspace", action="store_true",
                         help="Do not delete the workspace after the run")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Use stub agent responses to exercise all scoring logic without live agents")
     args = parser.parse_args(argv)
 
-    skip, reason = should_skip()
-    if skip:
-        report = TestReport(
-            test_name="test_planning",
-            verdict=SKIPPED,
-            error=reason,
-        )
-        print(report.render())
-        out_path = write_report(report, Path(args.out).parent if args.out else REPORTS)
-        print(f"Report: {out_path}")
-        return 0
+    if not args.dry_run:
+        skip, reason = should_skip()
+        if skip:
+            report = TestReport(
+                test_name="test_planning",
+                verdict=SKIPPED,
+                error=reason,
+            )
+            print(report.render())
+            out_path = write_report(report, Path(args.out).parent if args.out else REPORTS)
+            print(f"Report: {out_path}")
+            return 0
 
     workspace = make_workspace("planning")
     try:
-        report = run_test(workspace)
+        report = run_test(workspace, dry_run=args.dry_run)
     except Exception as e:
         report = TestReport(test_name="test_planning", verdict=FAIL, error=str(e))
     finally:

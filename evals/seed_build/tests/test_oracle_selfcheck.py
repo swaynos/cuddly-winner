@@ -9,6 +9,8 @@ Tests:
   3. Canonical SPEC passes all planning checks.
   4. Bad-reference fixture is flagged by failure-mode checks.
   5. Weak-SPEC fixture fails planning checks.
+  6. test_planning.py --dry-run runs end-to-end and returns PASS.
+  7. test_build.py --dry-run runs end-to-end and returns PASS.
 
 Run with:
     python3 -m unittest discover -s evals/seed_build/tests -p "test_*.py"
@@ -25,6 +27,7 @@ from pathlib import Path
 ROOT    = Path(__file__).resolve().parents[3]
 ORACLE  = Path(__file__).resolve().parents[1] / "oracle"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
+SEED_BUILD = Path(__file__).resolve().parents[1]
 
 
 def _load_module(name: str, path: Path):
@@ -115,6 +118,29 @@ class TestPlanningChecks(unittest.TestCase):
             len(failed_names) >= 2,
             f"Expected >=2 check failures on weak SPEC; got: {failed_names}\n{report.render()}",
         )
+
+
+class TestDryRun(unittest.TestCase):
+    """Both live tests must return PASS in dry-run mode."""
+
+    def _run_test(self, script: str) -> tuple[int, str]:
+        result = subprocess.run(
+            [sys.executable, str(SEED_BUILD / script), "--dry-run"],
+            capture_output=True,
+            text=True,
+            cwd=str(ROOT),
+        )
+        return result.returncode, result.stdout + result.stderr
+
+    def test_planning_dry_run_passes(self):
+        rc, output = self._run_test("test_planning.py")
+        self.assertEqual(rc, 0, f"test_planning --dry-run failed:\n{output}")
+        self.assertIn("PASS", output, f"Expected PASS verdict:\n{output}")
+
+    def test_build_dry_run_passes(self):
+        rc, output = self._run_test("test_build.py")
+        self.assertEqual(rc, 0, f"test_build --dry-run failed:\n{output}")
+        self.assertIn("PASS", output, f"Expected PASS verdict:\n{output}")
 
 
 if __name__ == "__main__":
