@@ -83,12 +83,16 @@ The validator checks expected skill files and basic skill metadata.
 Plugins live under `plugins/`. This project currently ships:
 
 - `plugins/immutability.ts`
+- `plugins/opencode-autonomous-gate.js`
+- `plugins/opencode-autonomous-loop.js`
 - `plugins/opencode-autonomous-gate/`
 - `plugins/opencode-autonomous-loop/`
 
 Plugins are installed by the deployment script when requested with
-`--with-plugins`. They are loaded by OpenCode at startup, so changes require a
-restart.
+`--with-plugins`. OpenCode auto-discovers top-level plugin files such as `*.ts`
+and `*.js`; package directories hold implementation code but require a top-level
+wrapper file or explicit config entry to load. Plugins are loaded at startup, so
+changes require a restart.
 
 Plugins do not replace agent contracts. They enforce, observe, or correct
 contract violations at runtime.

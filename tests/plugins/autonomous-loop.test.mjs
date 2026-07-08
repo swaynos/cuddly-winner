@@ -57,6 +57,42 @@ test("plugin writes run state on autonomous message", async () => {
   });
 });
 
+test("event hook writes run state on autonomous text part", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    const client = { app: { log: async () => {} } };
+    const hooks = await AutonomousLoopPlugin({ client, directory });
+
+    await hooks["chat.params"]?.({
+      sessionID: "session-event-1",
+      agent: "autonomous",
+    }, {});
+    await hooks.event({
+      event: {
+        type: "message.part.updated",
+        properties: {
+          sessionID: "session-event-1",
+          part: {
+            type: "text",
+            sessionID: "session-event-1",
+            text: "Working from event hook",
+          },
+        },
+      },
+    });
+
+    const runsRaw = await readFile(
+      path.join(directory, ".opencode", "autonomous-loop", "runs.json"),
+      "utf-8",
+    );
+    const runs = JSON.parse(runsRaw);
+    const run = runs.runs["session-event-1"];
+    assert.ok(run);
+    assert.equal(run.status, "running");
+    assert.equal(run.iterations, 1);
+  });
+});
+
 test("plugin marks complete and stores last evidence", async () => {
   await withTempDir(async (directory) => {
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");

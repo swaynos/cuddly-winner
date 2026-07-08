@@ -60,6 +60,16 @@ Run the OpenCode suite validator without LLM-backed checks:
 python3 tests/verify_opencode.py --skip-llm
 ```
 
+The validator checks both plugin package directories and the top-level
+auto-discovered wrapper files (`opencode-autonomous-gate.js` and
+`opencode-autonomous-loop.js`); package directories alone are not sufficient for
+OpenCode startup loading.
+
+Plugin unit tests include the real OpenCode bus-event shape
+(`event.type == "message.part.updated"`) plus `chat.params` agent caching, so a
+plugin that only handles legacy direct `message.part.updated` test calls is not
+considered valid.
+
 Run the full validator when model credentials are available:
 
 ```bash
@@ -94,6 +104,7 @@ python3 tests/audit_run.py --project /path/to/project --session <session-id>
 - resolved agent modes;
 - resolved permission rules;
 - plugin startup logs;
+- autonomous gate corrective-message quality;
 - optional plugin hook behavior with a real LLM provider.
 
 ## Agent-Value Benchmark Responsibilities

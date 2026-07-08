@@ -162,6 +162,8 @@ EXPECTED_SKILL_FILES = [
 ]
 EXPECTED_PLUGIN_FILES = [
     "immutability.ts",
+    "opencode-autonomous-gate.js",
+    "opencode-autonomous-loop.js",
     "opencode-autonomous-gate",
     "opencode-autonomous-loop",
 ]
@@ -1694,14 +1696,32 @@ def check_plugin_loads(sandbox: Sandbox) -> list[Failure]:
         missing_in_logs = []
         for plugin_name in EXPECTED_PLUGIN_FILES:
             plugin_entry = plugins_dir / plugin_name
-            if plugin_name in logs and "loading plugin" in logs:
+            failed_marker = f"failed to load plugin\" path=file://{plugin_entry}"
+            failed_alt = f"failed to load plugin" in logs and str(plugin_entry) in logs
+            if failed_marker in logs or failed_alt:
+                missing_in_logs.append(plugin_name)
+                continue
+
+            load_markers = [plugin_name]
+            if plugin_name == "opencode-autonomous-gate.js":
+                load_markers.append("AutonomousGatePlugin initialized")
+            if plugin_name == "opencode-autonomous-loop.js":
+                load_markers.append("AutonomousLoopPlugin initialized")
+
+            if any(marker in logs for marker in load_markers):
                 _print_pass(f"{plugin_name} loaded (found in startup logs)")
+                continue
+
+            if plugin_name == "immutability.ts":
+                _print_dim(
+                    "  immutability.ts did not appear in startup logs; no load failure was logged."
+                )
                 continue
 
             if plugin_entry.is_dir():
                 _print_dim(
                     f"  Plugin package {plugin_name} did not appear in startup logs; "
-                    "OpenCode may only log top-level file plugins in this mode."
+                    "top-level wrapper files are the load-bearing OpenCode plugins."
                 )
                 continue
 

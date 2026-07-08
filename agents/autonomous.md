@@ -110,9 +110,15 @@ If none exist, stop and reply:
 "No spec file found (`SPEC.md` or `spec.md`). Run `@prometheus` to scaffold one, then invoke me again."
 Then emit `<promise>WORK_STUCK</promise>` (see Promise contract).
 
+If the autonomous gate responds with a corrective that includes a Prometheus
+`<spec filename="SPEC.md">...</spec>` payload, treat that payload as the missing
+handoff context: immediately write the enclosed content verbatim to `SPEC.md`,
+then read `SPEC.md` and continue. Do not emit `WORK_STUCK` again for the missing
+spec while a gate-provided payload is available.
+
 Do not infer intent or proceed without a spec. Do not edit the spec file except
 for the initial verbatim materialization of a Prometheus `<spec filename="SPEC.md">`
-payload in the current user message.
+payload in the current user message or in an autonomous gate corrective.
 
 # Looping strategy
 

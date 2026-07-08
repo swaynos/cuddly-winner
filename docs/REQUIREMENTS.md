@@ -63,6 +63,11 @@ verbatim before executing it. If the current session contains an immediately
 preceding visible Prometheus payload, using a stale on-disk `SPEC.md` instead is
 invalid.
 
+When runtime context switching prevents `@autonomous` from seeing the preceding
+Prometheus response, the autonomous gate must recover the handoff by re-injecting
+the latest observed Prometheus payload. Autonomous then treats that corrective as
+the authoritative handoff and materializes it before execution.
+
 ### Karpathy First
 
 The default strategy preference is to force nondeterminism into a deterministic

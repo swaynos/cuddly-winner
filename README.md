@@ -53,7 +53,10 @@ and validation expectations are in `docs/VALIDATION.md`.
 |   `-- skills/                       Core OpenCode skills distributed by this repo
 |-- plugins/
 |   |-- immutability.ts                 Global plugin — enforces per-project file rules
-|   `-- opencode-autonomous-gate/       Plugin package — enforces @autonomous promise contract
+|   |-- opencode-autonomous-gate.js     Auto-discovered wrapper for the gate plugin
+|   |-- opencode-autonomous-loop.js     Auto-discovered wrapper for the loop plugin
+|   |-- opencode-autonomous-gate/       Plugin package — enforces @autonomous promise contract
+|   `-- opencode-autonomous-loop/       Plugin package — persists autonomous run state
 |-- examples/
 |   |-- immutable.json.example  Marker file template for the immutability plugin
 |   |-- karpathy.json.example   Deterministic loop config template for @karpathy
@@ -127,7 +130,9 @@ first.
 3. It returns a complete `<spec filename="SPEC.md">...</spec>` payload and stops.
 4. Tab to `@autonomous` (or type `@autonomous`).
 5. Autonomous writes the payload verbatim to `SPEC.md`, then reads `SPEC.md` and
-   its strategy directive. If the strategy is `karpathy` (and a scalar metric +
+   its strategy directive. If runtime context dropped the Prometheus response,
+   the gate plugin re-injects the observed payload so autonomous can materialize
+   it. If the strategy is `karpathy` (and a scalar metric +
    frozen evaluator exist), it invokes `@karpathy` to run the loop. Otherwise it
    executes the SPEC checklist directly, running verification commands after each
    change.
@@ -136,9 +141,9 @@ first.
 7. When `@reviewer` returns `APPROVE`, autonomous writes a completion summary
    and stops.
 
-If `SPEC.md` is missing and the current user message does not contain a
-`<spec filename="SPEC.md">` payload, `@autonomous` will tell you to run
-`@prometheus` first.
+If `SPEC.md` is missing and neither the current context nor the gate has a
+`<spec filename="SPEC.md">` payload to hand off, `@autonomous` will tell you to
+run `@prometheus` first.
 
 ## Workflow: Quick Questions (`@ask`)
 
@@ -384,14 +389,18 @@ when `SPEC.md` is declared).
 This repo ships two autonomous-related plugins under `plugins/`:
 
 - `immutability.ts` enforces per-project file mutation rules.
-- `opencode-autonomous-gate/` enforces `@autonomous` promise semantics.
-- `opencode-autonomous-loop/` persists run state across bounded autonomous sessions.
+- `opencode-autonomous-gate.js` is the auto-discovered OpenCode plugin wrapper
+  for `opencode-autonomous-gate/`, which enforces `@autonomous` promise semantics.
+- `opencode-autonomous-loop.js` is the auto-discovered OpenCode plugin wrapper
+  for `opencode-autonomous-loop/`, which persists run state across bounded
+  autonomous sessions.
 
 ### Autonomous Gate Plugin
 
-`plugins/opencode-autonomous-gate/` is a global OpenCode plugin that enforces the
-@autonomous agent's promise contract. It activates automatically once deployed
-(`--with-plugins`) and is a no-op for any agent other than `@autonomous`.
+`plugins/opencode-autonomous-gate.js` loads `plugins/opencode-autonomous-gate/`,
+a global OpenCode plugin that enforces the @autonomous agent's promise contract.
+It activates automatically once deployed (`--with-plugins`) and is a no-op for
+any agent other than `@autonomous`.
 
 What it enforces:
 
@@ -433,9 +442,9 @@ Limitations:
 
 ### Autonomous Loop Plugin
 
-`plugins/opencode-autonomous-loop/` is a companion plugin that treats each
-`@autonomous` session as a bounded worker and persists supervisor-style state in
-project files.
+`plugins/opencode-autonomous-loop.js` loads `plugins/opencode-autonomous-loop/`,
+a companion plugin that treats each `@autonomous` session as a bounded worker and
+persists supervisor-style state in project files.
 
 Persisted files:
 

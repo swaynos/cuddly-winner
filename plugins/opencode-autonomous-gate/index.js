@@ -377,6 +377,7 @@ function sessionFromMessage(msg) {
 
 export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
   const sessionState = new Map();
+  const sessionAgentCache = new Map();
 
   function stateFor(sessionId) {
     if (!sessionId) sessionId = "__unscoped__";
@@ -387,6 +388,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
         reviewerApproved: false,
         karpathyDelegated: false,      // true when @karpathy message observed
         prometheusPayloadHash: null,   // SHA-256 of last Prometheus payload inner content
+        prometheusPayloadContent: null, // Latest Prometheus payload inner content
         lastAssistantText: "",
         recentTexts: [],
       };
@@ -415,30 +417,74 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     }
   }
 
+  function correctiveNextAction(detail) {
+    const d = String(detail || "").toLowerCase();
+    if (d.includes("missing spec.md") || d.includes("missing spec.md/spec.md")) {
+      return "Create or materialize `SPEC.md`, then read it before continuing.";
+    }
+    if (d.includes("evidence")) {
+      return "Run verification and include a fenced JSON evidence block with `command` and `exit_code: 0`.";
+    }
+    if (d.includes("reviewer")) {
+      return "Invoke `@reviewer` and continue until it returns `APPROVE`.";
+    }
+    if (d.includes("progress.txt") || d.includes("progress.txt/progress.txt")) {
+      return "Update `progress.txt` with the current blocker and attempted approaches.";
+    }
+    if (d.includes("karpathy")) {
+      return "Invoke `@karpathy` or create the required Karpathy artifacts before completing.";
+    }
+    if (d.includes("selected:") || d.includes("strategy")) {
+      return "Record the selected strategy in `progress.txt` before completing.";
+    }
+    if (d.includes("prometheus") || d.includes("payload")) {
+      return "Write the latest Prometheus payload verbatim to `SPEC.md` before completing.";
+    }
+    if (d.includes("mutation")) {
+      return "Fix the mutation-gate issue, re-run the mutation runner, and update the result artifact.";
+    }
+    if (d.includes("blocked") || d.includes("bash")) {
+      return "Use `COMPLETE` with valid evidence, or `WORK_STUCK` only after updating progress.";
+    }
+    if (d.includes("workaround")) {
+      return "If bash is unavailable, emit `<promise>BLOCKED</promise>` without manual command lists.";
+    }
+    return "Fix the failed check, update progress if relevant, and retry the promise.";
+  }
+
+  function splitDetails(details) {
+    return String(details || "")
+      .split(/;\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
   async function postCorrective(sessionId, reason, details, isStuck = false, requireReviewer = FLAG_REVIEWER) {
+    const failedChecks = splitDetails(details);
+    if (failedChecks.length === 0) failedChecks.push(reason);
+    const nextActions = [...new Set(failedChecks.map(correctiveNextAction))];
+
     const commonPreconditions = [
-      "AUTONOMOUS GATE: promise rejected.",
-      `Reason: ${reason}`,
-      details ? `Details: ${details}` : null,
+      `AUTONOMOUS GATE: ${reason}.`,
       "",
-      "Do NOT emit another promise until ALL preconditions are true:",
-      "- SPEC.md or spec.md exists in project root.",
-      "- Latest evidence block is a fenced JSON object with keys `command` and `exit_code`, and exit_code is 0.",
-      FLAG_PROGRESS
-        ? "- progress.txt (or PROGRESS.txt) has been updated in this session before emitting <promise>WORK_STUCK</promise>."
-        : null,
+      "Failed check(s):",
+      ...failedChecks.map((failure) => `- ${failure}`),
+      "",
+      "Next action(s):",
+      ...nextActions.map((action) => `- ${action}`),
+      "",
+      "Do not emit another promise until the failed check(s) above are fixed.",
+      "If the `bash` tool is unavailable, emit <promise>BLOCKED</promise> immediately with no workaround commands or handoff instructions.",
       requireReviewer
-        ? "- @reviewer has produced an APPROVE verdict in this session before emitting <promise>COMPLETE</promise>. (Note: if the @reviewer/Task tool is unavailable in your environment, you can disable this check by setting the environment variable OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER=false)"
+        ? "Reviewer check is active for COMPLETE; set OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER=false only when intentionally running without reviewer support."
         : null,
-      "",
-      "If the 'bash' tool is not available in your environment (you cannot run any shell commands), emit <promise>BLOCKED</promise> immediately. Do NOT defer, rationalize, or reclassify the work. BLOCKED is the only valid exit when shell execution is impossible.",
     ];
 
     const stuckGuidance = isStuck
       ? [
           "",
-          "WORK_STUCK requires evidence that you exhausted your options.",
-          "Before emitting WORK_STUCK again, you MUST rotate through these strategies:",
+          "WORK_STUCK is accepted only after progress records real recovery attempts.",
+          "Before emitting WORK_STUCK again, try and record at least 3 distinct approaches, such as:",
           "1. RE-READ: Go back to the spec and progress.txt for missed context.",
           "2. SEARCH: Search the codebase for similar patterns, solutions, or error messages.",
           "3. RESEARCH: Invoke @grounder to look up the error, API, or framework behavior.",
@@ -446,8 +492,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
           "5. DECOMPOSE: Break the failing step into smaller, independently verifiable sub-steps.",
           "6. WIDEN: Change WHAT you are doing, not just HOW.",
           "",
-          "Your message must document at least 3 distinct approaches you tried.",
-          "Stopping is a last resort. Keep going.",
+          "Your next message should name the approaches tried and the remaining blocker.",
         ]
       : ["", "Iterate, fix verification, update progress, and try again."];
 
@@ -478,6 +523,41 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     }
   }
 
+  async function postPrometheusMaterializationCorrective(sessionId, payloadContent) {
+    const body = [
+      "AUTONOMOUS GATE: Prometheus SPEC payload was already observed in this session.",
+      "The on-disk SPEC.md is missing, so the Prometheus -> Autonomous handoff was not materialized.",
+      "Before doing anything else, write the enclosed content verbatim to `SPEC.md`, then read `SPEC.md` and execute it.",
+      "Do not emit WORK_STUCK for a missing spec while this payload is available.",
+      "",
+      '<spec filename="SPEC.md">',
+      payloadContent,
+      "</spec>",
+    ].join("\n");
+
+    try {
+      if (client?.session?.prompt && sessionId) {
+        await client.session.prompt({
+          path: { id: sessionId },
+          body: { parts: [{ type: "text", text: body }] },
+        });
+      } else if (client?.session?.message && sessionId) {
+        await client.session.message({
+          path: { id: sessionId },
+          body: { role: "user", parts: [{ type: "text", text: body }] },
+        });
+      } else {
+        await log("warn", "No SDK path to post Prometheus materialization corrective", {
+          sessionId,
+        });
+      }
+    } catch (err) {
+      await log("error", "Failed to post Prometheus materialization corrective", {
+        error: String(err?.message || err),
+      });
+    }
+  }
+
   async function onAssistantText(sessionId, agent, text) {
     if (!text) return;
     const st = stateFor(sessionId);
@@ -501,6 +581,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       const payload = extractSpecPayload(text);
       if (payload) {
         st.prometheusPayloadHash = hashText(payload.trim());
+        st.prometheusPayloadContent = payload;
       }
     }
 
@@ -652,8 +733,21 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     }
 
     if (hasStuck) {
+      if (!specOk && st.prometheusPayloadContent) {
+        await log("warn", "Rejecting <promise>WORK_STUCK</promise>; Prometheus payload awaits materialization", {});
+        await postPrometheusMaterializationCorrective(
+          sessionId,
+          st.prometheusPayloadContent,
+        );
+        return;
+      }
+
+      if (!specOk) {
+        await log("info", "WORK_STUCK accepted for missing spec with no observed Prometheus payload", {});
+        return;
+      }
+
       const reasons = [];
-      if (!specOk) reasons.push("missing SPEC.md/spec.md");
       if (FLAG_PROGRESS && !progressOk) {
         reasons.push("progress.txt/PROGRESS.txt not updated this session");
       }
@@ -690,6 +784,21 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
 
   }
 
+  async function handleMessagePart(input, msg) {
+    const text = extractTextFromMessage(msg);
+    if (!text) return;
+    const sessionId = sessionFromMessage(input) || sessionFromMessage(msg);
+    const agent =
+      agentFromMessage(input) ||
+      agentFromMessage(msg) ||
+      (sessionId ? sessionAgentCache.get(sessionId) : null);
+
+    const role =
+      msg?.role || msg?.message?.role || input?.role || input?.message?.role || "assistant";
+    if (role !== "assistant") return;
+    await onAssistantText(sessionId, agent, text);
+  }
+
   await log("info", "AutonomousGatePlugin initialized", {
     directory,
     agent: AGENT_NAME,
@@ -701,6 +810,12 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
   });
 
   return {
+    "chat.params": async (input) => {
+      if (input?.sessionID && input?.agent) {
+        sessionAgentCache.set(input.sessionID, input.agent);
+      }
+    },
+
     "file.edited": async (input) => {
       const p = input?.path || input?.filePath || "";
       const base = path.basename(String(p));
@@ -712,16 +827,18 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
 
     "message.part.updated": async (input) => {
       const msg = input?.part || input?.message || input;
-      const text = extractTextFromMessage(msg);
-      if (!text) return;
-      const sessionId = sessionFromMessage(input) || sessionFromMessage(msg);
-      const agent = agentFromMessage(input) || agentFromMessage(msg);
+      await handleMessagePart(input, msg);
+    },
 
-      // Only act on assistant messages; filter defensively.
-      const role =
-        msg?.role || msg?.message?.role || input?.role || "assistant";
-      if (role !== "assistant") return;
-      await onAssistantText(sessionId, agent, text);
+    event: async (input) => {
+      const event = input?.event;
+      if (event?.type !== "message.part.updated") return;
+      const msg = event?.properties?.part;
+      if (!msg) return;
+      await handleMessagePart(
+        { sessionID: event?.properties?.sessionID },
+        msg,
+      );
     },
 
     "session.idle": async (input) => {

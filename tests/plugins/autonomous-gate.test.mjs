@@ -47,6 +47,11 @@ test("rejects COMPLETE when evidence is missing", async () => {
 
     assert.equal(prompts.length, 1);
     assert.match(prompts[0], /COMPLETE preconditions not met/);
+    assert.match(prompts[0], /Failed check\(s\):/);
+    assert.match(prompts[0], /missing\/failing evidence block/);
+    assert.match(prompts[0], /Next action\(s\):/);
+    assert.match(prompts[0], /Run verification and include a fenced JSON evidence block/);
+    assert.doesNotMatch(prompts[0], /progress\.txt .*WORK_STUCK/);
   });
 });
 
@@ -95,6 +100,10 @@ test("rejects WORK_STUCK until progress.txt touched", async () => {
     });
     assert.equal(prompts.length, 1);
     assert.match(prompts[0], /WORK_STUCK preconditions not met/);
+    assert.match(prompts[0], /Failed check\(s\):/);
+    assert.match(prompts[0], /progress\.txt\/PROGRESS\.txt not updated this session/);
+    assert.match(prompts[0], /Update `progress\.txt` with the current blocker/);
+    assert.match(prompts[0], /try and record at least 3 distinct approaches/);
 
     await hooks["file.edited"]({
       sessionId: "s-3",
@@ -108,6 +117,101 @@ test("rejects WORK_STUCK until progress.txt touched", async () => {
     });
 
     assert.equal(prompts.length, 1);
+  });
+});
+
+test("WORK_STUCK with missing SPEC reinjects observed Prometheus payload", async () => {
+  await withTempDir(async (directory) => {
+    const prompts = [];
+    const client = makeClient({ prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+    const specContent = "# generated spec\n\n## Problem\nMaterialize this handoff.\n";
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-prometheus-handoff",
+      agent: "prometheus",
+      text: `<spec filename="SPEC.md">\n${specContent}</spec>\n\nInvoke @autonomous to write this SPEC.md verbatim and execute it.`,
+    });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-prometheus-handoff",
+      agent: "autonomous",
+      text: "No spec file found (`SPEC.md` or `spec.md`). Run `@prometheus` to scaffold one, then invoke me again.\n<promise>WORK_STUCK</promise>",
+    });
+
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0], /Prometheus SPEC payload was already observed/i);
+    assert.match(prompts[0], /<spec filename="SPEC\.md">/);
+    assert.match(prompts[0], /# generated spec/);
+    assert.match(prompts[0], /write the enclosed content verbatim to `SPEC\.md`/i);
+  });
+});
+
+test("event hook reinjects observed Prometheus payload on missing SPEC", async () => {
+  await withTempDir(async (directory) => {
+    const prompts = [];
+    const client = makeClient({ prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+    const specContent = "# event spec\n\n## Problem\nMaterialize event payload.\n";
+
+    await hooks["chat.params"]?.({
+      sessionID: "s-event-handoff",
+      agent: "prometheus",
+    }, {});
+    await hooks.event({
+      event: {
+        type: "message.part.updated",
+        properties: {
+          sessionID: "s-event-handoff",
+          part: {
+            type: "text",
+            sessionID: "s-event-handoff",
+            text: `<spec filename="SPEC.md">\n${specContent}</spec>`,
+          },
+        },
+      },
+    });
+
+    await hooks["chat.params"]?.({
+      sessionID: "s-event-handoff",
+      agent: "autonomous",
+    }, {});
+    await hooks.event({
+      event: {
+        type: "message.part.updated",
+        properties: {
+          sessionID: "s-event-handoff",
+          part: {
+            type: "text",
+            sessionID: "s-event-handoff",
+            text: "No spec file found.\n<promise>WORK_STUCK</promise>",
+          },
+        },
+      },
+    });
+
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0], /Prometheus SPEC payload was already observed/i);
+    assert.match(prompts[0], /# event spec/);
+  });
+});
+
+test("WORK_STUCK with missing SPEC is accepted when no Prometheus payload was observed", async () => {
+  await withTempDir(async (directory) => {
+    const prompts = [];
+    const client = makeClient({ prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-missing-spec-bootstrap",
+      agent: "autonomous",
+      text: "No spec file found (`SPEC.md` or `spec.md`). Run `@prometheus` to scaffold one, then invoke me again.\n<promise>WORK_STUCK</promise>",
+    });
+
+    assert.equal(prompts.length, 0);
   });
 });
 
@@ -171,6 +275,8 @@ test("bash available: BLOCKED rejected (prevents rationalization)", async () => 
 
     assert.equal(prompts.length, 1, "BLOCKED should be rejected when bash IS available");
     assert.match(prompts[0], /BLOCKED rejected/);
+    assert.match(prompts[0], /Failed check\(s\):/);
+    assert.match(prompts[0], /Use <promise>COMPLETE<\/promise> with a valid evidence block/);
   });
 });
 

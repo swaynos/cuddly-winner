@@ -63,6 +63,9 @@ The standard execution workflow is:
 2. Prometheus returns a complete payload.
 3. User runs `@autonomous`.
 4. Autonomous materializes the visible Prometheus payload to `SPEC.md` verbatim.
+   If the OpenCode runtime does not preserve the previous Prometheus response in
+   autonomous-visible context, the autonomous gate re-injects the latest observed
+   Prometheus payload as a corrective and autonomous materializes that payload.
 5. Autonomous reads `SPEC.md` and records strategy selection in `progress.txt`.
 6. Autonomous executes directly or invokes the selected strategy subagent.
 7. Autonomous verifies after changes.
@@ -73,8 +76,8 @@ The standard execution workflow is:
 10. Autonomous continues on `REQUEST_CHANGES` or completes on `APPROVE` plus valid
     evidence (and a passing mutation result when required).
 
-If no `SPEC.md` exists and there is no current visible spec payload,
-`@autonomous` should tell the user to run `@prometheus` first.
+If no `SPEC.md` exists and there is no current visible or gate-reinjected spec
+payload, `@autonomous` should tell the user to run `@prometheus` first.
 
 ## Test-Rigor Lifecycle (when mutation gate is enabled)
 
@@ -95,8 +98,8 @@ must follow this additional sequence to prevent the "self-graded paper" failure
 There is no implementer unfreeze path. A genuinely wrong frozen test requires
 re-running the test-authoring and review cycle, recorded in `progress.txt`.
 
-If no `SPEC.md` exists and there is no current visible spec payload,
-`@autonomous` should tell the user to run `@prometheus` first.
+If no `SPEC.md` exists and there is no current visible or gate-reinjected spec
+payload, `@autonomous` should tell the user to run `@prometheus` first.
 
 ## Direct Autonomous Execution
 

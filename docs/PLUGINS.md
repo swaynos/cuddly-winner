@@ -49,8 +49,13 @@ may be allowed by permissions and still blocked by plugin policy.
 Location:
 
 ```text
+plugins/opencode-autonomous-gate.js
 plugins/opencode-autonomous-gate/
 ```
+
+`opencode-autonomous-gate.js` is the top-level OpenCode plugin entrypoint. The
+package directory contains the implementation. Both must be deployed; the wrapper
+is what OpenCode auto-discovers at startup.
 
 Purpose:
 
@@ -60,9 +65,16 @@ Purpose:
 - require progress updates for stuck states;
 - require strategy consistency where applicable;
 - require fresh Prometheus payload materialization where applicable.
+- re-inject an observed Prometheus `SPEC.md` payload when autonomous reports a
+  missing spec before materializing the handoff.
 
 The gate plugin activates for the autonomous agent name, normally `autonomous`.
 It is a no-op for unrelated agents.
+
+Runtime message observation uses the OpenCode `event` hook for
+`message.part.updated` bus events. Agent identity for text parts is resolved from
+a `chat.params` session cache because text-part events do not carry the agent
+name directly.
 
 Completion requires the configured preconditions. The default contract is:
 
@@ -73,11 +85,34 @@ Completion requires the configured preconditions. The default contract is:
 - strategy selection is consistent with observed delegation;
 - stale on-disk specs do not replace visible Prometheus payloads.
 
-Stuck states require a spec and a recent `progress.txt` update.
+Implementation stuck states require a spec and a recent `progress.txt` update.
+A missing-spec `WORK_STUCK` is treated as a bootstrap stop when no Prometheus
+payload has been observed in the session. If a Prometheus payload has been
+observed, the gate rejects the stuck state and posts the exact payload back into
+the session so autonomous can write `SPEC.md` verbatim.
 
 The plugin cannot prevent the text of a promise token from appearing. It reacts
 after the message and posts corrective pressure so the agent must continue until
 the contract is satisfied.
+
+Corrective messages are part of the developer experience contract. A rejection
+must identify the specific failed check, give a concrete next action, and avoid
+dumping unrelated preconditions. Broad gate policy may appear in documentation,
+but the runtime corrective should be legible to a human supervising the session:
+
+```text
+AUTONOMOUS GATE: <promise/reason>.
+
+Failed check(s):
+- <specific failed check>
+
+Next action(s):
+- <one concrete recovery action>
+```
+
+The missing Prometheus payload recovery is intentionally more directive: it must
+include the observed `<spec filename="SPEC.md">...</spec>` payload so autonomous
+can materialize the handoff without asking the user to reconstruct it.
 
 ### Mutation gate
 
@@ -112,8 +147,13 @@ OPENCODE_AUTONOMOUS_AGENT_NAME=autonomous
 Location:
 
 ```text
+plugins/opencode-autonomous-loop.js
 plugins/opencode-autonomous-loop/
 ```
+
+`opencode-autonomous-loop.js` is the top-level OpenCode plugin entrypoint. The
+package directory contains the implementation. Both must be deployed; the wrapper
+is what OpenCode auto-discovers at startup.
 
 Purpose:
 
@@ -134,6 +174,10 @@ Persisted target-project files:
 
 The loop plugin makes autonomous sessions resumable and auditable without
 turning the agent into an unbounded process.
+
+Runtime message observation uses the OpenCode `event` hook for
+`message.part.updated` bus events. Agent identity for text parts is resolved from
+a `chat.params` session cache before updating durable run state.
 
 ## Supervisor Model
 

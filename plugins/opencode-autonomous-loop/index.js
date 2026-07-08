@@ -114,6 +114,7 @@ export function parseSelectedStrategy(text) {
 export const AutonomousLoopPlugin = async ({ client, directory }) => {
   const runsPath = path.join(directory, RUN_STATE_FILE);
   const statusPath = path.join(directory, STATUS_FILE);
+  const sessionAgentCache = new Map();
 
   // Tracks the last text hash per session for which a continuation nudge was
   // posted.  Prevents firing duplicate nudges when the same partial turn text
@@ -313,6 +314,98 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
     }
   }
 
+  async function handleMessagePart(input, msg) {
+    const text = extractText(msg);
+    if (!text) return;
+    if (extractRole(msg) !== "assistant") return;
+
+    const sid = extractSessionId(input) || extractSessionId(msg);
+    const agent =
+      extractAgent(input) ||
+      extractAgent(msg) ||
+      (sid ? sessionAgentCache.get(sid) : null);
+
+    // Record observed subagent delegation events (any strategy subagent message).
+    // These are stored in the run history for the autonomous parent session.
+    const agentLower = String(agent || "").toLowerCase();
+    const STRATEGY_AGENTS = ["karpathy", "ralph-wiggum", "octopus", "octopus-arm", "builder", "reviewer"];
+    if (agentLower !== AGENT_NAME.toLowerCase() && STRATEGY_AGENTS.includes(agentLower)) {
+      // Find the most recently active autonomous run to attach the delegation to.
+      const state = await loadState().catch(() => ({ version: 1, runs: {} }));
+      const runningKeys = Object.keys(state.runs).filter(
+        (k) => state.runs[k].status === "running",
+      );
+      for (const runId of runningKeys) {
+        await updateRun(runId, (r) => ({
+          ...r,
+          history: [
+            ...(r.history || []).slice(-49),
+            { ts: unixTs(), event: "subagent_message", agent: agentLower },
+          ],
+        }));
+      }
+      return;
+    }
+
+    if (agentLower !== AGENT_NAME.toLowerCase()) {
+      return;
+    }
+
+    const spec = await getSpecHash();
+    const evidence = findLastEvidenceBlock(text);
+    const hasComplete = text.includes(COMPLETE_TOKEN);
+    const hasStuck = text.includes(STUCK_TOKEN);
+    const hasBlocked = text.includes(BLOCKED_TOKEN);
+    const reviewerApproved = /\bAPPROVE\b/.test(text);
+
+    const run = await updateRun(sid, (r) => {
+      const history = [...(r.history || [])];
+      history.push({
+        ts: unixTs(),
+        event: "assistant_turn",
+        promise: hasComplete ? "COMPLETE" : hasStuck ? "WORK_STUCK" : hasBlocked ? "BLOCKED" : null,
+        evidence_exit_code:
+          evidence && typeof evidence.exit_code !== "undefined"
+            ? Number(evidence.exit_code)
+            : null,
+      });
+      const next = {
+        ...r,
+        ...spec,
+        iterations: (r.iterations || 0) + 1,
+        reviewer_approved: r.reviewer_approved || reviewerApproved,
+        last_error: null,
+        history: history.slice(-50),
+      };
+
+      if (hasComplete) {
+        next.status = "complete";
+        next.complete_count = (r.complete_count || 0) + 1;
+        next.last_complete_evidence = evidence || null;
+      } else if (hasStuck) {
+        next.status = "blocked";
+        next.stuck_count = (r.stuck_count || 0) + 1;
+      } else if (hasBlocked) {
+        next.status = "blocked";
+        next.stuck_count = (r.stuck_count || 0) + 1;
+        next.last_error = "bash tool unavailable";
+      } else {
+        next.status = "running";
+      }
+
+      if (next.status === "running" && !next.spec_present) {
+        next.last_error = "missing spec";
+      }
+      return next;
+    });
+
+    await maybePostStaleReminder(sid, run);
+
+    if (!hasComplete && !hasStuck && !hasBlocked && spec.spec_present) {
+      await maybePostContinuationNudge(sid, text);
+    }
+  }
+
   await log("info", "AutonomousLoopPlugin initialized", {
     directory,
     statePath: runsPath,
@@ -321,6 +414,12 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
   });
 
   return {
+    "chat.params": async (input) => {
+      if (input?.sessionID && input?.agent) {
+        sessionAgentCache.set(input.sessionID, input.agent);
+      }
+    },
+
     "file.edited": async (input) => {
       const p = input?.path || input?.filePath || "";
       const base = path.basename(String(p));
@@ -352,107 +451,18 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
 
     "message.part.updated": async (input) => {
       const msg = input?.part || input?.message || input;
-      const text = extractText(msg);
-      if (!text) return;
-      if (extractRole(msg) !== "assistant") return;
+      await handleMessagePart(input, msg);
+    },
 
-      const sid = extractSessionId(input) || extractSessionId(msg);
-      const agent = extractAgent(input) || extractAgent(msg);
-
-      // Record observed subagent delegation events (any strategy subagent message).
-      // These are stored in the run history for the autonomous parent session.
-      const agentLower = String(agent || "").toLowerCase();
-      const STRATEGY_AGENTS = ["karpathy", "ralph-wiggum", "octopus", "octopus-arm", "builder", "reviewer"];
-      if (agentLower !== AGENT_NAME.toLowerCase() && STRATEGY_AGENTS.includes(agentLower)) {
-        // Find the most recently active autonomous run to attach the delegation to.
-        const state = await loadState().catch(() => ({ version: 1, runs: {} }));
-        const runningKeys = Object.keys(state.runs).filter(
-          (k) => state.runs[k].status === "running",
-        );
-        for (const runId of runningKeys) {
-          await updateRun(runId, (r) => ({
-            ...r,
-            history: [
-              ...(r.history || []).slice(-49),
-              { ts: unixTs(), event: "subagent_message", agent: agentLower },
-            ],
-          }));
-        }
-        return;
-      }
-
-      if (agentLower !== AGENT_NAME.toLowerCase()) {
-        return;
-      }
-
-      const spec = await getSpecHash();
-      const evidence = findLastEvidenceBlock(text);
-      const hasComplete = text.includes(COMPLETE_TOKEN);
-      const hasStuck = text.includes(STUCK_TOKEN);
-      const hasBlocked = text.includes(BLOCKED_TOKEN);
-      const reviewerApproved = /\bAPPROVE\b/.test(text);
-
-      const run = await updateRun(sid, (r) => {
-        const history = [...(r.history || [])];
-        history.push({
-          ts: unixTs(),
-          event: "assistant_turn",
-          promise: hasComplete ? "COMPLETE" : hasStuck ? "WORK_STUCK" : hasBlocked ? "BLOCKED" : null,
-          evidence_exit_code:
-            evidence && typeof evidence.exit_code !== "undefined"
-              ? Number(evidence.exit_code)
-              : null,
-        });
-        const next = {
-          ...r,
-          ...spec,
-          iterations: (r.iterations || 0) + 1,
-          reviewer_approved: r.reviewer_approved || reviewerApproved,
-          last_error: null,
-          history: history.slice(-50),
-        };
-
-        if (hasComplete) {
-          next.status = "complete";
-          next.complete_count = (r.complete_count || 0) + 1;
-          next.last_complete_evidence = evidence || null;
-        } else if (hasStuck) {
-          next.status = "blocked";
-          next.stuck_count = (r.stuck_count || 0) + 1;
-        } else if (hasBlocked) {
-          next.status = "blocked";
-          next.stuck_count = (r.stuck_count || 0) + 1;
-          next.last_error = "bash tool unavailable";
-        } else {
-          next.status = "running";
-        }
-
-        if (next.status === "running" && !next.spec_present) {
-          next.last_error = "missing spec";
-        }
-        return next;
-      });
-
-      await maybePostStaleReminder(sid, run);
-
-      // -----------------------------------------------------------------------
-      // Turn-boundary continuation nudge (premature-exit fix)
-      //
-      // If @autonomous ends a turn with NO promise token while a spec is
-      // present and progress.txt still has unchecked [ ] items, the agent has
-      // gone quiet with unfinished work.  Post a corrective nudge telling it
-      // to resume the next open item.
-      //
-      // Guard conditions (do NOT nudge when):
-      //   - a promise token is present in this turn
-      //   - spec is absent (gate handles the no-spec case)
-      //   - progress.txt is absent or has no checkboxes
-      //   - all checklist items are already checked
-      //   - we already nudged for this exact turn text in this session
-      // -----------------------------------------------------------------------
-      if (!hasComplete && !hasStuck && !hasBlocked && spec.spec_present) {
-        await maybePostContinuationNudge(sid, text);
-      }
+    event: async (input) => {
+      const event = input?.event;
+      if (event?.type !== "message.part.updated") return;
+      const msg = event?.properties?.part;
+      if (!msg) return;
+      await handleMessagePart(
+        { sessionID: event?.properties?.sessionID },
+        msg,
+      );
     },
 
     "session.idle": async (input) => {
