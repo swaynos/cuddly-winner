@@ -16,8 +16,7 @@ permission:
     "git status*": allow
     "rg *": allow
     "pytest *": allow
-    "python *": allow
-    "python3 *": allow
+    "python3 -m pytest *": allow
     "uv run *": allow
     "npm test*": allow
     "go test *": allow
@@ -41,6 +40,9 @@ The agent that spawned you will provide:
   - Loop objectives and stop criteria from a `program.md`
   - A freeform description of what the change should accomplish
   - If nothing is provided, apply general code quality review
+
+  The `SPEC.md` file in the project directory defines the acceptance criteria.
+  Read it from disk; do not rely solely on a rubric passed by the caller.
 
 - **Summary** — what was implemented or changed
 

@@ -56,21 +56,9 @@ They must conform to `STRATEGY-CONTRACT.md` and be listed in
 Examples:
 
 - `@karpathy`
-- `@ralph-wiggum`
-- `@octopus`
 
 Strategy subagents are not generic helpers. They are selected because their loop
 shape fits the task.
-
-### Coordinator-Class Strategy Agents
-
-Coordinator-class strategies split into a brain and one or more arms.
-
-`@octopus` is the reference coordinator-class strategy. It is the sole builder
-inside the Octopus strategy. It dispatches `@octopus-arm` sessions for read-only
-perception before and after building.
-
-The brain may mutate files. The arms must not mutate files or delegate further.
 
 ### Worker Subagents
 
@@ -89,9 +77,6 @@ evidence, and returns control to the orchestrator.
 | `@prometheus` | primary | Plan read-only, compare approaches, and return complete payloads for execution. |
 | `@autonomous` | primary/subagent | Execute specs, own strategy selection, maintain progress, verify, review, and completion. |
 | `@karpathy` | strategy subagent | Run deterministic metric loops when scalar metric and frozen evaluator exist. |
-| `@ralph-wiggum` | strategy subagent | Run bounded brute-force attempts when instrumentation is genuinely unavailable. |
-| `@octopus` | coordinator strategy brain | Build while dispatching read-only perception arms pre- and post-build. |
-| `@octopus-arm` | perception arm | Return one evidence-backed persona perception; never build or delegate. |
 | `@data-scientist` | ordinary subagent | Query NotebookLM-backed project knowledge when valid context exists. |
 | `@grounder` | ordinary subagent | Gather cited local or external evidence when NotebookLM is absent or unsuitable. |
 | `@reviewer` | ordinary subagent | Review against caller-provided rubric and return `APPROVE` or `REQUEST_CHANGES`. |
@@ -127,9 +112,8 @@ the gate plugin is explicitly configured otherwise.
 ### Strategy Subagents
 
 Strategy subagents own bounded strategy execution while active, but they do not
-erase `@autonomous` as the overall workflow owner. `@karpathy` may delegate
-implementation back to `@autonomous`; `@octopus` may build as the strategy brain.
-Their contracts define those exceptions explicitly.
+erase `@autonomous` as the overall workflow owner. `@karpathy` delegates
+implementation to `@builder`; its contract defines this explicitly.
 
 ### `@builder`
 

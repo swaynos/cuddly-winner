@@ -22,8 +22,6 @@ permission:
     "git branch*": allow
     "rg *": allow
     "find *": allow
-    "python3 *": allow
-    "python *": allow
   read: allow
   grep: allow
   glob: allow

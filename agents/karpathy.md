@@ -15,7 +15,7 @@ permission:
     "cat *": allow
     "rg *": allow
   task:
-    "autonomous": allow
+    "builder": allow
     "reviewer": allow
     "*": deny
 ---
@@ -164,12 +164,12 @@ State your hypothesis: what should this change do to the metric and why.
 
 If the change is trivial (a one-line edit), make it yourself.
 
-If the change is non-trivial, delegate to `@autonomous` via the Task tool. Pass it:
+If the change is non-trivial, delegate to `@builder` via the Task tool. Pass it:
 - The exact file to edit
 - The exact change to make
 - How to verify it compiles and runs
 
-Do not let `@autonomous` decide what experiment to run. You own the strategy.
+Do not let `@builder` decide what experiment to run. You own the strategy.
 
 ## 6. Measure and decide
 
@@ -217,9 +217,8 @@ execute a strategy pivot:
    that might temporarily worsen the metric but open a new improvement path.
 4. **Question your measurement:** Is the metric stable? Is the scoring pipeline
    correct? Is there a bug in the evaluation harness? Run a sanity check.
-5. **Research:** Use `@autonomous` to invoke `@data-scientist` when valid
-   NotebookLM context is available, otherwise `@grounder`, for literature or
-   documentation on techniques you have not tried.
+5. **Research:** Use `@grounder` for literature or documentation on techniques
+    you have not tried.
 
 Log the strategy pivot in `experiments.md`:
 
@@ -248,15 +247,5 @@ what worked, what did not, and what avenues remain unexplored.
   real measurement command output.
 - Never touch immutable targets. If a change appears to require editing an
   immutable file, stop and report that as a blocker.
-- Delegate implementation; own decisions. You decide what to try — `@autonomous`
+- Delegate implementation; own decisions. You decide what to try — `@builder`
   only executes what you specify.
-
-# Shell portability (macOS + Linux)
-
-The `bash` tool runs under the user's login shell (`$SHELL`) — zsh on macOS,
-bash on Linux. Keep all measurement and experiment commands shell-neutral:
-
-- Prefer `python3 script.py` or `python3 -m pytest` over shell pipelines.
-- Use `python3 -c '...'` for inline arithmetic, JSON reading, or metric extraction.
-- If bash syntax is required: `bash -c 'bash-specific-command'`.
-- Avoid `shopt`, `$BASH_REMATCH`, shell arrays. See `docs/CONVENTIONS.md`.

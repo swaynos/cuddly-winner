@@ -100,7 +100,6 @@ REQUIRED_DOCS: dict[str, list[str]] = {
     "STRATEGY-CONTRACT.md": [
         "Loop Strategy Contract",
         "Karpathy-first invariant",
-        "Coordinator-class strategies",
     ],
     "PLUGINS.md": [
         "Immutability Plugin",
@@ -143,9 +142,6 @@ EXPECTED_AGENT_FILES = [
     "prometheus.md",
     "autonomous.md",
     "karpathy.md",
-    "ralph-wiggum.md",
-    "octopus.md",
-    "octopus-arm.md",
     "data-scientist.md",
     "grounder.md",
     "builder.md",
@@ -215,8 +211,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
         {"permission": "bash",  "action": "allow", "pattern": "rg *"},
         {"permission": "bash",  "action": "allow", "pattern": "find *"},
-        {"permission": "bash",  "action": "allow", "pattern": "python3 *"},
-        {"permission": "bash",  "action": "allow", "pattern": "python *"},
         {"permission": "read",  "action": "allow", "pattern": "*"},
         {"permission": "grep",  "action": "allow", "pattern": "*"},
         {"permission": "glob",  "action": "allow", "pattern": "*"},
@@ -261,8 +255,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "task",  "action": "allow", "pattern": "grounder"},
         {"permission": "task",  "action": "allow", "pattern": "reviewer"},
         {"permission": "task",  "action": "allow", "pattern": "karpathy"},
-        {"permission": "task",  "action": "allow", "pattern": "ralph-wiggum"},
-        {"permission": "task",  "action": "allow", "pattern": "octopus"},
         {"permission": "task",  "action": "allow", "pattern": "builder"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
@@ -298,54 +290,8 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
         {"permission": "bash",  "action": "allow", "pattern": "cat *"},
         {"permission": "bash",  "action": "allow", "pattern": "rg *"},
-        {"permission": "task",  "action": "allow", "pattern": "autonomous"},
+        {"permission": "task",  "action": "allow", "pattern": "builder"},
         {"permission": "task",  "action": "allow", "pattern": "reviewer"},
-        {"permission": "task",  "action": "deny",  "pattern": "*"},
-    ],
-    "ralph-wiggum": [
-        {"permission": "bash",  "action": "ask",   "pattern": "*"},
-        {"permission": "bash",  "action": "allow", "pattern": "python *"},
-        {"permission": "bash",  "action": "allow", "pattern": "python3 *"},
-        {"permission": "bash",  "action": "allow", "pattern": "uv run *"},
-        {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
-        {"permission": "bash",  "action": "allow", "pattern": "npm test*"},
-        {"permission": "bash",  "action": "allow", "pattern": "npm run *"},
-        {"permission": "bash",  "action": "allow", "pattern": "rg *"},
-        {"permission": "bash",  "action": "allow", "pattern": "git status*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git log*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git add*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git commit*"},
-        {"permission": "task",  "action": "allow", "pattern": "autonomous"},
-        {"permission": "task",  "action": "allow", "pattern": "reviewer"},
-        {"permission": "task",  "action": "deny",  "pattern": "*"},
-    ],
-    "octopus": [
-        {"permission": "bash",  "action": "ask",   "pattern": "*"},
-        {"permission": "bash",  "action": "allow", "pattern": "python *"},
-        {"permission": "bash",  "action": "allow", "pattern": "python3 *"},
-        {"permission": "bash",  "action": "allow", "pattern": "uv run *"},
-        {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
-        {"permission": "bash",  "action": "allow", "pattern": "rg *"},
-        {"permission": "bash",  "action": "allow", "pattern": "git status*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git log*"},
-        {"permission": "edit",  "action": "allow", "pattern": "*"},
-        {"permission": "write", "action": "allow", "pattern": "*"},
-        {"permission": "task",  "action": "allow", "pattern": "octopus-arm"},
-        {"permission": "task",  "action": "allow", "pattern": "reviewer"},
-        {"permission": "task",  "action": "deny",  "pattern": "*"},
-    ],
-    "octopus-arm": [
-        {"permission": "edit",  "action": "deny",  "pattern": "*"},
-        {"permission": "write", "action": "deny",  "pattern": "*"},
-        {"permission": "bash",  "action": "deny",  "pattern": "*"},
-        {"permission": "bash",  "action": "allow", "pattern": "rg *"},
-        {"permission": "bash",  "action": "allow", "pattern": "find *"},
-        {"permission": "bash",  "action": "allow", "pattern": "cat *"},
-        {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git log*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git status*"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
     "reviewer": [
@@ -356,8 +302,7 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "git status*"},
         {"permission": "bash",  "action": "allow", "pattern": "rg *"},
         {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
-        {"permission": "bash",  "action": "allow", "pattern": "python *"},
-        {"permission": "bash",  "action": "allow", "pattern": "python3 *"},
+        {"permission": "bash",  "action": "allow", "pattern": "python3 -m pytest *"},
         {"permission": "bash",  "action": "allow", "pattern": "uv run *"},
         {"permission": "bash",  "action": "allow", "pattern": "npm test*"},
         {"permission": "bash",  "action": "allow", "pattern": "go test *"},
@@ -405,9 +350,6 @@ EXPECTED_MODES: dict[str, str] = {
     "prometheus":     "primary",
     "autonomous":     "all",
     "karpathy":       "subagent",
-    "ralph-wiggum":   "subagent",
-    "octopus":        "subagent",
-    "octopus-arm":    "subagent",
     "data-scientist": "subagent",
     "grounder":       "subagent",
     "builder":        "subagent",
@@ -706,7 +648,7 @@ def check_strategy_registry() -> list[Failure]:
         task_allows = re.findall(r'"([a-z0-9-]+)"\s*:\s*allow', fm)
         delegation_allows = [a for a in task_allows if a != "reviewer"]
         if not delegation_allows:
-            failures.append(Failure("strategy", f"{entry['name']}: task must allow a delegation target ('autonomous' for single-agent, or an arm for coordinator-class)"))
+            failures.append(Failure("strategy", f"{entry['name']}: task must allow a delegation target ('builder' for single-agent strategies)"))
 
         # required contract sections (case-insensitive) must appear in the body.
         body = text.split("---", 2)[-1].lower()
@@ -716,8 +658,6 @@ def check_strategy_registry() -> list[Failure]:
 
     if "karpathy" not in names:
         failures.append(Failure("strategy", "registry must include a 'karpathy' entry"))
-    if "ralph-wiggum" not in names:
-        failures.append(Failure("strategy", "registry must include a 'ralph-wiggum' entry"))
 
     if failures:
         for f in failures:
@@ -788,19 +728,14 @@ def check_prometheus_handoff() -> list[Failure]:
             "prometheus.md: must forbid prose before the SPEC payload block",
         ),
         (
-            "<spec filename=\"SPEC.md\">" in autonomous_text
-            and "enclosed content verbatim to `SPEC.md`" in autonomous_text,
-            "autonomous.md: must materialize Prometheus SPEC payloads verbatim before implementation",
+            "gate plugin" in autonomous_text
+            and "auto-materializes" in autonomous_text,
+            "autonomous.md: must document that the gate plugin auto-materializes Prometheus SPEC payloads",
         ),
         (
-            "immediately preceding visible Prometheus" in autonomous_text
-            and "treating the on-disk spec as authoritative is" in autonomous_text,
-            "autonomous.md: must materialize visible same-session Prometheus payloads, not only current user-message payloads",
-        ),
-        (
-            "Karpathy admission gate" in autonomous_text
-            and "Selected: karpathy` is a commitment to invoke `@karpathy`" in autonomous_text,
-            "autonomous.md: must require a Karpathy admission gate and real @karpathy invocation",
+            "@karpathy" in autonomous_text
+            and "Karpathy strategy" in autonomous_text,
+            "autonomous.md: must require Karpathy strategy delegation via @karpathy",
         ),
     ]
 
@@ -830,6 +765,14 @@ def check_prometheus_handoff() -> list[Failure]:
             (
                 "prometheusPayloadHash" in gate_text,
                 "opencode-autonomous-gate: must track Prometheus payload hash for freshness check",
+            ),
+            (
+                "writeFile" in gate_text and "SPEC.md" in gate_text,
+                "opencode-autonomous-gate: must auto-write SPEC.md from Prometheus payloads",
+            ),
+            (
+                "extractReviewerVerdict" in gate_text,
+                "opencode-autonomous-gate: must parse reviewer verdict from ### Verdict block",
             ),
         ]
         for passed, message in gate_checks:
@@ -923,92 +866,7 @@ def check_prometheus_planning_contract() -> list[Failure]:
     return failures
 
 
-def check_octopus_perception() -> list[Failure]:
-    """Verify the Octopus coordinator-class brain/arm split:
 
-    Brain (agents/octopus.md):
-    - exists; dispatches arms via task: octopus-arm: allow
-    - HAS edit/write grants (it is the sole builder)
-    - does NOT route arms through @autonomous (no task: autonomous)
-    - body documents the admission test and persona derivation
-
-    Arm (agents/octopus-arm.md):
-    - exists; read-only: edit deny, write deny, no task allows
-    - body documents the evidence-backed perception contract
-    """
-    failures: list[Failure] = []
-    _print_header("A4. Octopus brain/arm split")
-
-    brain = AGENTS_DIR / "octopus.md"
-    arm = AGENTS_DIR / "octopus-arm.md"
-
-    if not brain.exists():
-        failures.append(Failure("octopus", "agents/octopus.md missing"))
-    if not arm.exists():
-        failures.append(Failure("octopus", "agents/octopus-arm.md missing"))
-    if failures:
-        for f in failures:
-            _print_fail(f.message)
-        return failures
-
-    btext = brain.read_text(encoding="utf-8")
-    bfm = _frontmatter_block(btext)
-    bbody = btext.split("---", 2)[-1].lower()
-
-    atext = arm.read_text(encoding="utf-8")
-    afm = _frontmatter_block(atext)
-    abody = atext.split("---", 2)[-1].lower()
-
-    checks = [
-        # --- Brain: sole builder ---
-        (
-            re.search(r'"octopus-arm"\s*:\s*allow', bfm) is not None,
-            "octopus.md (brain): task must allow 'octopus-arm' (dispatches arms)",
-        ),
-        (
-            re.search(r'"autonomous"\s*:\s*allow', bfm) is None,
-            "octopus.md (brain): must NOT route arms through 'autonomous' (recursion/role confusion)",
-        ),
-        (
-            re.search(r'edit\s*:[\s\S]*?allow', bfm) is not None,
-            "octopus.md (brain): must HAVE edit allow — it is the sole builder",
-        ),
-        (
-            re.search(r'write\s*:[\s\S]*?allow', bfm) is not None,
-            "octopus.md (brain): must HAVE write allow — it is the sole builder",
-        ),
-        (
-            "admission test" in bbody,
-            "octopus.md (brain): body must document the admission test",
-        ),
-        # --- Arm: read-only ---
-        (
-            re.search(r'edit\s*:\s*deny', afm) is not None,
-            "octopus-arm.md: edit must be denied (read-only)",
-        ),
-        (
-            re.search(r'write\s*:\s*deny', afm) is not None,
-            "octopus-arm.md: write must be denied (read-only)",
-        ),
-        (
-            re.search(r'"autonomous"\s*:\s*allow', afm) is None and re.search(r'"octopus-arm"\s*:\s*allow', afm) is None,
-            "octopus-arm.md: must NOT delegate via task (no arm dispatch from an arm)",
-        ),
-        (
-            "evidence" in abody and "dedupkey" in abody.replace(" ", ""),
-            "octopus-arm.md: body must document the evidence-backed perception contract (Evidence, DedupKey)",
-        ),
-    ]
-
-    for passed, message in checks:
-        if not passed:
-            failures.append(Failure("octopus", message))
-            _print_fail(message)
-
-    if not failures:
-        _print_pass("Octopus brain/arm split: brain builds + dispatches octopus-arm; arm is read-only with evidence contract")
-
-    return failures
 
 
 def check_builder_delegation_contract() -> list[Failure]:
@@ -2137,6 +1995,138 @@ def report(failures: list[Failure]) -> int:
 # main
 # ---------------------------------------------------------------------------
 
+def check_permission_hygiene() -> list[Failure]:
+    """Verify that read-only agents do not expose broad python* execution.
+
+    A read-only agent (edit: deny) with 'python *' or 'python3 *' bash permissions
+    can write arbitrary files via python3 -c 'open(...).write(...)'.
+    """
+    failures: list[Failure] = []
+    _print_header("A6. Permission hygiene")
+
+    for agent_file in sorted(AGENTS_DIR.glob("*.md")):
+        text = agent_file.read_text(encoding="utf-8")
+        fm = _frontmatter_block(text)
+        if not fm:
+            continue
+        if "edit: deny" not in fm and re.search(r'edit\s*:\s*deny', fm) is None:
+            continue
+        for bad_pattern, label in (
+            (r'"python \*"\s*:\s*allow', "python *"),
+            (r'"python3 \*"\s*:\s*allow', "python3 *"),
+        ):
+            if re.search(bad_pattern, fm):
+                failures.append(Failure(
+                    "permission_hygiene",
+                    f"{agent_file.name}: read-only agent (edit: deny) must not allow "
+                    f"broad '{label}' bash execution — use narrower patterns like 'python3 -m pytest *'",
+                ))
+
+    if failures:
+        for f in failures:
+            _print_fail(f.message)
+    else:
+        _print_pass("Permission hygiene: no read-only agents with broad python* execution")
+
+    return failures
+
+
+def check_task_acyclicity() -> list[Failure]:
+    """Verify the task delegation graph has no cycles (e.g. karpathy → autonomous → karpathy)."""
+    failures: list[Failure] = []
+    _print_header("A7. Task delegation acyclicity")
+
+    graph: dict[str, set[str]] = {}
+
+    for agent_file in sorted(AGENTS_DIR.glob("*.md")):
+        agent_name = agent_file.stem
+        text = agent_file.read_text(encoding="utf-8")
+        fm = _frontmatter_block(text)
+        if not fm:
+            graph[agent_name] = set()
+            continue
+        task_block_match = re.search(r'\btask\s*:\s*\n((?:[ \t]+.*\n)*)', fm)
+        if task_block_match:
+            task_block = task_block_match.group(1)
+            targets = re.findall(r'"([a-z0-9-]+)"\s*:\s*allow', task_block)
+        else:
+            targets = []
+        graph[agent_name] = set(targets)
+
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = {n: WHITE for n in graph}
+
+    def dfs(node: str, path: list[str]) -> Optional[list[str]]:
+        color[node] = GRAY
+        path = path + [node]
+        for neighbor in sorted(graph.get(node, set())):
+            if neighbor not in color:
+                continue
+            if color[neighbor] == GRAY:
+                cycle_start = path.index(neighbor)
+                return path[cycle_start:] + [neighbor]
+            if color[neighbor] == WHITE:
+                result = dfs(neighbor, path)
+                if result:
+                    return result
+        color[node] = BLACK
+        return None
+
+    for node in sorted(graph):
+        if color[node] == WHITE:
+            cycle = dfs(node, [])
+            if cycle:
+                failures.append(Failure(
+                    "task_acyclicity",
+                    f"Task delegation cycle: {' → '.join(cycle)}",
+                ))
+
+    if failures:
+        for f in failures:
+            _print_fail(f.message)
+    else:
+        _print_pass(f"Task delegation acyclicity: no cycles ({len(graph)} agents checked)")
+
+    return failures
+
+
+def check_runner_tool() -> list[Failure]:
+    """Verify that .opencode/tool/run.ts exists and has required properties."""
+    failures: list[Failure] = []
+    _print_header("A8. Runner tool")
+
+    runner = REPO_ROOT / ".opencode" / "tool" / "run.ts"
+    if not runner.exists():
+        failures.append(Failure("runner_tool", "Missing .opencode/tool/run.ts — deterministic bash runner required"))
+        _print_fail(failures[-1].message)
+        return failures
+
+    text = runner.read_text(encoding="utf-8")
+    checks = [
+        (
+            "bash" in text and '"-c"' in text,
+            ".opencode/tool/run.ts: must spawn bash with -c flag (not $SHELL)",
+        ),
+        (
+            ".opencode/runs" in text or "opencode/runs" in text,
+            ".opencode/tool/run.ts: must write artifacts to .opencode/runs/",
+        ),
+        (
+            "exit_code" in text,
+            ".opencode/tool/run.ts: RunResult must include exit_code field",
+        ),
+    ]
+    for passed, message in checks:
+        if not passed:
+            failures.append(Failure("runner_tool", message))
+            _print_fail(message)
+
+    if not failures:
+        _print_pass("Runner tool: .opencode/tool/run.ts present with bash -c and disk artifacts")
+
+    return failures
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=textwrap.dedent(__doc__ or ""),
@@ -2178,13 +2168,23 @@ def main() -> None:
     if all_failures:
         sys.exit(report(all_failures))
 
-    # A4. Octopus perception contract (no sandbox needed)
-    all_failures += check_octopus_perception()
+    # A5. Builder worker delegation contract (no sandbox needed)
+    all_failures += check_builder_delegation_contract()
     if all_failures:
         sys.exit(report(all_failures))
 
-    # A5. Builder worker delegation contract (no sandbox needed)
-    all_failures += check_builder_delegation_contract()
+    # A6. Permission hygiene (no sandbox needed)
+    all_failures += check_permission_hygiene()
+    if all_failures:
+        sys.exit(report(all_failures))
+
+    # A7. Task delegation acyclicity (no sandbox needed)
+    all_failures += check_task_acyclicity()
+    if all_failures:
+        sys.exit(report(all_failures))
+
+    # A8. Runner tool presence (no sandbox needed)
+    all_failures += check_runner_tool()
     if all_failures:
         sys.exit(report(all_failures))
 

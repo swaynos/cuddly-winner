@@ -6,18 +6,6 @@
       "agent": "karpathy",
       "applicability": "Mandatory when a task has (or can be given) a scalar metric and a stable frozen evaluator; iterate one change at a time, keep only if improvement exceeds 2x the noise floor.",
       "status": "reference"
-    },
-    {
-      "name": "ralph-wiggum",
-      "agent": "ralph-wiggum",
-      "applicability": "Last resort among loop strategies; only after the instrument-first step fails (no scalar metric or frozen evaluator can be constructed). Brute-force repeat-until-done for tasks with no automatable verifier; each iteration reads the current repo state, attempts progress, commits, and exits; memory is files and git; fresh context each iteration; bounded by a hard iteration cap.",
-      "status": "active"
-    },
-    {
-      "name": "octopus",
-      "agent": "octopus",
-      "applicability": "Coordinator-class: @octopus is the sole builder; it dispatches read-only @octopus-arm persona lenses to feel the SPEC (pre-build) and implementation (post-build), integrates their evidence-backed perceptions, and builds. For high-risk, multi-lens tasks where a single reviewer pass would miss things. Default 3 arms, bounded 3 rounds. Subject to an admission test; not a default strategy.",
-      "status": "active"
     }
   ]
 }

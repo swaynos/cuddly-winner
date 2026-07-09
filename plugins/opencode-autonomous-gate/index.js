@@ -35,7 +35,14 @@ const AGENT_NAME = process.env.OPENCODE_AUTONOMOUS_AGENT_NAME || "autonomous";
 const COMPLETE_TOKEN = "<promise>COMPLETE</promise>";
 const STUCK_TOKEN = "<promise>WORK_STUCK</promise>";
 const BLOCKED_TOKEN = "<promise>BLOCKED</promise>";
-const REVIEWER_APPROVE_PATTERN = /\bAPPROVE\b/;
+
+function extractReviewerVerdict(text) {
+  const match = text.match(/###\s+Verdict\s*\n([\s\S]*?)(?=\n###|\n##|$)/i);
+  if (!match) return null;
+  const block = match[1];
+  const lines = block.split("\n").map(l => l.trim()).filter(Boolean);
+  return lines.length > 0 ? lines[lines.length - 1] : null;
+}
 
 // Detects the workaround-dump pattern: agent says it can't do something AND
 // provides a code block with commands for the user to run manually.
@@ -565,10 +572,9 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     st.recentTexts.push(text);
     if (st.recentTexts.length > 10) st.recentTexts.shift();
 
-    if (REVIEWER_APPROVE_PATTERN.test(text)) {
-      if (String(agent || "").toLowerCase() === "reviewer") {
-        st.reviewerApproved = true;
-      }
+    if (String(agent || "").toLowerCase() === "reviewer") {
+      const verdict = extractReviewerVerdict(text);
+      if (verdict === "APPROVE") { st.reviewerApproved = true; }
     }
 
     // Track @karpathy delegation: any message from the karpathy agent counts.
@@ -582,6 +588,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       if (payload) {
         st.prometheusPayloadHash = hashText(payload.trim());
         st.prometheusPayloadContent = payload;
+        await fs.writeFile(path.join(directory, "SPEC.md"), payload.trim() + "\n", "utf-8");
       }
     }
 
@@ -690,8 +697,9 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
           }
 
           if (!hasTaskTool) {
-            requireReviewer = false;
-            await log("info", "@reviewer agent is present, but 'task' tool is not available in the session. Auto-disabling reviewer requirement.");
+            await log("warn", "'task' tool unavailable; @reviewer cannot be invoked. Flagging as failure condition.");
+            reasons.push("@reviewer is available but the 'task' tool is not available in this session. Obtain reviewer approval through an alternative mechanism or set OPENCODE_AUTONOMOUS_REQUIRE_REVIEWER=false to waive.");
+            requireReviewer = false; // prevent duplicate message from downstream check
           }
         }
       }

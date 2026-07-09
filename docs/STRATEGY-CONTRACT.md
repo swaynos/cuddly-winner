@@ -34,7 +34,7 @@ mode: subagent
 hidden: true
 permission:
   task:
-    "autonomous": allow
+    "builder": allow
     "reviewer": allow
     "*": deny
 ---
@@ -42,9 +42,9 @@ permission:
 
 - `mode: subagent` — strategies are never user-facing primary agents.
 - `hidden: true` — users interact with `@autonomous`, not the strategy directly.
-- `task` must allow `autonomous` and `reviewer` and deny `*`. A strategy may
-  delegate implementation back to `@autonomous` and may call `@reviewer`; it may
-  not summon arbitrary agents.
+- `task` must allow `builder` and `reviewer` and deny `*`. A strategy delegates
+  implementation to `@builder` and may call `@reviewer`; it may not summon
+  arbitrary agents.
 
 `bash` permissions are strategy-specific but should follow least privilege.
 
@@ -98,78 +98,18 @@ below).
 
 ---
 
-## 5. Coordinator-class strategies
+## 5. Coordinator-class strategies (retired)
 
-A **coordinator-class strategy** splits into two agents: a **brain** (the sole
-builder) and read-only **perception arms** (persona lenses). The Octopus strategy
-is the reference implementation: `agents/octopus.md` is the brain,
-`agents/octopus-arm.md` is the arm.
+Coordinator-class strategies (brain + perception arms) are no longer active in
+this project. The complexity vs. benefit tradeoff did not justify the token cost
+and correlated-reviewer failure mode. `@karpathy` is the sole active strategy.
 
-### Brain vs. arm — separated permissions
-
-The brain and arm have deliberately different permission postures. Do not fold
-them into one agent.
-
-| | Brain (`@octopus`) | Arm (`@octopus-arm`) |
-|---|---|---|
-| Builds / mutates | Yes — sole builder (`edit`/`write` allowed) | No — `edit`/`write` denied |
-| Delegates | Dispatches arms via `task` | No `task` delegation |
-| Reads project | Yes | Yes (read-only bash: rg/cat/ls/git) |
-| Role | Derives personas, integrates perceptions, builds | Feels one lens, returns one perception |
-
-The brain dispatches arms via the arm agent directly (`task: <arm>: allow`) —
-**never through `@autonomous`**. Routing perception arms through the builder
-causes recursion and defeats read-only enforcement.
-
-### Two sensing phases
-
-1. **Pre-build:** arms feel the SPEC to surface risks and gaps; the brain
-   integrates their perceptions into a sharper plan before building.
-2. **Post-build:** arms feel the actual implementation; the brain revises until
-   perceptions are clean or the rounds budget is exhausted.
-
-### Restraint (anti-inflation)
-
-Coordinator strategies risk "committee review inflation" — many generic
-reviewers burning tokens. Required guardrails:
-
-- An **admission test**: the brain must confirm the task warrants the strategy
-  (Karpathy inapplicable; ≥3 distinct non-overlapping risk lenses; meaningful
-  cost of failure) before running.
-- **Default to 3 arms**, escalating toward the cap (8) only when the SPEC
-  justifies more distinct lenses.
-- A **bounded rounds budget** (3 build→feel→revise rounds).
-- Every arm must **pay rent**: a perception is only accepted with evidence (or
-  an explicit "SPEC-only inference" marker), a confidence level, an
-  actionability verdict, and a dedup key.
-
-### Perception findings contract (arm output)
-
-Arms return a structured perception — never an artifact, never a diff:
-
-    ARM <persona> PERCEPTION
-    Lens: <perspective + the question it asks>
-    Phase: SPEC | IMPLEMENTATION
-    Sensed: <risk/gap/smell/missing case, or "nothing found" + scope checked>
-    Severity: BLOCKING | CONCERN | NIT
-    Evidence: <file:line / test / spec clause / log, or "SPEC-only inference">
-    Confidence: LOW | MEDIUM | HIGH
-    Actionability: FIX_NOW | DOCUMENT | IGNORE
-    DedupKey: <stable key so repeated concerns are suppressed across rounds>
-    Recommendation: <what the brain should do; the arm never applies it>
-
-### Adding a coordinator strategy to `@autonomous`
-
-A coordinator brain requires `@autonomous` to be able to invoke it: add
-`"<brain-name>": allow` to `@autonomous`'s `task` map and to `EXPECTED_RULES`
-in `tests/verify_opencode.py`. The brain in turn must allow its arm
-(`task: <arm-name>: allow`).
+If you need to add a coordinator-class strategy in the future, restore the
+historical documentation from git history for the design constraints.
 
 ---
 
 ## Reference implementation
 
 `agents/karpathy.md` is the reference implementation of the single-agent contract.
-`agents/octopus.md` (brain) and `agents/octopus-arm.md` (arm) together are the
-reference implementation of the coordinator-class contract. Read the relevant
-one alongside this document when authoring a new strategy.
+Read it alongside this document when authoring a new strategy.
