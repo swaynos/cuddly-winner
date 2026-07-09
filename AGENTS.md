@@ -1,5 +1,15 @@
 # Agent Rules
 
+## Environment Assumptions
+
+This project assumes the following tools are available on the machine:
+
+- **Python** — `python` or `python3` is assumed working. The user may have already activated a virtualenv via pyenv before invoking OpenCode; if so, that environment is used. If not activated, the agent will verify and request activation.
+- **pyenv** — Python version manager available on PATH for venv creation and isolation when needed.
+- **Node.js** — required by OpenCode; available on PATH as `node` or `npm`.
+
+If any of these are missing, operations will fail. Do not attempt to work around these assumptions (e.g., using system Python, conda, or a different JS runtime).
+
 ## Python environment — MANDATORY
 
 **NEVER run against the system Python. NEVER use pixi, poetry, pipenv, conda, or pdm.**
