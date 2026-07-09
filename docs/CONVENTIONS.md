@@ -8,13 +8,23 @@ This project targets **macOS and Linux** with identical behavior on both.
 
 **NEVER run against the system Python. NEVER use pixi, poetry, pipenv, conda, or pdm.**
 
-This project uses **pyenv + virtualenv** exclusively. Before running any `python3`
-command in a script or agent:
+This project uses **pyenv + virtualenv** exclusively. The project ships a bootstrap
+script that provisions the virtualenv automatically — no manual activation required:
 
-1. Confirm a virtualenv is active:
-   `python3 -c "import sys; assert sys.prefix != sys.base_prefix, 'NOT IN A VENV'"`
-2. If no venv is active, stop and surface an error. Do not fall back to system Python.
-3. Never create a virtualenv with any tool other than pyenv.
+```bash
+PYTHON="$(bash scripts/ensure-venv.sh)"
+"$PYTHON" tests/verify_opencode.py --skip-llm
+```
+
+`scripts/ensure-venv.sh`:
+- Reads the desired venv name from `.python-version` in the repo root.
+- Checks if the venv exists in pyenv; creates it if not (using the latest
+  pyenv-managed base Python).
+- Prints the interpreter path to stdout; status messages go to stderr.
+- Exits 1 only if pyenv itself is absent — the one unrecoverable failure.
+
+Run `ensure-venv.sh` as preflight **before any edits** when the task will
+require Python. Do not defer to the verification step.
 
 Violating this rule corrupts the user's system Python and poisons test results.
 This is not a suggestion. It is a hard rule enforced at the top of `AGENTS.md`.
@@ -140,3 +150,30 @@ preflight. It warns if shellcheck is not installed; set
 - [ ] Non-trivial logic delegated to `python3`
 - [ ] No `mapfile`/`readarray` — bash 4+ only; macOS ships bash 3.2
 - [ ] `shellcheck -s bash <script>` exits 0
+
+---
+
+## Runner tool (`run.ts`)
+
+Agents that need reproducible, evidence-producing shell execution must use the
+project runner tool at `.opencode/tool/run.ts` instead of invoking the `bash`
+tool directly.
+
+The runner:
+
+- Always spawns `bash -c` (never `$SHELL`) — behavior is identical on macOS
+  and Linux.
+- Writes a structured JSON artifact to `.opencode/runs/{run_id}.json` with
+  `exit_code`, `stdout_tail`, `stderr_tail`, `duration_ms`, and `timed_out`.
+- Writes a raw log to `.opencode/runs/{run_id}.log`.
+
+The gate plugin reads `.opencode/runs/` as the **primary** evidence path. A
+transcript evidence block is a fallback; an artifact from `run.ts` is
+authoritative.
+
+**When `run.ts` is not available** (the file is missing from the project),
+emit `<promise>BLOCKED</promise>` with the reason. The gate accepts BLOCKED in
+this case even when the `bash` tool is present.
+
+**Registration**: `run.ts` exports a default async function and a `RunParams`
+type. OpenCode auto-discovers tools via the default export.

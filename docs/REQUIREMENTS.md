@@ -149,10 +149,6 @@ The core agent suite must include:
 - `@autonomous` for materializing specs, executing work, selecting strategies,
   maintaining progress, invoking reviewer, and owning completion.
 - `@karpathy` as the reference deterministic metric loop strategy.
-- `@ralph-wiggum` as a bounded brute-force fallback strategy for tasks that
-  resist instrumentation.
-- `@octopus` as a coordinator-class strategy brain.
-- `@octopus-arm` as a read-only perception arm dispatched by `@octopus`.
 - `@data-scientist` as NotebookLM-grounded research when valid notebook context
   exists.
 - `@grounder` as the read-only grounding fallback.
@@ -192,8 +188,8 @@ durable evidence.
 ### Strategy Registry
 
 `.opencode/strategies.json` is the declarative registry for loop strategies. It
-must include `karpathy` and `ralph-wiggum`, and may include other active,
-reference, or planned strategies. Planned strategies are documentation slots and
+must include `karpathy`, and may include other active, reference, or planned
+strategies. Planned strategies are documentation slots and
 do not require agent files yet.
 
 Worker subagents, research subagents, reviewers, and perception arms are not

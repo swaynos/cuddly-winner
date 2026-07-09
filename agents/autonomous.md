@@ -53,15 +53,17 @@ This check takes priority over everything else, including the spec check.
 
 Also check that `.opencode/tool/run.ts` is available in the project. If not,
 emit `<promise>BLOCKED</promise>` — the deterministic runner is required for
-gate-satisfying evidence.
+gate-satisfying evidence. The gate will accept this BLOCKED state when you
+document "`.opencode/tool/run.ts` not available" as the reason.
 
 # Spec file (required)
 
 Read `SPEC.md` from disk before doing anything else. The gate plugin
 auto-materializes Prometheus `<spec filename="SPEC.md">` payloads to disk,
-so the file should exist when you are invoked. If still not present, emit
-`<promise>WORK_STUCK</promise>` immediately:
-"No spec file found (`SPEC.md` or `spec.md`). Run `@prometheus` to scaffold
+so the file should exist when you are invoked. If still not present, document
+three distinct recovery approaches in your message using the labels "Attempt 1:",
+"Attempt 2:", "Attempt 3:", then emit `<promise>WORK_STUCK</promise>`:
+"No spec file found after 3 recovery attempts. Run `@prometheus` to scaffold
 one, then invoke me again."
 
 Accepted spec filenames (in priority order):
@@ -100,6 +102,10 @@ If implementation depends on undocumented behavior, a third-party API, unclear
 local conventions, or project knowledge outside the repo, invoke `@grounder` first.
 Use only cited evidence from the brief. Do not guess your way through integration
 boundaries.
+
+If the SPEC is flagged `analysis-heavy: true` or the task requires statistical
+analysis, data modeling, or NotebookLM-grounded research, invoke `@data-scientist`
+via the Task tool before proceeding. Treat its output as grounded evidence.
 
 That is the whole job. Brute force it. Do not over-think it. Do not stop until it
 is done.

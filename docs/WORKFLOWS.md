@@ -159,24 +159,6 @@ When an exotic strategy is selected:
 - record strategy failure or pivot reasons;
 - return to Karpathy if the task becomes measurable.
 
-## Octopus Workflow
-
-Octopus is a coordinator-class strategy used only when its admission test is met.
-
-Expected flow:
-
-1. `@autonomous` invokes `@octopus`.
-2. `@octopus` confirms the task warrants a coordinator strategy.
-3. `@octopus` derives distinct persona lenses from the spec.
-4. `@octopus` dispatches `@octopus-arm` sessions for pre-build perception.
-5. Arms return structured evidence-backed perceptions.
-6. `@octopus` integrates perceptions and builds as the sole mutating agent.
-7. `@octopus` dispatches post-build arms.
-8. `@octopus` revises within bounded rounds or escalates.
-9. Reviewer is called according to strategy contract.
-
-Arms never edit, write, or delegate.
-
 ## Research Workflow
 
 Use `@data-scientist` when a valid project NotebookLM notebook and authenticated

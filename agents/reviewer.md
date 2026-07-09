@@ -108,6 +108,20 @@ or
 
 The verdict must be the last non-empty content in your response.
 
+# Lenses (optional)
+
+When the caller provides a `lens:` directive in their request, apply the named
+perspective as an additional rubric layer over the standard review:
+
+- **security** — flag unsafe input handling, injection vectors, credential
+  exposure, permission escalation, or insecure defaults.
+- **performance** — flag algorithmic complexity issues, unnecessary I/O,
+  blocking operations in hot paths, or missing caching for repeated queries.
+- **accessibility** — flag missing ARIA attributes, keyboard-unreachable
+  elements, poor contrast ratios, or screen-reader-hostile markup.
+
+If no lens is provided, apply the standard rubric only.
+
 # Standards
 
 - Every PASS or FAIL must cite evidence. No vibes.

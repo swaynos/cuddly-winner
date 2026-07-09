@@ -98,7 +98,9 @@ python3 tests/audit_run.py --project /path/to/project --session <session-id>
 - Prometheus read-only handoff markers;
 - Autonomous spec materialization markers;
 - Karpathy admission gate markers;
-- Octopus brain/arm markers;
+- permission hygiene (no broad python*/node*/npm*/sed*/awk* in read-only agents);
+- task-delegation acyclicity (no agent delegation cycles);
+- runner tool presence and structural conformance;
 - sandboxed OpenCode path isolation;
 - deployment script install/status/remove behavior;
 - resolved agent modes;
@@ -145,9 +147,6 @@ The validator should assert the expected core agent roster and mode:
 - `prometheus`: primary
 - `autonomous`: all
 - `karpathy`: subagent
-- `ralph-wiggum`: subagent
-- `octopus`: subagent
-- `octopus-arm`: subagent
 - `data-scientist`: subagent
 - `grounder`: subagent
 - `reviewer`: subagent

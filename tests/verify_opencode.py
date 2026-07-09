@@ -1046,6 +1046,18 @@ def check_preflight() -> list[Failure]:
     else:
         _print_pass("scripts/deploy-opencode-agents.sh")
 
+    ensure_venv_script = REPO_ROOT / "scripts" / "ensure-venv.sh"
+    if not ensure_venv_script.exists():
+        failures.append(Failure("preflight", "scripts/ensure-venv.sh missing — agents cannot self-provision Python environment"))
+        _print_fail("scripts/ensure-venv.sh")
+    else:
+        result = subprocess.run(["bash", "-n", str(ensure_venv_script)], capture_output=True, text=True)
+        if result.returncode != 0:
+            failures.append(Failure("preflight", f"scripts/ensure-venv.sh syntax error: {result.stderr.strip()}"))
+            _print_fail("scripts/ensure-venv.sh (syntax error)")
+        else:
+            _print_pass("scripts/ensure-venv.sh")
+
     # AGENTS.md
     if not AGENTS_MD.exists():
         failures.append(Failure("preflight", "AGENTS.md missing from repo root"))
@@ -2014,6 +2026,10 @@ def check_permission_hygiene() -> list[Failure]:
         for bad_pattern, label in (
             (r'"python \*"\s*:\s*allow', "python *"),
             (r'"python3 \*"\s*:\s*allow', "python3 *"),
+            (r'"node \*"\s*:\s*allow', "node *"),
+            (r'"npm \*"\s*:\s*allow', "npm *"),
+            (r'"sed \*"\s*:\s*allow', "sed *"),
+            (r'"awk \*"\s*:\s*allow', "awk *"),
         ):
             if re.search(bad_pattern, fm):
                 failures.append(Failure(
@@ -2091,9 +2107,9 @@ def check_task_acyclicity() -> list[Failure]:
 
 
 def check_runner_tool() -> list[Failure]:
-    """Verify that .opencode/tool/run.ts exists and has required properties."""
+    """Behavioral check: execute run.ts with exit 42 (via tsx) and verify artifact."""
     failures: list[Failure] = []
-    _print_header("A8. Runner tool")
+    _print_header("A8. Runner tool (behavioral)")
 
     runner = REPO_ROOT / ".opencode" / "tool" / "run.ts"
     if not runner.exists():
@@ -2102,27 +2118,89 @@ def check_runner_tool() -> list[Failure]:
         return failures
 
     text = runner.read_text(encoding="utf-8")
-    checks = [
-        (
-            "bash" in text and '"-c"' in text,
-            ".opencode/tool/run.ts: must spawn bash with -c flag (not $SHELL)",
-        ),
-        (
-            ".opencode/runs" in text or "opencode/runs" in text,
-            ".opencode/tool/run.ts: must write artifacts to .opencode/runs/",
-        ),
-        (
-            "exit_code" in text,
-            ".opencode/tool/run.ts: RunResult must include exit_code field",
-        ),
-    ]
-    for passed, message in checks:
-        if not passed:
-            failures.append(Failure("runner_tool", message))
-            _print_fail(message)
+    if "export default" not in text:
+        failures.append(Failure(
+            "runner_tool",
+            ".opencode/tool/run.ts: missing 'export default' — OpenCode tool registration requires a default export",
+        ))
+        _print_fail(failures[-1].message)
+        return failures
 
-    if not failures:
-        _print_pass("Runner tool: .opencode/tool/run.ts present with bash -c and disk artifacts")
+    tsx_bin = shutil.which("tsx")
+    if not tsx_bin:
+        # tsx not available; structural checks only (not behavioral).
+        # Set RUNNER_BEHAVIORAL_REQUIRED=1 to make this a hard failure.
+        checks = [
+            ("bash" in text and '"-c"' in text,
+             ".opencode/tool/run.ts: must spawn bash with -c flag (not $SHELL)"),
+            (".opencode/runs" in text or "opencode/runs" in text,
+             ".opencode/tool/run.ts: must write artifacts to .opencode/runs/"),
+            ("exit_code" in text,
+             ".opencode/tool/run.ts: RunResult must include exit_code field"),
+        ]
+        for passed, message in checks:
+            if not passed:
+                failures.append(Failure("runner_tool", message))
+                _print_fail(message)
+        if failures:
+            return failures
+        if os.environ.get("RUNNER_BEHAVIORAL_REQUIRED") == "1":
+            failures.append(Failure("runner_tool", "tsx not installed and RUNNER_BEHAVIORAL_REQUIRED=1 — install tsx to run behavioral check"))
+            _print_fail("Runner tool: tsx not installed (RUNNER_BEHAVIORAL_REQUIRED=1)")
+        else:
+            _print_skip("Runner tool: structural checks pass (tsx not installed; set RUNNER_BEHAVIORAL_REQUIRED=1 to enforce behavioral check)")
+        return failures
+
+    # Behavioral execution: call run({ command: "exit 42" }) and verify artifact
+    driver_code = textwrap.dedent("""
+        import { run } from "./.opencode/tool/run.ts";
+        import { existsSync, unlinkSync } from "node:fs";
+        import path from "node:path";
+        const r = await run({ command: "exit 42", timeoutSec: 5 });
+        if (r.exit_code !== 42) {
+            console.error("expected exit_code 42, got", r.exit_code);
+            process.exit(1);
+        }
+        const artifactPath = path.join(process.cwd(), ".opencode", "runs", r.run_id + ".json");
+        if (!existsSync(artifactPath)) {
+            console.error("artifact not found:", artifactPath);
+            process.exit(1);
+        }
+        try { unlinkSync(artifactPath); } catch {}
+        console.log("OK run_id=" + r.run_id + " exit_code=" + r.exit_code);
+    """).strip()
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".ts", mode="w", delete=False, dir=str(REPO_ROOT), prefix="_run_test_"
+    ) as f:
+        f.write(driver_code)
+        driver_path = f.name
+
+    try:
+        result = subprocess.run(
+            [tsx_bin, driver_path],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT),
+            timeout=15,
+        )
+        if result.returncode != 0:
+            msg = (
+                ".opencode/tool/run.ts: behavioral execution failed: "
+                + (result.stderr or result.stdout)[:300].strip()
+            )
+            failures.append(Failure("runner_tool", msg))
+            _print_fail(msg)
+        else:
+            _print_pass(f"Runner tool: behavioral execution OK — {result.stdout.strip()}")
+    except subprocess.TimeoutExpired:
+        failures.append(Failure("runner_tool", ".opencode/tool/run.ts: behavioral execution timed out (>15s)"))
+        _print_fail(failures[-1].message)
+    finally:
+        try:
+            os.unlink(driver_path)
+        except OSError:
+            pass
 
     return failures
 

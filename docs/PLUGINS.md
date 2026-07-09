@@ -142,6 +142,72 @@ OPENCODE_AUTONOMOUS_REQUIRE_PROGRESS_UPDATE=true
 OPENCODE_AUTONOMOUS_AGENT_NAME=autonomous
 ```
 
+## Runner Tool
+
+Location:
+
+```text
+.opencode/tool/run.ts
+```
+
+Purpose:
+
+- provide deterministic, evidence-producing shell command execution for agents;
+- write structured result artifacts that the gate reads as primary evidence;
+- eliminate transcript-based evidence claims as the sole verification path.
+
+The runner always spawns `bash -c` (never `$SHELL`) so behavior is identical on
+macOS and Linux.
+
+### Invocation
+
+```typescript
+run({ command: string, cwd?: string, timeoutSec?: number })
+```
+
+Default timeout is 30 seconds.
+
+### Result structure
+
+Each invocation produces a `RunResult`:
+
+```json
+{
+  "run_id": "<random 8-byte hex>",
+  "exit_code": <number>,
+  "duration_ms": <number>,
+  "stdout_tail": "<last 2000 chars>",
+  "stderr_tail": "<last 2000 chars>",
+  "timed_out": <boolean>,
+  "command": "<exact command run>"
+}
+```
+
+### Artifact storage
+
+Results are persisted under `.opencode/runs/` in the target project:
+
+```text
+.opencode/runs/{run_id}.json   — structured RunResult
+.opencode/runs/{run_id}.log    — raw stdout+stderr interleaved
+```
+
+The gate plugin reads `.opencode/runs/` as the **primary evidence path**. It
+selects the newest artifact by filesystem mtime and checks `exit_code === 0`.
+A transcript evidence block (`exit_code: 0` in a fenced JSON block) is accepted
+only as fallback when no runner artifacts exist.
+
+### Registration
+
+`run.ts` exports a default async function. OpenCode auto-discovers tools via
+the default export.
+
+### When `run.ts` is absent
+
+If `.opencode/tool/run.ts` does not exist in the project, agents should emit
+`<promise>BLOCKED</promise>`. The gate verifies the file is genuinely absent
+from disk before accepting this BLOCKED state.
+
 ## Autonomous Loop Plugin
 
 Location:

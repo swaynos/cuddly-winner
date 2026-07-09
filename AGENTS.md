@@ -17,11 +17,20 @@ If any of these are missing, operations will fail. Do not attempt to work around
 This project uses **pyenv + virtualenv** exclusively.
 
 Before running any `python3` command:
-1. Confirm a virtualenv is active: `python3 -c "import sys; assert sys.prefix != sys.base_prefix, 'NOT IN A VENV'"`.
-2. If no venv is active, stop and tell the user to activate one.
-3. Never fall back to system Python. Never create a venv with a package manager other than pyenv.
+1. Run `scripts/ensure-venv.sh` to provision the virtualenv if it does not exist:
+   ```bash
+   PYTHON="$(bash scripts/ensure-venv.sh)"
+   ```
+2. Use the returned interpreter path for all subsequent Python calls:
+   ```bash
+   "$PYTHON" tests/verify_opencode.py --skip-llm
+   ```
+3. `ensure-venv.sh` reads the venv name from `.python-version`, creates it via pyenv if absent, and prints the interpreter path. It never requires manual activation.
+4. Stop only if `ensure-venv.sh` exits non-zero — meaning pyenv itself is absent. That is the only unrecoverable failure.
 
 Violating this rule corrupts the user's system Python and poisons test results.
+
+**Preflight ordering — MANDATORY:** If your task plan includes running Python at any point (validation, tests, evals), run `scripts/ensure-venv.sh` **before making any edits**. Do not defer it to the verification step. Completing edits and then discovering the environment is broken produces an unverified completion claim — which is a worse outcome than refusing to start.
 
 ## Git commits
 

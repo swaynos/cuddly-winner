@@ -286,6 +286,51 @@ async function checkMutationGate(directory) {
   return null; // passed
 }
 
+/**
+ * Return the most recent runner artifact from .opencode/runs/ by filesystem
+ * mtime, or null if none exist. Only returns the single newest artifact —
+ * callers check its exit_code rather than scanning for any passing run.
+ * run_id values are random hex (not time-ordered), so mtime is the only
+ * reliable recency signal.
+ */
+async function latestRunnerArtifact(directory) {
+  const runsDir = path.join(directory, ".opencode", "runs");
+  try {
+    const entries = (await fs.readdir(runsDir)).filter(f => f.endsWith(".json"));
+    if (entries.length === 0) return null;
+    const withMtime = await Promise.all(
+      entries.map(async f => {
+        try {
+          const s = await fs.stat(path.join(runsDir, f));
+          return { f, mtime: s.mtimeMs };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const valid = withMtime.filter(Boolean);
+    if (valid.length === 0) return null;
+    valid.sort((a, b) => b.mtime - a.mtime);
+    const newest = valid[0];
+    const content = await fs.readFile(path.join(runsDir, newest.f), "utf-8");
+    const artifact = JSON.parse(content);
+    return artifact.exit_code === 0 ? artifact : null;
+  } catch {
+    // .opencode/runs/ does not exist yet
+  }
+  return null;
+}
+
+/**
+ * Return true when the text contains all three attempt markers required before
+ * emitting WORK_STUCK for a missing spec.
+ */
+function hasThreeAttempts(text) {
+  return /Attempt\s+1[:\s]/i.test(text) &&
+         /Attempt\s+2[:\s]/i.test(text) &&
+         /Attempt\s+3[:\s]/i.test(text);
+}
+
 async function reviewerAvailable(directory) {
   // Check local agent folders first
   const local1 = path.join(directory, ".opencode/agents/reviewer.md");
@@ -626,7 +671,9 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
 
     const specOk = await specPresent(directory);
     const evidenceBlocks = findAllEvidenceBlocks(text);
-    const evidenceOk = evidencePasses(evidenceBlocks);
+    // Primary evidence path: runner artifacts in .opencode/runs/; transcript blocks as fallback.
+    const runnerArtifact = await latestRunnerArtifact(directory);
+    const evidenceOk = (runnerArtifact !== null) || evidencePasses(evidenceBlocks);
     const progressOk = st.progressTouched;
     const reviewerOk = st.reviewerApproved;
 
@@ -751,7 +798,17 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       }
 
       if (!specOk) {
-        await log("info", "WORK_STUCK accepted for missing spec with no observed Prometheus payload", {});
+        if (!hasThreeAttempts(text)) {
+          await log("warn", "Rejecting WORK_STUCK for missing spec: three attempt markers not found", {});
+          await postCorrective(
+            sessionId,
+            "WORK_STUCK preconditions not met",
+            "missing-spec WORK_STUCK requires three documented recovery attempts: include 'Attempt 1:', 'Attempt 2:', 'Attempt 3:' in the message",
+            true,
+          );
+          return;
+        }
+        await log("info", "WORK_STUCK accepted for missing spec with three attempts documented", {});
         return;
       }
 
@@ -773,11 +830,16 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     }
 
     if (hasBlocked) {
-      // BLOCKED is the clean exit when a required tool (e.g. bash) is absent.
-      // Accept it only when bash is genuinely unavailable.
-      // Reject it when bash IS available — prevents agents rationalizing away work.
+      // BLOCKED is the clean exit when a required tool (e.g. bash) is absent,
+      // OR when the runner tool is genuinely absent from disk.
+      // Check the disk directly — do not trust transcript claims about file existence.
+      const runnerToolPath = path.join(directory, ".opencode", "tool", "run.ts");
+      const runnerToolMissing = !(await fs.access(runnerToolPath).then(() => true).catch(() => false));
+
       if (!hasBash) {
         await log("info", "BLOCKED accepted: 'bash' tool is not available in this environment.");
+      } else if (runnerToolMissing) {
+        await log("info", "BLOCKED accepted: runner tool (.opencode/tool/run.ts) not present on disk.");
       } else {
         await log("warn", "Rejecting <promise>BLOCKED</promise>: 'bash' tool is available; use COMPLETE or WORK_STUCK.");
         await postCorrective(

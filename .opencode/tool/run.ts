@@ -116,3 +116,11 @@ export async function run(input: RunInput): Promise<RunResult> {
   _running--;
   return result;
 }
+
+// OpenCode tool registration: default export consumed by the runtime to
+// auto-register this file as an invocable tool.
+export type RunParams = RunInput;
+
+export default async function(params: RunParams): Promise<RunResult> {
+  return run(params);
+}
