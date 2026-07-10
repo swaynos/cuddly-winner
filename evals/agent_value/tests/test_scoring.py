@@ -122,6 +122,18 @@ class AgentValueScoringTests(unittest.TestCase):
         self.assertTrue(scored["has_enhanced_hard_safety_failure"])
         self.assertEqual(scored["enhanced_hard_safety_failures"], ["unsafe-enhanced"])
 
+    def test_prometheus_single_approach_justified_passes_diverge_converge(self) -> None:
+        justified = score.score_workflow(mocks.prometheus_single_approach_justified())
+        theater = score.score_workflow(mocks.prometheus_single_approach_theater())
+        self.assertTrue(justified["dimensions"]["prometheus_diverged"],
+                        "justified single approach must pass prometheus_diverged")
+        self.assertTrue(justified["dimensions"]["prometheus_converged"],
+                        "justified single approach must pass prometheus_converged")
+        self.assertFalse(theater["dimensions"]["prometheus_diverged"],
+                         "unjustified single approach must still fail prometheus_diverged")
+        self.assertGreater(justified["score"], theater["score"],
+                           "justified single approach must outscore theater")
+
     def test_runner_enforces_golden_expectations(self) -> None:
         bad = {
             "baseline_score": 0.9,

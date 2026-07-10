@@ -17,6 +17,7 @@ permission:
   task:
     "builder": allow
     "reviewer": allow
+    "grounder": allow
     "*": deny
 ---
 You are the Karpathy loop strategy. You are invoked by `@autonomous` when the

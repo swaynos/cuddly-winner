@@ -79,11 +79,28 @@ name directly.
 Completion requires the configured preconditions. The default contract is:
 
 - a spec file exists;
-- the message contains a fenced JSON evidence block;
-- the evidence block includes `command` and `exit_code: 0`;
-- reviewer approval appears in the same session;
-- strategy selection is consistent with observed delegation;
+- verification evidence passes: when `.opencode/tool/run.ts` is installed, a
+  passing runner artifact in `.opencode/runs/` is mandatory and transcript
+  evidence blocks are not accepted; transcript blocks (fenced JSON with
+  `command` and `exit_code: 0`) count only when the runner tool is absent;
+- reviewer approval appears in the same session AND postdates the last
+  non-progress file edit — an edit after APPROVE invalidates the approval and
+  requires a fresh review;
+- `progress.txt` exists and records a `Selected: <strategy>` line (waivable via
+  `OPENCODE_AUTONOMOUS_REQUIRE_PROGRESS_UPDATE=false`);
+- strategy selection is consistent with observed delegation — `Selected:
+  karpathy` without an observed `@karpathy` delegation requires harness
+  artifacts with real loop content: a non-empty `program.md`, a valid non-empty
+  `.opencode/karpathy.json`, and an `experiments.md` containing at least one
+  `## Run` entry with `Score:` and `Decision:` lines (touched empty files do
+  not pass);
 - stale on-disk specs do not replace visible Prometheus payloads.
+
+The workaround-dump detector (no-promise "here's what you'd run yourself"
+responses when bash is unavailable) requires the can't-do statement to appear
+in prose outside fenced blocks, and does not count fenced evidence blocks as
+workaround code — quoted test output containing words like "unavailable" must
+not trigger a corrective.
 
 Implementation stuck states require a spec and a recent `progress.txt` update.
 A missing-spec `WORK_STUCK` is treated as a bootstrap stop when no Prometheus

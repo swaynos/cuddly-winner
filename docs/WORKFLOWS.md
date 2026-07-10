@@ -20,8 +20,8 @@ Prometheus must:
 - remain read-only;
 - interview in batches when requirements are unclear;
 - gather local or external evidence through allowed read/research tools;
-- consider at least two distinct approaches for non-trivial work;
-- reject alternatives with concrete kill-reasons;
+- consider multiple approaches for non-trivial work, or document why only one is viable;
+- reject alternatives with concrete kill-reasons; single-approach plans require a Single-approach justification field;
 - return a complete payload rather than partial notes;
 - include an autonomous strategy directive.
 
@@ -134,7 +134,7 @@ Karpathy execution:
 2. Establish baseline score.
 3. Measure noise floor with repeated runs.
 4. Propose one hypothesis and one change.
-5. Delegate non-trivial implementation back to `@autonomous` when appropriate.
+5. Delegate non-trivial implementation to `@builder` when appropriate.
 6. Run measurement.
 7. Keep only improvements above the configured threshold, normally greater than
    `2x` noise floor.

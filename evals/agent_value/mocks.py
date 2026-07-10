@@ -231,9 +231,25 @@ def prometheus_single_approach_theater() -> dict[str, Any]:
     artifacts.update(
         approach_count=1,
         distinct_approaches=False,
+        single_approach_justified=False,
         rejected_approaches_have_kill_reasons=False,
         front_runner_validated=False,
-        transcript="A polished plan with one obvious approach and no real kill-reasons.",
+        transcript="A polished plan with one obvious approach, no kill-reasons, and no single-approach justification.",
+    )
+    return artifacts
+
+
+def prometheus_single_approach_justified() -> dict[str, Any]:
+    """Single approach with explicit justification — valid diverge-converge path."""
+    artifacts = prometheus_base()
+    artifacts.update(
+        approach_count=1,
+        distinct_approaches=False,
+        single_approach_justified=True,
+        chosen_approach_present=True,
+        rejected_approaches_have_kill_reasons=False,
+        front_runner_validated=False,
+        transcript="One approach. Single-approach justification: only viable option given hard constraint X.",
     )
     return artifacts
 

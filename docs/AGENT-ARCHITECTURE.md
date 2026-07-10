@@ -203,6 +203,22 @@ The required sequence for worker delegation is:
 7. `@autonomous` calls reviewer when the whole change is ready.
 8. `@autonomous` emits completion only when the full contract is satisfied.
 
+## Permission Model Scope
+
+Bash allowlists are an accident guard, not an adversarial security boundary.
+Any agent allowed to run a test runner (`pytest`, `npm test`, `make test`) is
+executing project-defined code; an agent with edit rights can, by definition,
+change what that code does. The allowlists exist to prevent accidental
+destructive commands and to keep each agent inside its intended role — they do
+not make an untrusted agent safe. Untrusted or externally sourced specs should
+run in a sandboxed checkout, not rely on permission patterns.
+
+Within that scope, one pattern is banned outright: `npm run *`. It executes
+arbitrary `package.json` scripts, so any agent that can also write
+`package.json` can escape the entire allowlist in two steps. Specific script
+patterns (for example `npm test*`) are allowed; the wildcard form is rejected
+by `tests/verify_opencode.py` permission hygiene for every agent.
+
 ## Adding Or Changing Agents
 
 When adding or changing an agent:

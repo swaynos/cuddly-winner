@@ -24,6 +24,7 @@ Run the oracle deterministic self-tests (no credentials required):
 ```bash
 python3 -m unittest discover -s evals/seed_build/tests -p "test_*.py"
 python3 evals/seed_build/oracle/reference/selfcheck.py
+python3 evals/plan_outcome/score.py --self-test
 ```
 
 Run the live seed-to-build tests (require OpenCode + model credentials):

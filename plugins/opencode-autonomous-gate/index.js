@@ -49,11 +49,45 @@ function extractReviewerVerdict(text) {
 // Both signals must be present together — a code block alone is fine (it may
 // be evidence output), and a can't-do statement alone is fine (it may be a
 // legitimate one-sentence decline). The combination is the anti-pattern.
+//
+// Two false-positive guards:
+//   - the can't-do phrase must appear in PROSE, not inside a fenced block
+//     (test output quoted as evidence often contains "unavailable" etc.);
+//   - evidence blocks (fenced JSON with command + exit_code) do not count as
+//     the workaround code block.
 const CANT_DO_PATTERN = /\b(can['']t|cannot|don['']t have|not available|unavailable|no (bash|shell|SSH|ssh|edit|write|file.edit)|tools?.*(don['']t|not)|without (shell|SSH|bash|edit))\b/i;
-const HAS_CODE_BLOCK_PATTERN = /```[\s\S]{20,}/;  // fenced block with substance
+
+function stripFencedBlocks(text) {
+  return String(text || "").replace(/```[\s\S]*?```/g, " ");
+}
+
+function isEvidenceLikeBlock(body) {
+  const jsonMatch = String(body || "").match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return false;
+  try {
+    const obj = JSON.parse(jsonMatch[0]);
+    return obj != null && typeof obj === "object" &&
+      "command" in obj && "exit_code" in obj;
+  } catch {
+    return false;
+  }
+}
+
+function hasNonEvidenceCodeBlock(text) {
+  const re = /```[^\n]*\n?([\s\S]*?)```/g;
+  let m;
+  while ((m = re.exec(String(text || ""))) !== null) {
+    const body = m[1] || "";
+    if (body.trim().length < 20) continue;   // no substance
+    if (isEvidenceLikeBlock(body)) continue; // evidence output, not a workaround
+    return true;
+  }
+  return false;
+}
 
 function isWorkaroundDump(text) {
-  return CANT_DO_PATTERN.test(text) && HAS_CODE_BLOCK_PATTERN.test(text);
+  return CANT_DO_PATTERN.test(stripFencedBlocks(text)) &&
+    hasNonEvidenceCodeBlock(text);
 }
 
 
@@ -91,40 +125,79 @@ function parseSelectedStrategy(progressContent) {
  * Returns null (passed) or a failure-reason string.
  *
  * A session passes if ANY of the following is true:
- *   1. All three harness artifacts exist on disk:
- *      program.md + .opencode/karpathy.json + experiments.md
+ *   1. All three harness artifacts exist on disk AND have real content:
+ *      - program.md is non-empty
+ *      - .opencode/karpathy.json parses as a non-empty JSON object
+ *      - experiments.md records at least one run (## Run heading, a Score:
+ *        line, and a Decision: line)
  *   2. A @karpathy delegation was observed in this session (karpathyDelegated=true)
+ *
+ * Existence alone is not enough — three touched files must not satisfy the gate.
  */
 async function checkKarpathyExecution(directory, karpathyDelegated) {
   if (karpathyDelegated) return null;
 
-  const hasProgram   = await fileExists(path.join(directory, "program.md"));
-  const hasKarpJson  = await fileExists(path.join(directory, ".opencode", "karpathy.json"));
-  const hasExpMd     = await fileExists(path.join(directory, "experiments.md"));
+  const problems = [];
 
-  if (hasProgram && hasKarpJson && hasExpMd) return null;
+  const program = await fs
+    .readFile(path.join(directory, "program.md"), "utf-8")
+    .catch(() => null);
+  if (program === null) problems.push("program.md is missing");
+  else if (!program.trim()) problems.push("program.md is empty");
 
-  const missing = [];
-  if (!hasProgram)  missing.push("program.md");
-  if (!hasKarpJson) missing.push(".opencode/karpathy.json");
-  if (!hasExpMd)    missing.push("experiments.md");
+  const karpRaw = await fs
+    .readFile(path.join(directory, ".opencode", "karpathy.json"), "utf-8")
+    .catch(() => null);
+  if (karpRaw === null) {
+    problems.push(".opencode/karpathy.json is missing");
+  } else {
+    try {
+      const parsed = JSON.parse(karpRaw);
+      const isObject = parsed != null && typeof parsed === "object" && !Array.isArray(parsed);
+      if (!isObject || Object.keys(parsed).length === 0) {
+        problems.push(".opencode/karpathy.json must be a non-empty JSON object");
+      }
+    } catch {
+      problems.push(".opencode/karpathy.json is not valid JSON");
+    }
+  }
+
+  const experiments = await fs
+    .readFile(path.join(directory, "experiments.md"), "utf-8")
+    .catch(() => null);
+  if (experiments === null) {
+    problems.push("experiments.md is missing");
+  } else {
+    if (!/^\s*##\s+Run\b/m.test(experiments)) {
+      problems.push("experiments.md has no '## Run' entry (baseline never recorded)");
+    }
+    if (!/^\s*Score:/m.test(experiments)) {
+      problems.push("experiments.md has no 'Score:' line (no measurement recorded)");
+    }
+    if (!/^\s*Decision:/m.test(experiments)) {
+      problems.push("experiments.md has no 'Decision:' line (no keep/revert decision recorded)");
+    }
+  }
+
+  if (problems.length === 0) return null;
 
   return (
-    "Selected: karpathy but no Karpathy execution evidence found. " +
-    "Need a @karpathy task delegation in this session, OR all three harness artifacts: " +
-    "program.md + .opencode/karpathy.json + experiments.md. " +
-    `Missing: ${missing.join(", ")}.`
+    "Selected: karpathy but Karpathy execution evidence is missing or hollow. " +
+    "Need a @karpathy task delegation in this session, OR harness artifacts with " +
+    "real loop content. Problems: " + problems.join("; ") + "."
   );
 }
 
 /**
  * Check strategy consistency:
+ *   - progress.txt must exist (the autonomous contract calls it required)
  *   - progress.txt must have a Selected: line
  *   - If Selected: karpathy, must have Karpathy execution evidence
  *   - Selected: direct / instrumentation / ralph-wiggum / octopus are always OK
  *
  * Returns null (passed) or a failure-reason string.
- * Returns null (skipped) when progress.txt does not exist.
+ * The missing-progress requirement is waived when
+ * OPENCODE_AUTONOMOUS_REQUIRE_PROGRESS_UPDATE=false.
  */
 async function checkStrategyConsistency(directory, karpathyDelegated) {
   const progressPath = [
@@ -139,8 +212,17 @@ async function checkStrategyConsistency(directory, karpathyDelegated) {
     }
   }
 
-  // No progress.txt at all — skip strategy check (gate still requires evidence+reviewer)
-  if (progressContent === null) return null;
+  // The agent contract declares progress.txt required before any promise.
+  // A missing file therefore fails COMPLETE instead of silently skipping
+  // the strategy check.
+  if (progressContent === null) {
+    if (!FLAG_PROGRESS) return null;
+    return (
+      "progress.txt not found — the autonomous contract requires recording " +
+      "'Selected: <strategy>' in progress.txt before COMPLETE " +
+      "(set OPENCODE_AUTONOMOUS_REQUIRE_PROGRESS_UPDATE=false to waive)"
+    );
+  }
 
   const selected = parseSelectedStrategy(progressContent);
   if (selected === null) {
@@ -319,6 +401,27 @@ async function latestRunnerArtifact(directory) {
     // .opencode/runs/ does not exist yet
   }
   return null;
+}
+
+/**
+ * Append one outcome record to .opencode/plan-outcomes.jsonl.
+ * Best-effort: errors are swallowed so recording never blocks gating.
+ */
+async function recordOutcome(directory, sessionId, specHash, event, detail) {
+  const record = JSON.stringify({
+    ts: new Date().toISOString(),
+    session_id: String(sessionId || "__unscoped__"),
+    spec_hash: specHash || null,
+    event,
+    detail: String(detail || ""),
+  });
+  try {
+    const ledgerDir = path.join(directory, ".opencode");
+    await fs.mkdir(ledgerDir, { recursive: true });
+    await fs.appendFile(path.join(ledgerDir, "plan-outcomes.jsonl"), record + "\n", "utf-8");
+  } catch {
+    // best-effort: recording failure must never block gating
+  }
 }
 
 /**
@@ -620,6 +723,9 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     if (String(agent || "").toLowerCase() === "reviewer") {
       const verdict = extractReviewerVerdict(text);
       if (verdict === "APPROVE") { st.reviewerApproved = true; }
+      if (verdict === "REQUEST_CHANGES") {
+        await recordOutcome(directory, sessionId, st.prometheusPayloadHash, "REQUEST_CHANGES", "reviewer requested changes");
+      }
     }
 
     // Track @karpathy delegation: any message from the karpathy agent counts.
@@ -671,9 +777,20 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
 
     const specOk = await specPresent(directory);
     const evidenceBlocks = findAllEvidenceBlocks(text);
-    // Primary evidence path: runner artifacts in .opencode/runs/; transcript blocks as fallback.
+    // Primary evidence path: runner artifacts in .opencode/runs/.
+    // Transcript evidence blocks are agent-authored text; they are accepted
+    // only as fallback when the deterministic runner tool is not installed.
+    // When .opencode/tool/run.ts exists, a disk artifact is mandatory.
     const runnerArtifact = await latestRunnerArtifact(directory);
-    const evidenceOk = (runnerArtifact !== null) || evidencePasses(evidenceBlocks);
+    const runnerToolPresent = await fileExists(
+      path.join(directory, ".opencode", "tool", "run.ts"),
+    );
+    const evidenceOk = runnerToolPresent
+      ? runnerArtifact !== null
+      : (runnerArtifact !== null || evidencePasses(evidenceBlocks));
+    const evidenceFailureReason = runnerToolPresent
+      ? "no passing runner artifact in .opencode/runs/ (the runner tool is installed, so transcript evidence blocks are not accepted; run verification through the run tool)"
+      : "missing/failing evidence block (exit_code must be 0)";
     const progressOk = st.progressTouched;
     const reviewerOk = st.reviewerApproved;
 
@@ -696,7 +813,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
       }
 
       if (requireEvidence && !evidenceOk) {
-        reasons.push("missing/failing evidence block (exit_code must be 0)");
+        reasons.push(evidenceFailureReason);
       }
 
       let requireReviewer = FLAG_REVIEWER;
@@ -775,6 +892,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
 
       if (reasons.length) {
         await log("warn", "Rejecting <promise>COMPLETE</promise>", { reasons });
+        await recordOutcome(directory, sessionId, st.prometheusPayloadHash, "COMPLETE_REJECTED", reasons.join("; "));
         await postCorrective(
           sessionId,
           "COMPLETE preconditions not met",
@@ -784,6 +902,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
         );
       } else {
         await log("info", "COMPLETE accepted", {});
+        await recordOutcome(directory, sessionId, st.prometheusPayloadHash, "COMPLETE", "");
       }
     }
 
@@ -826,6 +945,7 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
         );
       } else {
         await log("info", "WORK_STUCK accepted", {});
+        await recordOutcome(directory, sessionId, st.prometheusPayloadHash, "WORK_STUCK", "");
       }
     }
 
@@ -838,8 +958,10 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
 
       if (!hasBash) {
         await log("info", "BLOCKED accepted: 'bash' tool is not available in this environment.");
+        await recordOutcome(directory, sessionId, st.prometheusPayloadHash, "BLOCKED", "bash unavailable");
       } else if (runnerToolMissing) {
         await log("info", "BLOCKED accepted: runner tool (.opencode/tool/run.ts) not present on disk.");
+        await recordOutcome(directory, sessionId, st.prometheusPayloadHash, "BLOCKED", "runner tool missing");
       } else {
         await log("warn", "Rejecting <promise>BLOCKED</promise>: 'bash' tool is available; use COMPLETE or WORK_STUCK.");
         await postCorrective(
@@ -889,9 +1011,23 @@ export const AutonomousGatePlugin = async ({ client, directory, $ }) => {
     "file.edited": async (input) => {
       const p = input?.path || input?.filePath || "";
       const base = path.basename(String(p));
+      const sessionId = input?.sessionID || input?.sessionId || null;
       if (base === "progress.txt" || base === "PROGRESS.txt") {
-        const sessionId = input?.sessionID || input?.sessionId || null;
         stateFor(sessionId).progressTouched = true;
+        return;
+      }
+      if ((base === "SPEC.md" || base === "spec.md") && stateFor(sessionId).prometheusPayloadHash !== null) {
+        await recordOutcome(directory, sessionId, stateFor(sessionId).prometheusPayloadHash, "SPEC_REVISED", String(p));
+      }
+      // Any non-progress edit after a reviewer APPROVE makes that approval
+      // stale — the reviewer signed off on a different state of the code.
+      // Require a fresh review before COMPLETE.
+      const st = stateFor(sessionId);
+      if (st.reviewerApproved) {
+        st.reviewerApproved = false;
+        await log("info", "Reviewer approval invalidated by post-approval edit", {
+          file: base,
+        });
       }
     },
 

@@ -98,8 +98,8 @@ Follow this escalation ladder:
      one targeted clarification question.
 
 3. Minimal direct evidence
-   - Use read, grep, glob, list, or scoped bash (ls, git status, rg, cat, find,
-     python3) when the request implies local evidence is needed.
+   - Use read, grep, glob, list, or scoped bash (ls, git status, rg, cat, find)
+     when the request implies local evidence is needed.
    - Keep evidence collection narrow and proportional.
 
 4. Delegate to `@data-scientist` or `@grounder`
@@ -123,7 +123,7 @@ Follow this escalation ladder:
 For questions like "Have I installed this project on my machine yet?"
 
 - If session context already contains the answer, respond from that evidence.
-- Use bash (ls, which, git status, python3 -c, etc.) for simple local checks.
+- Use bash (ls, which, git status, etc.) for simple local checks.
 - Delegate to `@data-scientist` for NotebookLM-backed project evidence when a
   valid notebook and MCP connection are available; otherwise delegate to
   `@grounder` for multi-step or cross-system evidence gathering.

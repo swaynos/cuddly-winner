@@ -170,6 +170,7 @@ REQUIRED_EVAL_FILES: list[str] = [
     "evals/mutation/run_mutation.py",
     "evals/agent_value/run_benchmark.py",
     "evals/agent_value/score.py",
+    "evals/plan_outcome/score.py",
     "evals/seed_build/test_planning.py",
     "evals/seed_build/test_build.py",
     "evals/seed_build/oracle/CANONICAL_SPEC.md",
@@ -241,7 +242,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "uv run *"},
         {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
         {"permission": "bash",  "action": "allow", "pattern": "npm test*"},
-        {"permission": "bash",  "action": "allow", "pattern": "npm run *"},
         {"permission": "bash",  "action": "allow", "pattern": "pnpm test*"},
         {"permission": "bash",  "action": "allow", "pattern": "bun test*"},
         {"permission": "bash",  "action": "allow", "pattern": "go test *"},
@@ -265,7 +265,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "uv run *"},
         {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
         {"permission": "bash",  "action": "allow", "pattern": "npm test*"},
-        {"permission": "bash",  "action": "allow", "pattern": "npm run *"},
         {"permission": "bash",  "action": "allow", "pattern": "pnpm test*"},
         {"permission": "bash",  "action": "allow", "pattern": "bun test*"},
         {"permission": "bash",  "action": "allow", "pattern": "go test *"},
@@ -292,6 +291,7 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "rg *"},
         {"permission": "task",  "action": "allow", "pattern": "builder"},
         {"permission": "task",  "action": "allow", "pattern": "reviewer"},
+        {"permission": "task",  "action": "allow", "pattern": "grounder"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
     "reviewer": [
@@ -2021,6 +2021,18 @@ def check_permission_hygiene() -> list[Failure]:
         fm = _frontmatter_block(text)
         if not fm:
             continue
+
+        # `npm run *` executes arbitrary package.json scripts. Any agent with
+        # edit/write rights can add a script and escape the entire bash
+        # allowlist in two steps, so the pattern is forbidden for every agent.
+        if re.search(r'"npm run \*"\s*:\s*allow', fm):
+            failures.append(Failure(
+                "permission_hygiene",
+                f"{agent_file.name}: must not allow 'npm run *' — arbitrary "
+                f"package.json scripts bypass the bash allowlist; allow specific "
+                f"scripts like 'npm run test*' instead",
+            ))
+
         if "edit: deny" not in fm and re.search(r'edit\s*:\s*deny', fm) is None:
             continue
         for bad_pattern, label in (

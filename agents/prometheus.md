@@ -248,7 +248,12 @@ Use these headings in this order:
     **Validation note (if front-runner died):** <what failed during validation and
     why this approach was promoted from the candidate set.>
 
-    Minimum 2 entries. Each rejected entry must have a concrete kill-reason.
+    Minimum 1 entry. Each rejected entry must have a concrete kill-reason.
+    If exactly one approach is listed, a **Single-approach justification** field
+    is required explaining why no alternative was worth considering (e.g., "Only
+    one library satisfies the hard latency constraint; all others were benchmarked
+    and eliminated in Step 2."). Omitting this field when there is only one entry
+    is the same signal as a thin section — it means the diverge step was skipped.
     This section is the audit trail for the diverge–converge loop.
 
     ## Acceptance Criteria
@@ -282,9 +287,11 @@ Use these headings in this order:
 - Every checklist item is actionable without guesswork.
 - Every claim in the Problem section traces to evidence (a finding from comparison
   or validation, a cited file, or an explicit user-confirmed assumption).
-- `## Approaches Considered` must have ≥2 entries; every rejected entry must have
-  a concrete kill-reason. A thin or single-entry section is a visible sign that
-  the diverge–converge loop was skipped.
+- `## Approaches Considered` must have ≥1 entry; every rejected entry must have
+  a concrete kill-reason. A single-entry section is only valid when accompanied
+  by a **Single-approach justification** explaining why alternatives were ruled
+  out. A missing justification on a single-entry section is treated the same as
+  a skipped diverge–converge loop.
 
 # Revision
 

@@ -3,6 +3,16 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtempSync as mkdtempSyncFs } from "node:fs";
+
+// Hermetic isolation: the plugin probes OPENCODE_CONFIG_DIR (default
+// ~/.config/opencode) for a globally deployed reviewer agent. On machines
+// where agents ARE deployed globally, that leaks into every temp-dir test and
+// silently activates the reviewer requirement. Point the config dir at an
+// empty directory before the plugin is exercised.
+process.env.OPENCODE_CONFIG_DIR = mkdtempSyncFs(
+  path.join(os.tmpdir(), "gate-test-config-"),
+);
 
 import AutonomousGatePlugin from "../../plugins/opencode-autonomous-gate/index.js";
 
@@ -31,9 +41,12 @@ function makeClient({ tools = null, prompts = [] } = {}) {
   return client;
 }
 
+const PROGRESS_DIRECT = "## Strategy\nSelected: direct\nReason: test fixture\n";
+
 test("rejects COMPLETE when evidence is missing", async () => {
   await withTempDir(async (directory) => {
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
     const prompts = [];
     const client = makeClient({ prompts });
     const hooks = await AutonomousGatePlugin({ client, directory });
@@ -58,6 +71,7 @@ test("rejects COMPLETE when evidence is missing", async () => {
 test("accepts COMPLETE with evidence and reviewer APPROVE", async () => {
   await withTempDir(async (directory) => {
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
     const prompts = [];
     const client = makeClient({ prompts });
     const hooks = await AutonomousGatePlugin({ client, directory });
@@ -120,7 +134,7 @@ test("rejects WORK_STUCK until progress.txt touched", async () => {
   });
 });
 
-test("WORK_STUCK with missing SPEC reinjects observed Prometheus payload", async () => {
+test("observed Prometheus payload is auto-materialized; WORK_STUCK then demands progress", async () => {
   await withTempDir(async (directory) => {
     const prompts = [];
     const client = makeClient({ prompts });
@@ -134,6 +148,11 @@ test("WORK_STUCK with missing SPEC reinjects observed Prometheus payload", async
       text: `<spec filename="SPEC.md">\n${specContent}</spec>\n\nInvoke @autonomous to write this SPEC.md verbatim and execute it.`,
     });
 
+    // The gate writes the payload to disk the moment it is observed.
+    const { readFile } = await import("node:fs/promises");
+    const onDisk = await readFile(path.join(directory, "SPEC.md"), "utf-8");
+    assert.equal(onDisk.trim(), specContent.trim(), "payload must be auto-materialized to SPEC.md");
+
     await hooks["message.part.updated"]({
       role: "assistant",
       sessionId: "s-prometheus-handoff",
@@ -141,15 +160,15 @@ test("WORK_STUCK with missing SPEC reinjects observed Prometheus payload", async
       text: "No spec file found (`SPEC.md` or `spec.md`). Run `@prometheus` to scaffold one, then invoke me again.\n<promise>WORK_STUCK</promise>",
     });
 
+    // Spec now exists, so a WORK_STUCK claim of "missing spec" is rejected on
+    // the ordinary precondition: progress.txt was never updated.
     assert.equal(prompts.length, 1);
-    assert.match(prompts[0], /Prometheus SPEC payload was already observed/i);
-    assert.match(prompts[0], /<spec filename="SPEC\.md">/);
-    assert.match(prompts[0], /# generated spec/);
-    assert.match(prompts[0], /write the enclosed content verbatim to `SPEC\.md`/i);
+    assert.match(prompts[0], /WORK_STUCK preconditions not met/i);
+    assert.match(prompts[0], /progress\.txt/i);
   });
 });
 
-test("event hook reinjects observed Prometheus payload on missing SPEC", async () => {
+test("event hook auto-materializes observed Prometheus payload", async () => {
   await withTempDir(async (directory) => {
     const prompts = [];
     const client = makeClient({ prompts });
@@ -174,6 +193,11 @@ test("event hook reinjects observed Prometheus payload on missing SPEC", async (
       },
     });
 
+    // Payload observed through the event hook is written to disk.
+    const { readFile } = await import("node:fs/promises");
+    const onDisk = await readFile(path.join(directory, "SPEC.md"), "utf-8");
+    assert.equal(onDisk.trim(), specContent.trim(), "event-hook payload must be auto-materialized");
+
     await hooks["chat.params"]?.({
       sessionID: "s-event-handoff",
       agent: "autonomous",
@@ -192,13 +216,13 @@ test("event hook reinjects observed Prometheus payload on missing SPEC", async (
       },
     });
 
+    // Spec exists on disk now; the stuck claim is rejected on progress.
     assert.equal(prompts.length, 1);
-    assert.match(prompts[0], /Prometheus SPEC payload was already observed/i);
-    assert.match(prompts[0], /# event spec/);
+    assert.match(prompts[0], /WORK_STUCK preconditions not met/i);
   });
 });
 
-test("WORK_STUCK with missing SPEC is accepted when no Prometheus payload was observed", async () => {
+test("WORK_STUCK with missing SPEC is accepted after three documented attempts", async () => {
   await withTempDir(async (directory) => {
     const prompts = [];
     const client = makeClient({ prompts });
@@ -208,10 +232,35 @@ test("WORK_STUCK with missing SPEC is accepted when no Prometheus payload was ob
       role: "assistant",
       sessionId: "s-missing-spec-bootstrap",
       agent: "autonomous",
-      text: "No spec file found (`SPEC.md` or `spec.md`). Run `@prometheus` to scaffold one, then invoke me again.\n<promise>WORK_STUCK</promise>",
+      text: [
+        "No spec file found (`SPEC.md` or `spec.md`).",
+        "Attempt 1: checked SPEC.md, spec.md, docs/SPEC.md, docs/spec.md — none exist.",
+        "Attempt 2: searched the repo for spec-like documents with rg — none found.",
+        "Attempt 3: checked session context for a Prometheus payload — none observed.",
+        "Run `@prometheus` to scaffold one, then invoke me again.",
+        "<promise>WORK_STUCK</promise>",
+      ].join("\n"),
     });
 
     assert.equal(prompts.length, 0);
+  });
+});
+
+test("WORK_STUCK with missing SPEC is rejected without three documented attempts", async () => {
+  await withTempDir(async (directory) => {
+    const prompts = [];
+    const client = makeClient({ prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-missing-spec-lazy",
+      agent: "autonomous",
+      text: "No spec file found (`SPEC.md` or `spec.md`). Run `@prometheus` to scaffold one, then invoke me again.\n<promise>WORK_STUCK</promise>",
+    });
+
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0], /three documented recovery attempts/i);
   });
 });
 
@@ -223,6 +272,7 @@ test("bash unavailable: COMPLETE accepted without evidence block", async () => {
   // When bash is not in the tool list, the evidence requirement is auto-disabled.
   await withTempDir(async (directory) => {
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
     const prompts = [];
     // Expose a tool list that does NOT include bash
     const client = makeClient({ tools: ["edit", "read", "write", "glob"], prompts });
@@ -260,7 +310,12 @@ test("bash unavailable: BLOCKED accepted", async () => {
 
 test("bash available: BLOCKED rejected (prevents rationalization)", async () => {
   await withTempDir(async (directory) => {
+    const { mkdir } = await import("node:fs/promises");
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    // BLOCKED is legitimately accepted when the runner tool is absent from
+    // disk; install it so the anti-rationalization rejection is exercised.
+    await mkdir(path.join(directory, ".opencode", "tool"), { recursive: true });
+    await writeFile(path.join(directory, ".opencode", "tool", "run.ts"), "export default {}\n", "utf-8");
     const prompts = [];
     // Expose a tool list that INCLUDES bash
     const client = makeClient({ tools: ["bash", "edit", "read", "task"], prompts });
@@ -283,6 +338,7 @@ test("bash available: BLOCKED rejected (prevents rationalization)", async () => 
 test("bash available: COMPLETE still requires evidence", async () => {
   await withTempDir(async (directory) => {
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
     const prompts = [];
     const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
     const hooks = await AutonomousGatePlugin({ client, directory });
@@ -304,7 +360,11 @@ test("tool list unknown (no client.tools): BLOCKED rejected (fail-safe)", async 
   // When we can't determine tool availability, we assume bash exists.
   // BLOCKED should therefore be rejected to prevent false escapes.
   await withTempDir(async (directory) => {
+    const { mkdir } = await import("node:fs/promises");
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    // Runner tool present so BLOCKED cannot ride the runner-missing exit.
+    await mkdir(path.join(directory, ".opencode", "tool"), { recursive: true });
+    await writeFile(path.join(directory, ".opencode", "tool", "run.ts"), "export default {}\n", "utf-8");
     const prompts = [];
     // Client exposes no tool list at all
     const client = makeClient({ tools: null, prompts });
@@ -502,7 +562,11 @@ test("strategy: COMPLETE accepted when Selected: karpathy and all three artifact
       "utf-8",
     );
     await writeFile(path.join(directory, "program.md"), "# program\n", "utf-8");
-    await writeFile(path.join(directory, "experiments.md"), "## Run 0 — Baseline\nScore: 0.72\n", "utf-8");
+    await writeFile(
+      path.join(directory, "experiments.md"),
+      "## Run 0 — Baseline\nScore: 0.72\nDecision: BASELINE\n",
+      "utf-8",
+    );
     // mkdir .opencode and write karpathy.json
     await import("node:fs/promises").then(({ mkdir }) =>
       mkdir(dotOpencode, { recursive: true }),
@@ -651,9 +715,10 @@ test("strategy: COMPLETE rejected when progress.txt has no Selected: line", asyn
   });
 });
 
-test("strategy: COMPLETE accepted when progress.txt is absent (strategy check skipped)", async () => {
-  // If the project has no progress.txt at all the strategy check should not
-  // fire a false rejection — the evidence + reviewer checks cover this case.
+test("strategy: COMPLETE rejected when progress.txt is absent (progress is required)", async () => {
+  // progress.txt is part of the autonomous contract ("required" in the agent
+  // prompt). A missing file must fail COMPLETE, not silently skip the
+  // strategy check.
   await withTempDir(async (directory) => {
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
     // No progress.txt
@@ -679,7 +744,8 @@ test("strategy: COMPLETE accepted when progress.txt is absent (strategy check sk
       ].join("\n"),
     });
 
-    assert.equal(prompts.length, 0, "should not fail when progress.txt is absent entirely");
+    assert.equal(prompts.length, 1, "should reject COMPLETE when progress.txt is absent");
+    assert.match(prompts[0], /progress\.txt not found/i);
   });
 });
 
@@ -687,9 +753,8 @@ test("strategy: COMPLETE accepted when progress.txt is absent (strategy check sk
 // Spec-freshness enforcement
 // ---------------------------------------------------------------------------
 
-test("spec freshness: COMPLETE rejected when Prometheus payload visible but SPEC.md not updated", async () => {
+test("spec freshness: COMPLETE rejected when SPEC.md diverges from the observed payload", async () => {
   await withTempDir(async (directory) => {
-    // SPEC.md has old content
     await writeFile(path.join(directory, "SPEC.md"), "# old spec\n", "utf-8");
     await writeFile(
       path.join(directory, "progress.txt"),
@@ -700,7 +765,7 @@ test("spec freshness: COMPLETE rejected when Prometheus payload visible but SPEC
     const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
     const hooks = await AutonomousGatePlugin({ client, directory });
 
-    // Prometheus payload observed in session — content differs from on-disk SPEC.md
+    // Prometheus payload observed — the gate auto-materializes it to SPEC.md.
     const newSpecContent = "# new spec from Prometheus\n## Problem\nA different problem.\n";
     await hooks["message.part.updated"]({
       role: "assistant",
@@ -708,6 +773,10 @@ test("spec freshness: COMPLETE rejected when Prometheus payload visible but SPEC
       agent: "prometheus",
       text: `Here is the plan.\n\n<spec filename="SPEC.md">\n${newSpecContent}</spec>\n\nInvoke @autonomous to write this SPEC.md verbatim and execute it.`,
     });
+
+    // SPEC.md is then overwritten with content that no longer matches the
+    // payload (agent drift, stale checkout, manual edit — any divergence).
+    await writeFile(path.join(directory, "SPEC.md"), "# old spec\n", "utf-8");
 
     await hooks["message.part.updated"]({
       role: "assistant",
@@ -727,7 +796,7 @@ test("spec freshness: COMPLETE rejected when Prometheus payload visible but SPEC
       ].join("\n"),
     });
 
-    assert.equal(prompts.length, 1, "should reject COMPLETE when Prometheus payload was not materialized");
+    assert.equal(prompts.length, 1, "should reject COMPLETE when SPEC.md does not match the observed payload");
     assert.match(prompts[0], /SPEC\.md|payload|materializ/i);
   });
 });
@@ -818,6 +887,9 @@ async function setupMutationConfig(directory, cfg) {
   const oc = path.join(directory, ".opencode");
   await import("node:fs/promises").then(({ mkdir }) => mkdir(oc, { recursive: true }));
   await writeFile(path.join(oc, "mutation.json"), JSON.stringify(cfg), "utf-8");
+  // These tests exercise the mutation gate; satisfy the progress requirement
+  // so correctives stay single-purpose.
+  await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
 }
 
 async function writeMutationResult(directory, result) {
@@ -840,6 +912,7 @@ const COMPLETE_WITH_EVIDENCE = [
 test("mutation gate: inert when .opencode/mutation.json is absent", async () => {
   await withTempDir(async (directory) => {
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
     const prompts = [];
     const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
     const hooks = await AutonomousGatePlugin({ client, directory });
@@ -981,5 +1054,398 @@ test("mutation gate: accepts COMPLETE when score passes and result is fresh", as
     });
 
     assert.equal(prompts.length, 0, "should accept COMPLETE when mutation gate passes");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Karpathy artifact CONTENT checks (existence alone must not pass)
+// ---------------------------------------------------------------------------
+
+test("strategy: COMPLETE rejected when Karpathy artifacts exist but are hollow", async () => {
+  await withTempDir(async (directory) => {
+    const { mkdir } = await import("node:fs/promises");
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(
+      path.join(directory, "progress.txt"),
+      "## Strategy\nSelected: karpathy\n",
+      "utf-8",
+    );
+    // All three artifacts exist — but carry no real loop content.
+    await writeFile(path.join(directory, "program.md"), "", "utf-8");
+    await writeFile(path.join(directory, "experiments.md"), "notes\n", "utf-8");
+    await mkdir(path.join(directory, ".opencode"), { recursive: true });
+    await writeFile(path.join(directory, ".opencode", "karpathy.json"), "{}", "utf-8");
+
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-karp-hollow",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"python train.py","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 1, "hollow artifacts (touched files) must not satisfy the Karpathy gate");
+    assert.match(prompts[0], /hollow|empty|no '## Run'/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Workaround-dump detector: evidence output must not false-positive
+// ---------------------------------------------------------------------------
+
+test("workaround dump: evidence block containing 'unavailable' is not intercepted", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    const prompts = [];
+    // No bash in the tool list — detector is armed.
+    const client = makeClient({ tools: ["read", "glob", "grep"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    // Trigger word appears only INSIDE the fenced evidence block.
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-evidence-excerpt",
+      agent: "autonomous",
+      text: [
+        "Final verification output:",
+        "```json",
+        '{"command":"pytest -q","exit_code":0,"excerpt":"warning: plugin xdist unavailable\\n42 passed"}',
+        "```",
+      ].join("\n"),
+    });
+
+    // Trigger word in prose, but the only code block is an evidence block.
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-evidence-prose",
+      agent: "autonomous",
+      text: [
+        "The staging server is unavailable, so I verified locally instead:",
+        "```json",
+        '{"command":"pytest -q","exit_code":0,"excerpt":"42 passed"}',
+        "```",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 0, "evidence reporting must not trigger the workaround-dump corrective");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reviewer approval staleness
+// ---------------------------------------------------------------------------
+
+async function setupLocalReviewer(directory) {
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(path.join(directory, "agents"), { recursive: true });
+  await writeFile(
+    path.join(directory, "agents", "reviewer.md"),
+    "---\ndescription: reviewer\n---\nreviewer\n",
+    "utf-8",
+  );
+}
+
+const REVIEWER_APPROVAL = "## Review\n\n### Verdict\nAPPROVE";
+
+test("reviewer approval: invalidated by a post-approval code edit", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
+    await setupLocalReviewer(directory);
+
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read", "task"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-stale-approve",
+      agent: "reviewer",
+      text: REVIEWER_APPROVAL,
+    });
+
+    // Code changes after the APPROVE — the reviewer signed off on old state.
+    await hooks["file.edited"]({
+      sessionId: "s-stale-approve",
+      filePath: path.join(directory, "src.py"),
+    });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-stale-approve",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 1, "COMPLETE must be rejected when approval predates the last code edit");
+    assert.match(prompts[0], /reviewer/i);
+  });
+});
+
+test("reviewer approval: still valid when no edits follow it", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
+    await setupLocalReviewer(directory);
+
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read", "task"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    // Edits happen BEFORE the review — the normal implement-then-review order.
+    await hooks["file.edited"]({
+      sessionId: "s-fresh-approve",
+      filePath: path.join(directory, "src.py"),
+    });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-fresh-approve",
+      agent: "reviewer",
+      text: REVIEWER_APPROVAL,
+    });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-fresh-approve",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 0, "COMPLETE should be accepted when approval postdates the last edit");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Runner-artifact preference: transcript evidence is fallback-only
+// ---------------------------------------------------------------------------
+
+test("runner installed: transcript evidence block alone is rejected", async () => {
+  await withTempDir(async (directory) => {
+    const { mkdir } = await import("node:fs/promises");
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
+    // The deterministic runner tool exists on disk.
+    await mkdir(path.join(directory, ".opencode", "tool"), { recursive: true });
+    await writeFile(path.join(directory, ".opencode", "tool", "run.ts"), "export default {}\n", "utf-8");
+
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-runner-transcript",
+      agent: "autonomous",
+      text: [
+        "```json",
+        '{"command":"pytest -q","exit_code":0}',
+        "```",
+        "<promise>COMPLETE</promise>",
+      ].join("\n"),
+    });
+
+    assert.equal(prompts.length, 1, "agent-authored transcript evidence must not satisfy the gate when the runner exists");
+    assert.match(prompts[0], /runner artifact/i);
+  });
+});
+
+test("runner installed: passing runner artifact satisfies the gate", async () => {
+  await withTempDir(async (directory) => {
+    const { mkdir } = await import("node:fs/promises");
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
+    await mkdir(path.join(directory, ".opencode", "tool"), { recursive: true });
+    await writeFile(path.join(directory, ".opencode", "tool", "run.ts"), "export default {}\n", "utf-8");
+    await mkdir(path.join(directory, ".opencode", "runs"), { recursive: true });
+    await writeFile(
+      path.join(directory, ".opencode", "runs", "abcd1234.json"),
+      JSON.stringify({ run_id: "abcd1234", exit_code: 0, command: "pytest -q" }),
+      "utf-8",
+    );
+
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-runner-artifact",
+      agent: "autonomous",
+      text: "Verification ran through the runner tool.\n<promise>COMPLETE</promise>",
+    });
+
+    assert.equal(prompts.length, 0, "a passing runner artifact on disk should satisfy the evidence check");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Outcome recorder: plan-outcomes.jsonl ledger
+// ---------------------------------------------------------------------------
+
+async function readLedger(directory) {
+  const { readFile } = await import("node:fs/promises");
+  try {
+    const raw = await readFile(path.join(directory, ".opencode", "plan-outcomes.jsonl"), "utf-8");
+    return raw.trim().split("\n").filter(Boolean).map(l => JSON.parse(l));
+  } catch {
+    return [];
+  }
+}
+
+test("outcome recorder: COMPLETE accepted writes ledger record", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-ledger-complete",
+      agent: "autonomous",
+      text: '```json\n{"command":"pytest -q","exit_code":0}\n```\n<promise>COMPLETE</promise>',
+    });
+
+    assert.equal(prompts.length, 0, "COMPLETE should be accepted");
+    const records = await readLedger(directory);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].event, "COMPLETE");
+    assert.equal(records[0].session_id, "s-ledger-complete");
+    assert.ok(records[0].ts, "record must have a timestamp");
+  });
+});
+
+test("outcome recorder: COMPLETE rejected writes COMPLETE_REJECTED record", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    await writeFile(path.join(directory, "progress.txt"), PROGRESS_DIRECT, "utf-8");
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-ledger-rejected",
+      agent: "autonomous",
+      text: "<promise>COMPLETE</promise>",
+    });
+
+    assert.equal(prompts.length, 1, "COMPLETE should be rejected");
+    const records = await readLedger(directory);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].event, "COMPLETE_REJECTED");
+    assert.equal(records[0].session_id, "s-ledger-rejected");
+    assert.match(records[0].detail, /evidence/i);
+  });
+});
+
+test("outcome recorder: WORK_STUCK accepted writes ledger record", async () => {
+  await withTempDir(async (directory) => {
+    await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
+    const prompts = [];
+    const client = makeClient({ tools: ["bash", "edit", "read"], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["file.edited"]({ sessionID: "s-ledger-stuck", path: path.join(directory, "progress.txt") });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-ledger-stuck",
+      agent: "autonomous",
+      text: "<promise>WORK_STUCK</promise>",
+    });
+
+    assert.equal(prompts.length, 0, "WORK_STUCK should be accepted");
+    const records = await readLedger(directory);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].event, "WORK_STUCK");
+    assert.equal(records[0].session_id, "s-ledger-stuck");
+  });
+});
+
+test("outcome recorder: BLOCKED accepted writes ledger record", async () => {
+  await withTempDir(async (directory) => {
+    const prompts = [];
+    const client = makeClient({ tools: [], prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-ledger-blocked",
+      agent: "autonomous",
+      text: "<promise>BLOCKED</promise>",
+    });
+
+    assert.equal(prompts.length, 0, "BLOCKED should be accepted when bash is unavailable");
+    const records = await readLedger(directory);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].event, "BLOCKED");
+    assert.equal(records[0].session_id, "s-ledger-blocked");
+  });
+});
+
+test("outcome recorder: REQUEST_CHANGES from reviewer writes ledger record", async () => {
+  await withTempDir(async (directory) => {
+    const prompts = [];
+    const client = makeClient({ prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-ledger-rc",
+      agent: "reviewer",
+      text: "## Review\n\n### Verdict\nREQUEST_CHANGES\n",
+    });
+
+    const records = await readLedger(directory);
+    assert.equal(records.length, 1);
+    assert.equal(records[0].event, "REQUEST_CHANGES");
+    assert.equal(records[0].session_id, "s-ledger-rc");
+  });
+});
+
+test("outcome recorder: SPEC_REVISED writes ledger record when prometheus payload is active", async () => {
+  await withTempDir(async (directory) => {
+    const prompts = [];
+    const client = makeClient({ prompts });
+    const hooks = await AutonomousGatePlugin({ client, directory });
+
+    await hooks["message.part.updated"]({
+      role: "assistant",
+      sessionId: "s-ledger-spec",
+      agent: "prometheus",
+      text: '<spec filename="SPEC.md">\n# Plan\nDo the thing\n</spec>',
+    });
+
+    await hooks["file.edited"]({
+      sessionID: "s-ledger-spec",
+      path: path.join(directory, "SPEC.md"),
+    });
+
+    const records = await readLedger(directory);
+    const specRevised = records.filter(r => r.event === "SPEC_REVISED");
+    assert.equal(specRevised.length, 1);
+    assert.equal(specRevised[0].session_id, "s-ledger-spec");
+    assert.ok(specRevised[0].spec_hash, "record must carry the prometheus payload hash");
   });
 });

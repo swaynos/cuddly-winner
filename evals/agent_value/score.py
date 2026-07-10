@@ -138,12 +138,18 @@ def prometheus_dimensions(artifacts: dict[str, Any]) -> dict[str, bool]:
         "prometheus_exit_valid": payload_type in {"spec", "artifact", "bounce"}
         and not bool(artifacts.get("multiple_payloads")),
         "prometheus_diverged": is_bounce
-        or (approach_count >= 2 and bool(artifacts.get("distinct_approaches"))),
+        or (approach_count >= 2 and bool(artifacts.get("distinct_approaches")))
+        or (approach_count == 1 and bool(artifacts.get("single_approach_justified"))),
         "prometheus_converged": is_bounce
         or (
             bool(artifacts.get("chosen_approach_present"))
             and bool(artifacts.get("rejected_approaches_have_kill_reasons"))
             and bool(artifacts.get("front_runner_validated"))
+        )
+        or (
+            approach_count == 1
+            and bool(artifacts.get("single_approach_justified"))
+            and bool(artifacts.get("chosen_approach_present"))
         ),
         "prometheus_payload_valid": is_bounce
         or (

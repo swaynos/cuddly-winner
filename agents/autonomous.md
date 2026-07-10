@@ -9,7 +9,6 @@ permission:
     "uv run *": allow
     "pytest *": allow
     "npm test*": allow
-    "npm run *": allow
     "pnpm test*": allow
     "bun test*": allow
     "go test *": allow
