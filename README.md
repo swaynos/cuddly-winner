@@ -9,10 +9,16 @@ immutability policy, and one durable autonomous supervisor.
 bash scripts/deploy-opencode-agents.sh install
 ```
 
-The default installs agents, root `skills/`, `run.ts`, the supervisor, and the
+The default installs agents, root `skills/`, `tools/run.ts`, the supervisor, and the
 immutability hook into the resolved OpenCode config. Use `status` to inspect the
 destinations. Restart OpenCode after installation because configuration and
 plugins are loaded at startup.
+
+Committed project configuration uses visible root files such as
+`opencode-immutable.json`; `.opencode/` is reserved for ignored runtime evidence
+and supervisor state. If Autonomous reports that `run` is unavailable, reinstall
+and restart OpenCode. The supervisor records that condition as a terminal
+infrastructure blocker instead of repeatedly requesting impossible verification.
 
 ## Workflow
 

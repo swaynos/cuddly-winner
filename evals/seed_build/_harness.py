@@ -163,7 +163,7 @@ def dry_run_autonomous(workspace: Path) -> tuple[int, str, str]:
         encoding="utf-8",
     )
     script = (
-        f'import {{run}} from {str(ROOT / ".opencode/tool/run.ts")!r};'
+        f'import {{run}} from {str(ROOT / "tools/run.ts")!r};'
         f'const r=await run({{command:"true",cwd:{str(workspace)!r}}});if(r.exit_code!==0)process.exit(1)'
     )
     subprocess.run(["node", "--input-type=module", "-e", script], check=True, capture_output=True, text=True)

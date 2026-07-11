@@ -16,6 +16,10 @@ The supervisor is the sole completion and correction owner. It parses the SPEC,
 validates artifact schemas and freshness, validates configured mutation output,
 and persists bounded run state under `.opencode/supervisor/`. Text, tokens,
 unrelated commands, spike runs, and Reviewer verdicts cannot complete work.
+The runner is exported through the OpenCode custom-tool SDK. Missing runner
+registration is a terminal infrastructure blocker rather than a verification
+failure, preventing retries that cannot repair the active process's startup-time
+tool registry.
 
 ## Trust boundaries
 
@@ -35,6 +39,7 @@ unrelated commands, spike runs, and Reviewer verdicts cannot complete work.
   maps child activity to that run; unrelated sessions do nothing. Corruption
   and SPEC changes fail closed, and blocked runs stay blocked.
 
-The deployment script installs these components globally by default. The marker
-`.opencode/immutable.json` activates project-local policy, while runner evidence
-always remains in the command's project or spike context.
+The deployment script installs these components globally by default. The visible
+root marker `opencode-immutable.json` activates project-local policy. Committed
+control-plane inputs remain outside hidden directories; ignored runtime evidence
+and supervisor state are written below `.opencode/` in the command's project.

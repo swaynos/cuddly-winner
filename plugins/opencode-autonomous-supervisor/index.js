@@ -31,7 +31,7 @@ export function validateRunArtifact(value) {
 }
 
 export async function newestRelevantMtime(root) {
-  const include = ["agents","plugins","tests","evals","scripts","skills",".opencode/tool"];
+  const include = ["agents","plugins","tests","evals","scripts","skills","tools"];
   let newest = 0;
   async function walk(dir) {
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
@@ -160,6 +160,11 @@ export default async function Supervisor({ directory, worktree, client }) {
       return;
     }
     const reviewerText = event?.properties?.part?.text ?? event?.properties?.text ?? "";
+    if ((event?.type === "message.part.updated" || event?.type === "message.updated") && /(?:trusted\s+)?`?run`?\s+tool\s+is\s+unavailable/i.test(reviewerText) && event?.properties?.sessionID) {
+      const runID=await existingRun(event.properties.sessionID); if(!runID) return;
+      await serializedStateUpdate(stateFile(runID),(state)=>state.status==="blocked"?state:{...state,status:"blocked",blocker_reason:"Trusted run capability unavailable; deploy the custom tool and restart OpenCode"});
+      return;
+    }
     if ((event?.type === "message.part.updated" || event?.type === "message.updated") && /REQUEST_CHANGES/.test(reviewerText) && event?.properties?.sessionID) {
       const runID=await existingRun(event.properties.sessionID); if(!runID) return;
       let shouldPrompt=false;

@@ -16,7 +16,7 @@
  *   7. chat.params cache — populates and is used in preference to API fallback
  *   8. Case-variant protection
  *   9. Non-mutating tools pass through untouched
- *  10. No immutable.json → no-op
+ *  10. No root policy marker → no-op
  */
 
 import test from "node:test";
@@ -42,12 +42,10 @@ async function withTempDir(fn) {
 }
 
 /**
- * Write .opencode/immutable.json in dir and return the dir.
+ * Write opencode-immutable.json in dir and return the dir.
  */
 async function setupImmutable(dir, cfg) {
-  const oc = path.join(dir, ".opencode");
-  await mkdir(oc, { recursive: true });
-  await writeFile(path.join(oc, "immutable.json"), JSON.stringify(cfg), "utf-8");
+  await writeFile(path.join(dir, "opencode-immutable.json"), JSON.stringify(cfg), "utf-8");
   return dir;
 }
 
@@ -416,12 +414,12 @@ test("non-mutating tools: read is not intercepted", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. No immutable.json → no-op
+// 10. No root policy marker → no-op
 // ---------------------------------------------------------------------------
 
-test("no-op: no immutable.json means all writes pass through", async () => {
+test("no-op: no root policy marker means all writes pass through", async () => {
   await withTempDir(async (dir) => {
-    // No .opencode/immutable.json created.
+    // No opencode-immutable.json created.
     const client = makeClient();
     const hooks = await ImmutabilityGuard({ directory: dir, worktree: dir, client });
 
@@ -471,8 +469,8 @@ test("runner evidence and supervisor state reject agent mutation-tool forgery", 
 
 test("trusted computing base source rejects agent mutation", async()=>withTempDir(async(dir)=>{
   const protectedFiles=[
-    ".opencode/immutable.json",
-    ".opencode/tool/run.ts",
+    "opencode-immutable.json",
+    "tools/run.ts",
     "plugins/immutability.ts",
     "plugins/opencode-autonomous-supervisor.js",
     "plugins/opencode-autonomous-supervisor/index.js",

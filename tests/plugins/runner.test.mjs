@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { run, __testing } from "../../.opencode/tool/run.ts";
+import runTool, { run, __testing } from "../../tools/run.ts";
+
+test("runner exports an OpenCode custom tool definition", () => {
+  assert.equal(typeof runTool?.description, "string");
+  assert.equal(typeof runTool?.args?.command?.safeParse, "function");
+  assert.equal(typeof runTool?.execute, "function");
+});
 
 test("runner persists complete execution evidence before resolving", async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-")); const result=await run({command:"printf ok",cwd:root});

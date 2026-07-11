@@ -22,24 +22,26 @@ def main() -> int:
     require("update `.opencode/memory/`" not in agents["grounder"], "Grounder claims writes")
     require((ROOT/"plugins/opencode-autonomous-supervisor/index.js").is_file(), "supervisor missing")
     require(not (ROOT/"plugins/opencode-autonomous-gate.js").exists() and not (ROOT/"plugins/opencode-autonomous-loop.js").exists(), "split control plane remains")
-    immutable = json.loads((ROOT/".opencode/immutable.json").read_text())
+    immutable = json.loads((ROOT/"opencode-immutable.json").read_text())
     require(immutable["write_allowlist"]["prometheus"] == ["SPEC.md", ".spike/**"], "Prometheus policy missing")
     required_readonly = {
-        ".opencode/immutable.json", ".opencode/tool/run.ts", ".opencode/runs/**",
+        "opencode-immutable.json", "tools/run.ts", ".opencode/runs/**",
         ".opencode/supervisor/**", "plugins/immutability.ts",
         "plugins/opencode-autonomous-supervisor.js", "plugins/opencode-autonomous-supervisor/**",
     }
     require(required_readonly <= set(immutable["readonly"]), "trusted control-plane source or artifacts are forgeable")
-    require((ROOT/".opencode/tool/run.ts").is_file(), "runner missing")
+    require((ROOT/"tools/run.ts").is_file(), "runner missing")
     require((ROOT/"skills").is_dir() and not (ROOT/".opencode/skills").exists(), "root skills migration incomplete")
     with tempfile.TemporaryDirectory(prefix="opencode-deploy-") as tmp:
         config = pathlib.Path(tmp)/"config"; project = pathlib.Path(tmp)/"project"; project.mkdir()
         env = os.environ | {"OPENCODE_DEPLOY_CONFIG_DIR": str(config)}
         subprocess.run(["bash",str(ROOT/"scripts/deploy-opencode-agents.sh"),"install","--mode","copy"],cwd=ROOT,env=env,check=True,capture_output=True,text=True)
+        require((ROOT/"node_modules/@opencode-ai/plugin").is_dir(), "OpenCode tool SDK dependency missing")
+        os.symlink(ROOT/"node_modules", config/"node_modules", target_is_directory=True)
         runner = config/"tools/run.ts"
         require(runner.is_file(), "global runner not deployed")
         require((config/"plugins/opencode-autonomous-supervisor.js").exists() and (config/"plugins/immutability.ts").exists(), "control-plane plugins not deployed")
-        code = f'import {{run}} from {str(runner)!r}; const r=await run({{command:"true",cwd:{str(project)!r}}}); if(r.context!=="execution")process.exit(2)'
+        code = f'import tool,{{run}} from {str(runner)!r}; if(typeof tool?.description!=="string"||typeof tool?.args?.command?.safeParse!=="function"||typeof tool?.execute!=="function")process.exit(2); const r=await run({{command:"true",cwd:{str(project)!r}}}); if(r.context!=="execution")process.exit(3)'
         subprocess.run(["node","--input-type=module","-e",code],check=True,capture_output=True,text=True)
         require(any((project/".opencode/runs").glob("*.json")), "runner evidence was not project-local")
         failure = f'import {{run,__testing}} from {str(runner)!r}; try{{await run({{command:"true",cwd:{str(project/"missing")!r}}});process.exit(2)}}catch{{if(__testing.running!==0)process.exit(3)}}'

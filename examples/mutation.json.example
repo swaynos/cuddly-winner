@@ -17,6 +17,6 @@
     "mutant_cap": "Hard upper bound on mutants generated per run. Keeps cost bounded.",
     "wall_clock_seconds": "Maximum seconds the mutation runner may run. Consistent with Karpathy's 5-minute experiment budget.",
     "diff_scoped": "true = mutate only files changed in this task's diff. false = mutate all source files (expensive).",
-    "_freeze_reminder": "After establishing mutation.json for a project, add it to .opencode/immutable.json readonly so the implementer cannot lower the threshold or exclude files to game the score."
+    "_freeze_reminder": "After establishing mutation.json for a project, add it to opencode-immutable.json readonly so the implementer cannot lower the threshold or exclude files to game the score."
   }
 }

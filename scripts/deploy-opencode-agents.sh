@@ -500,7 +500,7 @@ fi
 
 # --- Trusted runner ---
 if [[ "$WITH_TOOLS" == true ]]; then
-  install_files "Tools" "${REPO_ROOT}/.opencode/tool" "$TOOLS_DIR" "$MODE" "$ACTION" "run.ts"
+  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "run.ts"
 fi
 
 if [[ "$ACTION" == "status" ]]; then

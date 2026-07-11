@@ -1,9 +1,8 @@
 {
   "readonly": [
     "evals/seed_build/oracle/**",
-    ".opencode/immutable.json",
-    ".opencode/mutation.json",
-    ".opencode/tool/run.ts",
+    "opencode-immutable.json",
+    "tools/run.ts",
     ".opencode/runs/**",
     ".opencode/supervisor/**",
     "plugins/immutability.ts",

@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to .opencode/karpathy.json in your project. Replace commands and paths with your project's specifics. See examples/ml-loop/.opencode/karpathy.json for a complete wired example.",
+  "_comment": "Copy to opencode-karpathy.json in your project root. Replace commands and paths with your project's specifics.",
 
   "strategy_doc": "program.md",
   "log_file": "experiments.md",

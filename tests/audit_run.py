@@ -36,7 +36,7 @@ from typing import Optional
 
 DEFAULT_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
 
-KARPATHY_ARTIFACTS = ["program.md", "experiments.md", ".opencode/karpathy.json"]
+KARPATHY_ARTIFACTS = ["program.md", "experiments.md", "opencode-karpathy.json"]
 
 # Agent names that indicate strategy subagent execution.
 STRATEGY_SUBAGENTS = {"karpathy"}
@@ -332,7 +332,7 @@ def verdict_karpathy(
     evidence = [
         f"@karpathy child sessions: {len(karpathy_children)}",
         f"program.md: {arts.get('program.md')}",
-        f".opencode/karpathy.json: {arts.get('.opencode/karpathy.json')}",
+        f"opencode-karpathy.json: {arts.get('opencode-karpathy.json')}",
         f"experiments.md: {arts.get('experiments.md')} (baseline: {has_baseline}, noise: {has_noise}, KEEP/REVERT: {has_keep_revert})",
     ]
 

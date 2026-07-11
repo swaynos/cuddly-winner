@@ -2,13 +2,13 @@
 
 ## Durable contract
 
-The trusted computing base is `.opencode/tool/run.ts`, `plugins/immutability.ts`,
+The trusted computing base is `tools/run.ts`, `plugins/immutability.ts`,
 and `plugins/opencode-autonomous-supervisor/`. Prometheus alone owns root
 `SPEC.md`; it is confined to `SPEC.md` and `.spike/**`, and commands go through
 the runner. Autonomous reads and fingerprints that canonical file and never
 rewrites it.
 
-The checked-in immutable policy protects its own configuration, all trusted
+The checked-in root `opencode-immutable.json` policy protects its own configuration, all trusted
 computing base source files, runner evidence, and supervisor state from every
 agent mutation tool. Deployment may symlink these files globally without making
 their project sources agent-mutable.
@@ -49,13 +49,20 @@ closed, and blocked state remains terminal until explicit user intervention.
 `.opencode/runs/**` and `.opencode/supervisor/**` are readonly to all agent
 mutation tools. The trusted runner and supervisor write them directly.
 
+The runner source is an OpenCode SDK custom-tool definition with a validated
+argument schema and execute callback. Committed control-plane inputs use visible
+root paths; `.opencode/` is reserved for ignored runtime evidence and supervisor
+state. If Autonomous reports that `run` is unavailable, the supervisor records
+a terminal infrastructure blocker and does not issue impossible verification
+retries. Tool deployment changes require restarting OpenCode.
+
 Mutation validation is opt-in. A configured result is an uncommitted repository
 artifact; no agent auto-commits it. It must have a valid generation timestamp,
 finite threshold-passing score, non-empty existing file list, and freshness
 against the files it evaluates.
 
 The six supported agents are Ask, Prometheus, Autonomous, Karpathy, Reviewer,
-and Grounder. Karpathy requires `program.md`, `.opencode/karpathy.json`, and a
+and Grounder. Karpathy requires `program.md`, `opencode-karpathy.json`, and a
 frozen evaluator, and routes every measurement through the runner. Grounder and
 Reviewer are read-only.
 

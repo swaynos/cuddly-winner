@@ -83,7 +83,7 @@ If it is missing, stop immediately and reply:
 loop objective, constraints, metric definition, and stop criteria, then invoke me
 again."
 
-Require `.opencode/karpathy.json` and a frozen evaluator. If either is missing,
+Require `opencode-karpathy.json` and a frozen evaluator. If either is missing,
 stop and report the incomplete harness. This file provides
 deterministic per-project configuration that overrides free-form decisions:
 

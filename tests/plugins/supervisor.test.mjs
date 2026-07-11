@@ -69,6 +69,20 @@ test("idle verification correction is bounded and deduplicated",async()=>{
   const hooks=await Supervisor({directory:root,worktree:root,client}); await hooks["chat.params"]({sessionID:"a",agent:"autonomous"}); await hooks.event({type:"session.idle",properties:{sessionID:"a"}}); await hooks.event({type:"session.idle",properties:{sessionID:"a"}});
   const state=JSON.parse(await fs.readFile(path.join(root,".opencode/supervisor/a.json"),"utf8")); assert.equal(state.corrective_counts.verification,1); assert.equal(state.global_count,1); assert.equal(prompts.length,1);
 });
+test("missing trusted runner blocks once without a verification retry",async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),"supervisor-capability-"));
+  await fs.writeFile(path.join(root,"SPEC.md"),section(["x"]));
+  const prompts=[],client=mockClient({}, {a:"autonomous"},prompts);
+  const hooks=await Supervisor({directory:root,worktree:root,client});
+  await hooks["chat.params"]({sessionID:"a",agent:"autonomous"});
+  await hooks.event({type:"message.updated",properties:{sessionID:"a",text:"The trusted `run` tool is unavailable in this session. <promise>BLOCKED</promise>"}});
+  const file=path.join(root,".opencode/supervisor/a.json");
+  const state=JSON.parse(await fs.readFile(file,"utf8"));
+  assert.equal(state.status,"blocked");
+  assert.match(state.blocker_reason,/trusted run capability unavailable/i);
+  await hooks.event({type:"session.idle",properties:{sessionID:"a"}});
+  assert.equal(prompts.length,0);
+});
 test("failed reevaluation clears a previously complete status",async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"supervisor-recheck-"));
   await fs.mkdir(path.join(root,".opencode/runs"),{recursive:true});

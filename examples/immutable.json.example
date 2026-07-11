@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to .opencode/immutable.json in your project to activate the ImmutabilityGuard plugin. Replace filenames with the files you want to protect. See examples/ml-loop/.opencode/immutable.json for a minimal example.",
+  "_comment": "Copy to opencode-immutable.json in your project root to activate the ImmutabilityGuard plugin. Replace filenames with the files you want to protect.",
 
   "readonly": [
     "<frozen-file.py>"

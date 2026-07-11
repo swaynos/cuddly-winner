@@ -8,10 +8,10 @@
  *   (the deploy script handles this with --with-plugins)
  *
  * Activation:
- *   The plugin only activates when the project contains .opencode/immutable.json.
+ *   The plugin only activates when the project contains opencode-immutable.json.
  *   Without that marker file the plugin is a no-op — safe for global install.
  *
- * Marker file format (.opencode/immutable.json):
+ * Marker file format (opencode-immutable.json):
  *   {
  *     "readonly":          ["prepare.py"],   // no agent may edit these
  *     "prometheus_only":   ["SPEC.md"],      // only @prometheus may edit these
@@ -124,7 +124,7 @@ function extractPatchedPaths(patchText: string): string[] {
 }
 
 function loadConfig(root: string): ImmutableConfig | null {
-  const marker = join(root, ".opencode", "immutable.json");
+  const marker = join(root, "opencode-immutable.json");
   if (!existsSync(marker)) return null;
   try {
     return JSON.parse(readFileSync(marker, "utf8")) as ImmutableConfig;
@@ -136,7 +136,7 @@ function loadConfig(root: string): ImmutableConfig | null {
 function findConfigRoot(start: string): string | null {
   let current = resolve(start);
   while (true) {
-    const marker = join(current, ".opencode", "immutable.json");
+    const marker = join(current, "opencode-immutable.json");
     if (existsSync(marker)) return current;
     const parent = dirname(current);
     if (parent === current) return null;
@@ -290,7 +290,7 @@ export const ImmutabilityGuard = async ({
         if (isReadonly) {
           throw new Error(
             `ImmutabilityGuard: "${relPath}" is declared readonly in ` +
-              `.opencode/immutable.json — no agent may edit it.`
+              `opencode-immutable.json — no agent may edit it.`
           );
         }
 
@@ -339,7 +339,7 @@ export const ImmutabilityGuard = async ({
           if (!allowed) {
             throw new Error(
               `ImmutabilityGuard: @${agent} is restricted to writing ` +
-                `[${writeAllowlistPatterns[agent].join(", ")}] per .opencode/immutable.json. ` +
+                `[${writeAllowlistPatterns[agent].join(", ")}] per opencode-immutable.json. ` +
                 `Writing "${relPath}" is not permitted.`
             );
           }

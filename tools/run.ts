@@ -1,4 +1,5 @@
 /** Trusted command runner. Evidence is durable before this tool resolves. */
+import { tool } from "@opencode-ai/plugin";
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -45,18 +46,11 @@ async function processCommand(cwd: string, input: RunInput): Promise<{file: stri
     const reportsArgs: string[] = [];
     try { if ((await fs.stat(reports)).isDirectory()) reportsArgs.push("--bind", reports, reports); } catch {}
     const tempProjectArgs = cwd.startsWith(`/tmp${path.sep}`) ? ["--dir", cwd, "--ro-bind", cwd, cwd] : [];
-    return {
-      file: bwrap,
-      args: ["--die-with-parent", "--new-session", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", ...tempProjectArgs, ...reportsArgs,
-        "--chdir", cwd, "bash", "-c", input.command],
-    };
+    return { file: bwrap, args: ["--die-with-parent", "--new-session", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", ...tempProjectArgs, ...reportsArgs, "--chdir", cwd, "bash", "-c", input.command] };
   }
   const spikeDir = path.join(cwd, ".spike", input.spike_id!);
   const tempProjectArgs = cwd.startsWith(`/tmp${path.sep}`) ? ["--dir", cwd, "--ro-bind", cwd, cwd] : [];
-  return {
-    file: bwrap,
-    args: ["--die-with-parent", "--new-session", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", ...tempProjectArgs, "--bind", spikeDir, spikeDir, "--chdir", cwd, "bash", "-c", input.command],
-  };
+  return { file: bwrap, args: ["--die-with-parent", "--new-session", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", ...tempProjectArgs, "--bind", spikeDir, spikeDir, "--chdir", cwd, "bash", "-c", input.command] };
 }
 
 export async function run(input: RunInput): Promise<RunResult> {
@@ -69,9 +63,7 @@ export async function run(input: RunInput): Promise<RunResult> {
     if (!cwdStat?.isDirectory()) throw new Error(`Invalid cwd: ${cwd}`);
     const dest = await destination(cwd, input);
     await fs.mkdir(dest.dir, { recursive: true });
-    if (dest.context === "execution") {
-      await fs.mkdir(path.join(cwd, ".opencode", "supervisor"), { recursive: true });
-    }
+    if (dest.context === "execution") await fs.mkdir(path.join(cwd, ".opencode", "supervisor"), { recursive: true });
     const processSpec = await processCommand(cwd, input);
     const run_id = crypto.randomBytes(12).toString("hex");
     const startMs = Date.now(), started_at = new Date(startMs).toISOString();
@@ -103,4 +95,17 @@ export async function run(input: RunInput): Promise<RunResult> {
 }
 
 export const __testing = { get running() { return running; } };
-export default run;
+
+export default tool({
+  description: "Run a verification or contracted spike command in the trusted sandbox and persist durable evidence.",
+  args: {
+    command: tool.schema.string().min(1).describe("Exact shell command to execute"),
+    cwd: tool.schema.string().optional().describe("Project directory; defaults to the active worktree"),
+    timeoutSec: tool.schema.number().positive().optional().describe("Timeout in seconds"),
+    context: tool.schema.enum(["execution", "spike"]).optional().describe("Evidence context; defaults to execution"),
+    spike_id: tool.schema.string().regex(/^[a-z0-9][a-z0-9-]*$/).optional().describe("Contracted spike identifier"),
+  },
+  async execute(args, context) {
+    return JSON.stringify(await run({ ...args, cwd: args.cwd ?? context.worktree ?? context.directory }), null, 2);
+  },
+});

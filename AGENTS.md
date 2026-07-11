@@ -45,7 +45,7 @@ When a tool is unavailable or a task is out of your role:
 - Say so in **one sentence** and stop.
 - Do NOT produce manual command lists, "run this yourself" blocks, or handoff prompts.
 - Do NOT reclassify the blocked work as something you can partially do.
-- The gate plugin enforces this for `@autonomous` — it will inject a corrective and demand `<promise>BLOCKED</promise>` if you produce a workaround dump without bash available.
+- The supervisor records a terminal infrastructure blocker for `@autonomous` when the trusted runner is unavailable; it must not inject impossible verification retries.
 
 ## Agent routing
 
