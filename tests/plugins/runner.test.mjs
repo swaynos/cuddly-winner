@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import runTool, { run, __testing } from "../../tools/run.ts";
 
+const execution = (command, cwd, extra={}) => ({command,cwd,supervisor_run_id:"run-a",spec_fingerprint:"a".repeat(64),...extra});
+
 test("runner exports an OpenCode custom tool definition", () => {
   assert.equal(typeof runTool?.description, "string");
   assert.equal(typeof runTool?.args?.command?.safeParse, "function");
@@ -12,23 +14,23 @@ test("runner exports an OpenCode custom tool definition", () => {
 });
 
 test("runner persists complete execution evidence before resolving", async()=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-")); const result=await run({command:"printf ok",cwd:root});
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-")); const result=await run(execution("printf ok",root));
   assert.equal(result.exit_code,0); assert.equal(result.context,"execution"); assert.ok(result.started_at && result.finished_at);
   const saved=JSON.parse(await fs.readFile(path.join(root,".opencode/runs",`${result.run_id}.json`),"utf8")); assert.deepEqual(saved,result);
   assert.equal(await fs.readFile(path.join(root,".opencode/runs",`${result.run_id}.log`),"utf8"),"ok");
 });
 test("execution sandbox provides writable devices",async()=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-dev-")); const result=await run({command:"printf ok >/dev/null",cwd:root}); assert.equal(result.exit_code,0,result.stderr_tail);
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-dev-")); const result=await run(execution("printf ok >/dev/null",root)); assert.equal(result.exit_code,0,result.stderr_tail);
 });
 test("execution commands cannot forge runner or supervisor state",async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-forgery-"));
-  const result=await run({command:"printf forged > .opencode/runs/forged.json; printf forged > .opencode/supervisor/forged.json",cwd:root}); assert.notEqual(result.exit_code,0);
+  const result=await run(execution("printf forged > .opencode/runs/forged.json; printf forged > .opencode/supervisor/forged.json",root)); assert.notEqual(result.exit_code,0);
   await assert.rejects(fs.access(path.join(root,".opencode/runs/forged.json"))); await assert.rejects(fs.access(path.join(root,".opencode/supervisor/forged.json")));
 });
 test("nonzero timeout invalid cwd and concurrency cleanup",async()=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-errors-")); assert.equal((await run({command:"exit 7",cwd:root})).exit_code,7);
-  const timed=await run({command:"sleep 2",cwd:root,timeoutSec:.01}); assert.equal(timed.timed_out,true);
-  await assert.rejects(run({command:"true",cwd:path.join(root,"missing")})); assert.equal(__testing.running,0);
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-errors-")); assert.equal((await run(execution("exit 7",root))).exit_code,7);
+  const timed=await run(execution("sleep 2",root,{timeoutSec:.01})); assert.equal(timed.timed_out,true);
+  await assert.rejects(run(execution("true",path.join(root,"missing")))); assert.equal(__testing.running,0);
 });
 test("spike is contracted and routed without execution leakage",async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-spike-")); await assert.rejects(run({command:"true",cwd:root,context:"spike",spike_id:"s"}));
@@ -45,10 +47,14 @@ test("spike sandbox writes only inside its spike directory",async()=>{
 });
 test("spawn errors reject and restore concurrency",async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-spawn-")), fake=path.join(root,"not-executable"), old=process.env.OPENCODE_BWRAP_PATH; await fs.writeFile(fake,"x"); process.env.OPENCODE_BWRAP_PATH=fake;
-  try { await assert.rejects(run({command:"true",cwd:root}),/EACCES/); } finally { if(old===undefined)delete process.env.OPENCODE_BWRAP_PATH; else process.env.OPENCODE_BWRAP_PATH=old; }
+  try { await assert.rejects(run(execution("true",root)),/EACCES/); } finally { if(old===undefined)delete process.env.OPENCODE_BWRAP_PATH; else process.env.OPENCODE_BWRAP_PATH=old; }
   assert.equal(__testing.running,0);
 });
 test("persistence failures surface and leave concurrency clean",async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-persist-")); await fs.mkdir(path.join(root,".opencode")); await fs.writeFile(path.join(root,".opencode/runs"),"not a directory");
-  await assert.rejects(run({command:"true",cwd:root}),/EEXIST|ENOTDIR/); assert.equal(__testing.running,0);
+  await assert.rejects(run(execution("true",root)),/EEXIST|ENOTDIR/); assert.equal(__testing.running,0);
+});
+test("execution evidence requires trusted provenance",async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-provenance-"));
+  await assert.rejects(run({command:"true",cwd:root}),/provenance/i);
 });

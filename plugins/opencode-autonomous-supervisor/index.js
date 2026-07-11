@@ -20,11 +20,12 @@ export function parseVerification(spec) {
   return commands.map(normalizeCommand);
 }
 
-const required = ["run_id","started_at","finished_at","duration_ms","command","exit_code","stdout_tail","stderr_tail","timed_out","context"];
+const required = ["run_id","supervisor_run_id","spec_fingerprint","started_at","finished_at","duration_ms","command","exit_code","stdout_tail","stderr_tail","timed_out","context"];
 export function validateRunArtifact(value) {
   if (!value || typeof value !== "object" || required.some((k) => !(k in value))) throw new Error("Malformed run artifact");
   if (!Number.isFinite(value.duration_ms) || !Number.isFinite(value.exit_code)) throw new Error("Invalid run numbers");
   if (typeof value.run_id !== "string" || !/^[a-z0-9]+$/i.test(value.run_id)) throw new Error("Invalid run ID");
+  if (typeof value.supervisor_run_id !== "string" || !value.supervisor_run_id || !/^[a-f0-9]{64}$/.test(value.spec_fingerprint)) throw new Error("Invalid run provenance");
   if (!Date.parse(value.started_at) || !Date.parse(value.finished_at) || Date.parse(value.finished_at) < Date.parse(value.started_at) || Date.parse(value.finished_at) > Date.now() + 5000 || value.context !== "execution") throw new Error("Invalid run context or timestamps");
   if (typeof value.command !== "string" || typeof value.stdout_tail !== "string" || typeof value.stderr_tail !== "string" || typeof value.timed_out !== "boolean") throw new Error("Invalid run fields");
   return value;
@@ -45,17 +46,20 @@ export async function newestRelevantMtime(root) {
   return newest;
 }
 
-export async function evaluate(root, specText) {
+export async function evaluate(root, specText, expected = {}) {
   const commands = parseVerification(specText), newest = await newestRelevantMtime(root);
   const dir = path.join(root, ".opencode", "runs");
   let names = []; try { names = await fs.readdir(dir); } catch { return { complete: false, missing: commands }; }
   const seen = new Set(), passing = new Map();
   for (const name of names.filter((n) => n.endsWith(".json"))) {
-    let artifact; try { artifact = validateRunArtifact(JSON.parse(await fs.readFile(path.join(dir, name), "utf8"))); }
+    let raw; try { raw = JSON.parse(await fs.readFile(path.join(dir, name), "utf8")); }
+    catch { return { complete: false, missing: commands, invalid_artifact: name }; }
+    if (raw?.supervisor_run_id !== expected.runID) continue;
+    let artifact; try { artifact = validateRunArtifact(raw); }
     catch { return { complete: false, missing: commands, invalid_artifact: name }; }
     if (name !== `${artifact.run_id}.json`) return { complete:false, missing:commands, invalid_artifact:`filename mismatch ${name}` };
     if (seen.has(artifact.run_id)) return { complete: false, missing: commands, invalid_artifact: `duplicate run_id ${artifact.run_id}` }; seen.add(artifact.run_id);
-    if (artifact.exit_code === 0 && Date.parse(artifact.finished_at) >= newest) passing.set(normalizeCommand(artifact.command), artifact);
+    if (artifact.exit_code === 0 && Date.parse(artifact.finished_at) >= newest && artifact.supervisor_run_id === expected.runID && artifact.spec_fingerprint === expected.specFingerprint) passing.set(normalizeCommand(artifact.command), artifact);
   }
   const missing = commands.filter((command) => !passing.has(command));
   return { complete: missing.length === 0, missing, satisfied: commands.filter((c) => passing.has(c)) };
@@ -175,9 +179,9 @@ export default async function Supervisor({ directory, worktree, client }) {
     if (event?.type !== "session.idle" || !event?.properties?.sessionID) return;
     const runID=await existingRun(event.properties.sessionID); if(!runID) return;
     const spec = await fs.readFile(path.join(root, "SPEC.md"), "utf8");
-    const verdict = await evaluate(root, spec);
     const file = stateFile(runID);
     const specFingerprint = fingerprint(spec);
+    const verdict = await evaluate(root, spec, {runID, specFingerprint});
     let shouldPrompt=false;
     const updated=await serializedStateUpdate(file, async (state) => {
       if(state.status==="blocked") return state;

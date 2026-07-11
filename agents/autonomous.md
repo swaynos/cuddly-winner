@@ -22,6 +22,8 @@ Execute every checklist item in order. Run every declared verification command
 exactly through `run` with execution context. Maintain `progress.txt`. If the
 SPEC fingerprint changes, pause and require a new run. Use Karpathy only when a
 complete `program.md`, `opencode-karpathy.json`, and frozen evaluator exist.
+Record strategy selection in `progress.txt` as exactly `Selected: direct` or
+`Selected: karpathy` before implementation.
 
 Reviewer feedback is advisory and may trigger at most one bounded correction;
 it is not completion evidence. Tokens and transcript text are not evidence.

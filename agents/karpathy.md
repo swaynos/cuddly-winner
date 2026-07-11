@@ -106,7 +106,7 @@ deterministic per-project configuration that overrides free-form decisions:
 }
 ```
 
-If `karpathy.json` is present, follow it exactly. Do not improvise alternatives to
+If `opencode-karpathy.json` is present, follow it exactly. Do not improvise alternatives to
 what it specifies.
 
 # The loop

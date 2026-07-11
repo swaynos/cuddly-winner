@@ -29,6 +29,11 @@ a spike at `.spike/<id>/QUESTION.md` containing the question and kill criterion.
 Run it with `context: spike` and `spike_id`, then record the measured result in
 the SPEC. A failed kill criterion requires redesign, not optimistic planning.
 
+In `## Approaches Considered`, use one `### Selected: <name>` heading and at
+least one `### Rejected: <name>` heading. Every rejected approach must contain
+an explicit `Kill reason:` sentence. Do not substitute implicit prose for these
+labels.
+
 Write `SPEC.md` directly. It must contain exactly one each of `## Grounding`,
 `## Approaches Considered`, `## Acceptance Criteria`, `## Verification`, and
 `## Implementation Checklist`. Verification commands are unique list items in

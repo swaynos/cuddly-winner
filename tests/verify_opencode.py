@@ -24,13 +24,18 @@ def main() -> int:
     require(not (ROOT/"plugins/opencode-autonomous-gate.js").exists() and not (ROOT/"plugins/opencode-autonomous-loop.js").exists(), "split control plane remains")
     immutable = json.loads((ROOT/"opencode-immutable.json").read_text())
     require(immutable["write_allowlist"]["prometheus"] == ["SPEC.md", ".spike/**"], "Prometheus policy missing")
+    require("prometheus_only" not in immutable, "obsolete prometheus_only policy remains")
+    require(all("*" not in item for item in immutable["readonly"]), "readonly must enumerate files, not directory globs")
     required_readonly = {
-        "opencode-immutable.json", "tools/run.ts", ".opencode/runs/**",
-        ".opencode/supervisor/**", "plugins/immutability.ts",
-        "plugins/opencode-autonomous-supervisor.js", "plugins/opencode-autonomous-supervisor/**",
+        "opencode-immutable.json", "tools/run.ts", "plugins/immutability.ts",
+        "plugins/opencode-autonomous-supervisor.js",
+        "plugins/opencode-autonomous-supervisor/index.js",
+        "plugins/opencode-autonomous-supervisor/package.json",
     }
     require(required_readonly <= set(immutable["readonly"]), "trusted control-plane source or artifacts are forgeable")
     require((ROOT/"tools/run.ts").is_file(), "runner missing")
+    require((ROOT/"evals/seed_build/CANONICAL_SPEC.md").is_file(), "canonical build SPEC missing")
+    require((ROOT/"evals/seed_build/planning_checks.py").is_file(), "canonical planning scorer missing")
     require((ROOT/"skills").is_dir() and not (ROOT/".opencode/skills").exists(), "root skills migration incomplete")
     with tempfile.TemporaryDirectory(prefix="opencode-deploy-") as tmp:
         config = pathlib.Path(tmp)/"config"; project = pathlib.Path(tmp)/"project"; project.mkdir()
@@ -41,7 +46,8 @@ def main() -> int:
         runner = config/"tools/run.ts"
         require(runner.is_file(), "global runner not deployed")
         require((config/"plugins/opencode-autonomous-supervisor.js").exists() and (config/"plugins/immutability.ts").exists(), "control-plane plugins not deployed")
-        code = f'import tool,{{run}} from {str(runner)!r}; if(typeof tool?.description!=="string"||typeof tool?.args?.command?.safeParse!=="function"||typeof tool?.execute!=="function")process.exit(2); const r=await run({{command:"true",cwd:{str(project)!r}}}); if(r.context!=="execution")process.exit(3)'
+        provenance = "0" * 64
+        code = f'import tool,{{run}} from {str(runner)!r}; if(typeof tool?.description!=="string"||typeof tool?.args?.command?.safeParse!=="function"||typeof tool?.execute!=="function")process.exit(2); const r=await run({{command:"true",cwd:{str(project)!r},supervisor_run_id:"verify",spec_fingerprint:{provenance!r}}}); if(r.context!=="execution")process.exit(3)'
         subprocess.run(["node","--input-type=module","-e",code],check=True,capture_output=True,text=True)
         require(any((project/".opencode/runs").glob("*.json")), "runner evidence was not project-local")
         failure = f'import {{run,__testing}} from {str(runner)!r}; try{{await run({{command:"true",cwd:{str(project/"missing")!r}}});process.exit(2)}}catch{{if(__testing.running!==0)process.exit(3)}}'

@@ -23,6 +23,72 @@ PASS    = "PASS"
 PARTIAL = "PARTIAL"
 FAIL    = "FAIL"
 SKIPPED = "SKIPPED"
+PROVIDER_KEYS = (
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+)
+
+
+def load_dotenv(path: Path = ROOT / ".env") -> dict[str, str]:
+    """Load simple KEY=VALUE entries without mutating or logging the environment."""
+    if os.environ.get("OPENCODE_EVAL_DOTENV") == "0":
+        return {}
+    if not path.is_file():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not key.replace("_", "a").isalnum() or key[0].isdigit():
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def redact_secrets(text: str, secrets: dict[str, str]) -> str:
+    for value in sorted((value for value in secrets.values() if value), key=len, reverse=True):
+        text = text.replace(value, "[REDACTED]")
+    return text
+
+
+def agent_environment(
+    workspace: Path,
+    dotenv_path: Path = ROOT / ".env",
+) -> tuple[dict[str, str], dict[str, str]]:
+    dotenv = load_dotenv(dotenv_path)
+    env = os.environ.copy()
+    for key, value in dotenv.items():
+        env.setdefault(key, value)
+    secrets = {
+        key: value
+        for key, value in env.items()
+        if value and (key in PROVIDER_KEYS or key in dotenv)
+    }
+    runtime = workspace / ".opencode-runtime"
+    env["PWD"] = str(workspace)
+    for variable, child in (
+        ("XDG_DATA_HOME", "data"),
+        ("XDG_CACHE_HOME", "cache"),
+        ("XDG_STATE_HOME", "state"),
+    ):
+        target = runtime / child
+        target.mkdir(parents=True, exist_ok=True)
+        env[variable] = str(target)
+    return env, secrets
 
 
 @dataclass
@@ -51,6 +117,11 @@ class TestReport:
             lines.append(f"  {mark} {c.get('name','?')}")
             if not c.get("passed") and c.get("note"):
                 lines.append(f"      {c['note']}")
+        if self.verdict not in (PASS, ""):
+            for key in ("opencode_exit_code", "stdout_tail", "stderr_tail"):
+                value = self.evidence.get(key)
+                if value not in (None, ""):
+                    lines.append(f"  {key}: {value}")
         lines.append("="*60)
         return "\n".join(lines)
 
@@ -62,14 +133,8 @@ def opencode_available() -> bool:
 
 def credentials_available() -> bool:
     """Heuristic: a real model API key (not just a profile name) is set."""
-    real_key_vars = [
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "GOOGLE_API_KEY",
-        "GEMINI_API_KEY",
-        "AWS_ACCESS_KEY_ID",   # real key, not just a profile name
-    ]
-    return any(os.environ.get(k) for k in real_key_vars)
+    dotenv = load_dotenv()
+    return any(os.environ.get(key) or dotenv.get(key) for key in PROVIDER_KEYS)
 
 
 def should_skip() -> tuple[bool, str]:
@@ -84,6 +149,13 @@ def should_skip() -> tuple[bool, str]:
 def make_workspace(base_name: str) -> Path:
     """Create a disposable temp workspace and return its path."""
     d = Path(tempfile.mkdtemp(prefix=f"seed-build-{base_name}-"))
+    subprocess.run(
+        ["git", "init", "--quiet"],
+        cwd=d,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     return d
 
 
@@ -107,20 +179,33 @@ def run_opencode_agent(
     """
     cmd = [
         "opencode", "run",
+        "--dir", str(workspace),
         "--agent", agent,
         prompt,
     ]
+    env, secrets = agent_environment(workspace)
     try:
         result = subprocess.run(
             cmd,
             cwd=str(workspace),
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
         )
-        return result.returncode, result.stdout, result.stderr
-    except subprocess.TimeoutExpired:
-        return 1, "", f"Timed out after {timeout_seconds}s"
+        return (
+            result.returncode,
+            redact_secrets(result.stdout, secrets),
+            redact_secrets(result.stderr, secrets),
+        )
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
+        stderr = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else (error.stderr or "")
+        return (
+            1,
+            redact_secrets(stdout, secrets),
+            redact_secrets(f"{stderr}\nTimed out after {timeout_seconds}s", secrets),
+        )
     except FileNotFoundError:
         return 1, "", "opencode binary not found"
 
@@ -135,7 +220,7 @@ def dry_run_prometheus(workspace: Path) -> tuple[int, str, str]:
     canonical SPEC into the workspace as SPEC.md.
     Returns (exit_code, stdout, stderr) matching run_opencode_agent signature.
     """
-    canonical = ORACLE / "CANONICAL_SPEC.md"
+    canonical = ROOT / "evals" / "seed_build" / "CANONICAL_SPEC.md"
     (workspace / "SPEC.md").write_text(
         canonical.read_text(encoding="utf-8"), encoding="utf-8"
     )
@@ -162,9 +247,10 @@ def dry_run_autonomous(workspace: Path) -> tuple[int, str, str]:
         "## Verification\n- trusted runner dry-run completed\n",
         encoding="utf-8",
     )
+    spec_fingerprint = "0" * 64
     script = (
         f'import {{run}} from {str(ROOT / "tools/run.ts")!r};'
-        f'const r=await run({{command:"true",cwd:{str(workspace)!r}}});if(r.exit_code!==0)process.exit(1)'
+        f'const r=await run({{command:"true",cwd:{str(workspace)!r},supervisor_run_id:"dry-run",spec_fingerprint:{spec_fingerprint!r}}});if(r.exit_code!==0)process.exit(1)'
     )
     subprocess.run(["node", "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
     stub_stdout = "Stub @autonomous response for dry-run; trusted runner evidence is on disk.\n"

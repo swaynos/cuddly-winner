@@ -8,7 +8,7 @@
  *
  * Covers:
  *   1. readonly — always blocked regardless of identity
- *   2. prometheus_only — allowed for prometheus, denied for others
+ *   2. write_allowlist ownership — owner allowed, every other identity denied
  *   3. write_allowlist — known agent enforced, unknown identity on covered file denied
  *   4. C1 policy — unknown identity on UNCOVERED file is ALLOWED (no total lockout)
  *   5. SDK path key bug regression — cache-miss uses path: { id } not path: { sessionID }
@@ -141,12 +141,12 @@ test("readonly: non-readonly file is not affected", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// 2. prometheus_only — allowed for prometheus, denied for others
+// 2. write_allowlist ownership — allowed for owner, denied for others
 // ---------------------------------------------------------------------------
 
-test("prometheus_only: prometheus is allowed (via chat.params cache)", async () => {
+test("write_allowlist ownership: prometheus is allowed (via chat.params cache)", async () => {
   await withTempDir(async (dir) => {
-    await setupImmutable(dir, { prometheus_only: ["SPEC.md"] });
+    await setupImmutable(dir, { write_allowlist: { prometheus: ["SPEC.md"] } });
     const client = makeClient();
     const hooks = await ImmutabilityGuard({ directory: dir, worktree: dir, client });
 
@@ -156,9 +156,9 @@ test("prometheus_only: prometheus is allowed (via chat.params cache)", async () 
   });
 });
 
-test("prometheus_only: non-prometheus agent is blocked", async () => {
+test("write_allowlist ownership: non-owner agent is blocked", async () => {
   await withTempDir(async (dir) => {
-    await setupImmutable(dir, { prometheus_only: ["SPEC.md"] });
+    await setupImmutable(dir, { write_allowlist: { prometheus: ["SPEC.md"] } });
     const client = makeClient();
     const hooks = await ImmutabilityGuard({ directory: dir, worktree: dir, client });
 
@@ -169,14 +169,14 @@ test("prometheus_only: non-prometheus agent is blocked", async () => {
   });
 });
 
-test("prometheus_only: unknown identity is blocked (file is explicitly protected)", async () => {
+test("write_allowlist ownership: unknown identity is blocked", async () => {
   await withTempDir(async (dir) => {
-    await setupImmutable(dir, { prometheus_only: ["SPEC.md"] });
+    await setupImmutable(dir, { write_allowlist: { prometheus: ["SPEC.md"] } });
     const client = makeClient(); // no messages — identity unknown
     const hooks = await ImmutabilityGuard({ directory: dir, worktree: dir, client });
 
     const err = await attempt(hooks, { filename: "SPEC.md", dir });
-    assert.ok(err, "unknown identity should be blocked on prometheus_only file");
+    assert.ok(err, "unknown identity should be blocked on an owned file");
     assert.match(err.message, /could not be resolved/);
   });
 });
@@ -250,7 +250,7 @@ test("C1: unknown identity + file IN an allowlist → DENIED", async () => {
 
 test("fallback: resolves identity via messages API using path: { id }", async () => {
   await withTempDir(async (dir) => {
-    await setupImmutable(dir, { prometheus_only: ["SPEC.md"] });
+    await setupImmutable(dir, { write_allowlist: { prometheus: ["SPEC.md"] } });
 
     // Client returns messages keyed by the correct `id` field.
     const client = makeClient({
@@ -282,7 +282,7 @@ test("fallback: resolves identity via messages API using path: { id }", async ()
 
 test("fallback: non-prometheus identity via messages API is blocked", async () => {
   await withTempDir(async (dir) => {
-    await setupImmutable(dir, { prometheus_only: ["SPEC.md"] });
+    await setupImmutable(dir, { write_allowlist: { prometheus: ["SPEC.md"] } });
 
     const client = makeClient({
       messagesBySession: {
@@ -303,7 +303,7 @@ test("fallback: non-prometheus identity via messages API is blocked", async () =
 
 test("parent session: child inherits parent agent identity", async () => {
   await withTempDir(async (dir) => {
-    await setupImmutable(dir, { prometheus_only: ["SPEC.md"] });
+    await setupImmutable(dir, { write_allowlist: { prometheus: ["SPEC.md"] } });
 
     // Child session has no messages; parent session has prometheus.
     const client = makeClient({
@@ -324,7 +324,7 @@ test("parent session: child inherits parent agent identity", async () => {
 
 test("parent session: child with non-prometheus parent is blocked", async () => {
   await withTempDir(async (dir) => {
-    await setupImmutable(dir, { prometheus_only: ["SPEC.md"] });
+    await setupImmutable(dir, { write_allowlist: { prometheus: ["SPEC.md"] } });
 
     const client = makeClient({
       messagesBySession: {
@@ -349,7 +349,7 @@ test("parent session: child with non-prometheus parent is blocked", async () => 
 
 test("chat.params cache: used in preference to messages API", async () => {
   await withTempDir(async (dir) => {
-    await setupImmutable(dir, { prometheus_only: ["SPEC.md"] });
+    await setupImmutable(dir, { write_allowlist: { prometheus: ["SPEC.md"] } });
 
     // Messages API would return "autonomous" — but cache says "prometheus".
     const client = makeClient({
@@ -380,7 +380,7 @@ test("chat.params cache: used in preference to messages API", async () => {
 
 test("case-variant: spec.md blocked when SPEC.md is protected", async () => {
   await withTempDir(async (dir) => {
-    await setupImmutable(dir, { prometheus_only: ["SPEC.md"] });
+    await setupImmutable(dir, { write_allowlist: { prometheus: ["SPEC.md"] } });
     const client = makeClient();
     const hooks = await ImmutabilityGuard({ directory: dir, worktree: dir, client });
 
@@ -452,7 +452,7 @@ test("scoped agents cannot use shell or interpreters to overwrite files", async 
 }));
 
 test("runner evidence and supervisor state reject agent mutation-tool forgery", async()=>withTempDir(async(dir)=>{
-  await setupImmutable(dir,{readonly:[".opencode/runs/**",".opencode/supervisor/**"]});
+  await setupImmutable(dir,{});
   const client=makeClient({messagesBySession:{
     a:[{info:{role:"user",agent:"autonomous"}}],
     k:[{info:{role:"user",agent:"karpathy"}}],

@@ -21,11 +21,13 @@ import importlib.util
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT    = Path(__file__).resolve().parents[3]
 ORACLE  = Path(__file__).resolve().parents[1] / "oracle"
+CANONICAL = Path(__file__).resolve().parents[1] / "CANONICAL_SPEC.md"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SEED_BUILD = Path(__file__).resolve().parents[1]
 
@@ -36,6 +38,34 @@ def _load_module(name: str, path: Path):
     sys.modules[name] = mod  # register before exec so @dataclass can resolve annotations
     spec.loader.exec_module(mod)
     return mod
+
+
+class TestHarnessEnvironment(unittest.TestCase):
+    def test_dotenv_loading_and_redaction(self):
+        harness = _load_module("seed_build_harness", SEED_BUILD / "_harness.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / ".env"
+            env_file.write_text(
+                "OPENAI_API_KEY='secret-value'\nIGNORED_WITHOUT_VALUE\n",
+                encoding="utf-8",
+            )
+            loaded = harness.load_dotenv(env_file)
+            self.assertEqual(loaded, {"OPENAI_API_KEY": "secret-value"})
+            self.assertEqual(
+                harness.redact_secrets("failure secret-value", loaded),
+                "failure [REDACTED]",
+            )
+
+    def test_agent_environment_uses_workspace_runtime_directories(self):
+        harness = _load_module("seed_build_harness_runtime", SEED_BUILD / "_harness.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            env, _ = harness.agent_environment(workspace, dotenv_path=workspace / "missing")
+            self.assertEqual(env["PWD"], str(workspace))
+            for name in ("XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
+                runtime_path = Path(env[name])
+                self.assertTrue(runtime_path.is_dir())
+                self.assertTrue(runtime_path.is_relative_to(workspace))
 
 
 class TestAcceptanceSuiteOnReference(unittest.TestCase):
@@ -95,12 +125,12 @@ class TestPlanningChecks(unittest.TestCase):
     """planning_checks.py must pass the canonical SPEC and fail the weak fixture."""
 
     def _score(self, spec_path: Path):
-        planning = _load_module("planning_checks", ORACLE / "planning_checks.py")
+        planning = _load_module("planning_checks", SEED_BUILD / "planning_checks.py")
         text = spec_path.read_text(encoding="utf-8")
         return planning.score_spec(text)
 
     def test_canonical_spec_passes_planning_checks(self):
-        report = self._score(ORACLE / "CANONICAL_SPEC.md")
+        report = self._score(CANONICAL)
         self.assertTrue(
             report.passed,
             f"Canonical SPEC failed planning checks:\n{report.render()}",
@@ -141,6 +171,26 @@ class TestDryRun(unittest.TestCase):
         rc, output = self._run_test("test_build.py")
         self.assertEqual(rc, 0, f"test_build --dry-run failed:\n{output}")
         self.assertIn("PASS", output, f"Expected PASS verdict:\n{output}")
+
+    def test_live_tests_fail_closed_when_credentials_are_missing(self):
+        env = {
+            key: value for key, value in os.environ.items()
+            if key not in {
+                "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY",
+                "GEMINI_API_KEY", "AWS_ACCESS_KEY_ID",
+            }
+        }
+        env["OPENCODE_EVAL_DOTENV"] = "0"
+        for script in ("test_planning.py", "test_build.py"):
+            result = subprocess.run(
+                [sys.executable, str(SEED_BUILD / script)],
+                capture_output=True,
+                text=True,
+                cwd=str(ROOT),
+                env=env,
+            )
+            self.assertNotEqual(result.returncode, 0, script)
+            self.assertIn("SKIPPED", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

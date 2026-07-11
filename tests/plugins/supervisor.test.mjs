@@ -18,7 +18,7 @@ test("malformed and duplicate artifacts invalidate the whole evaluation", async(
   await fs.writeFile(path.join(root,".opencode/runs/bad.json"),"{}"); assert.equal((await evaluate(root,section(["x"]))).complete,false);
 });
 test("artifact validation fails closed", () => {
-  const good={run_id:"1",started_at:new Date().toISOString(),finished_at:new Date().toISOString(),duration_ms:1,command:"x",exit_code:0,stdout_tail:"",stderr_tail:"",timed_out:false,context:"execution"};
+  const good={run_id:"1",supervisor_run_id:"run-a",spec_fingerprint:fingerprint("spec"),started_at:new Date().toISOString(),finished_at:new Date().toISOString(),duration_ms:1,command:"x",exit_code:0,stdout_tail:"",stderr_tail:"",timed_out:false,context:"execution"};
   assert.equal(validateRunArtifact(good), good);
   for (const change of [{context:"spike"},{duration_ms:NaN},{finished_at:"bad"}]) assert.throws(()=>validateRunArtifact({...good,...change}));
 });
@@ -40,11 +40,14 @@ test("corrupt state fails closed rather than resetting",async()=>{
 test("evaluation requires exact fresh execution evidence", async () => {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"supervisor-eval-")); await fs.mkdir(path.join(root,"tests")); await fs.mkdir(path.join(root,".opencode/runs"),{recursive:true});
   await fs.writeFile(path.join(root,"tests/x"),"x"); const now=new Date(Date.now()+1000).toISOString();
-  const artifact={run_id:"a",started_at:now,finished_at:now,duration_ms:1,command:"node --test",exit_code:0,stdout_tail:"",stderr_tail:"",timed_out:false,context:"execution"};
+  const spec=section(["node --test"]), specFingerprint=fingerprint(spec);
+  const artifact={run_id:"a",supervisor_run_id:"run-a",spec_fingerprint:specFingerprint,started_at:now,finished_at:now,duration_ms:1,command:"node --test",exit_code:0,stdout_tail:"",stderr_tail:"",timed_out:false,context:"execution"};
   await fs.writeFile(path.join(root,".opencode/runs/a.json"),JSON.stringify(artifact));
-  assert.equal((await evaluate(root,section(["node --test"]))).complete,true);
-  assert.equal((await evaluate(root,section(["node --test other"]))).complete,false);
-  artifact.context="spike"; await fs.writeFile(path.join(root,".opencode/runs/a.json"),JSON.stringify(artifact)); assert.equal((await evaluate(root,section(["node --test"]))).complete,false);
+  assert.equal((await evaluate(root,spec,{runID:"run-a",specFingerprint})).complete,true);
+  assert.equal((await evaluate(root,spec,{runID:"run-b",specFingerprint})).complete,false);
+  assert.equal((await evaluate(root,spec,{runID:"run-a",specFingerprint:fingerprint("changed")})).complete,false);
+  assert.equal((await evaluate(root,section(["node --test other"]),{runID:"run-a",specFingerprint})).complete,false);
+  artifact.context="spike"; await fs.writeFile(path.join(root,".opencode/runs/a.json"),JSON.stringify(artifact)); assert.equal((await evaluate(root,spec,{runID:"run-a",specFingerprint})).complete,false);
   assert.equal(fingerprint("x"),fingerprint("x"));
 });
 
@@ -90,7 +93,7 @@ test("failed reevaluation clears a previously complete status",async()=>{
   await fs.writeFile(path.join(root,"tests/source"),"x");
   await fs.writeFile(path.join(root,"SPEC.md"),section(["x"]));
   const now=new Date(Date.now()+1000).toISOString();
-  await fs.writeFile(path.join(root,".opencode/runs/a.json"),JSON.stringify({run_id:"a",started_at:now,finished_at:now,duration_ms:1,command:"x",exit_code:0,stdout_tail:"",stderr_tail:"",timed_out:false,context:"execution"}));
+  await fs.writeFile(path.join(root,".opencode/runs/a.json"),JSON.stringify({run_id:"a",supervisor_run_id:"a",spec_fingerprint:fingerprint(section(["x"])),started_at:now,finished_at:now,duration_ms:1,command:"x",exit_code:0,stdout_tail:"",stderr_tail:"",timed_out:false,context:"execution"}));
   const client=mockClient({}, {a:"autonomous"});
   const hooks=await Supervisor({directory:root,worktree:root,client});
   await hooks["chat.params"]({sessionID:"a",agent:"autonomous"});

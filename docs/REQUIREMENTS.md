@@ -8,13 +8,15 @@ and `plugins/opencode-autonomous-supervisor/`. Prometheus alone owns root
 the runner. Autonomous reads and fingerprints that canonical file and never
 rewrites it.
 
-The checked-in root `opencode-immutable.json` policy protects its own configuration, all trusted
-computing base source files, runner evidence, and supervisor state from every
-agent mutation tool. Deployment may symlink these files globally without making
-their project sources agent-mutable.
+The checked-in root `opencode-immutable.json` policy enumerates trusted source
+files explicitly and contains no recursive readonly globs. Runtime runner and
+supervisor evidence paths are intrinsically protected by the immutability plugin.
+`write_allowlist` entries establish exclusive path ownership and also confine the
+named agent to those paths.
 
 The runner durably and atomically writes a log and JSON result before resolving.
-Every result contains `run_id`, `started_at`, `finished_at`, `duration_ms`, exact
+Every execution result contains `run_id`, `supervisor_run_id`, `spec_fingerprint`,
+`started_at`, `finished_at`, `duration_ms`, exact
 normalized `command`, `exit_code`, output tails, `timed_out`, and `context`, plus
 `spike_id` for a contracted spike. Execution evidence lives under
 `.opencode/runs/`; spike evidence lives only under `.spike/<id>/runs/`.
@@ -22,13 +24,15 @@ On Linux, spike commands require `/usr/bin/bwrap`: the runner bind-mounts `/`
 read-only and rebinds only `.spike/<id>` writable. Spike execution fails closed
 when that sandbox is unavailable. Prometheus may use `run` only with `context`
 `spike`; direct shell and execution-context runs are denied by the hook.
-Execution-context commands use the same sandbox with the project read-only, a
-private writable `/tmp`, and only the ignored seed-report directory writable.
+Execution-context commands use the same sandbox with the project read-only and a
+private writable `/tmp`. Evaluation reports are written beneath that private
+temporary directory rather than through a writable project mount.
 This prevents command-level forgery of runner and supervisor state; source edits
 remain the responsibility of mutation tools before verification.
 
 Completion is a pure disk-state decision. Every unique command item in the one
-valid `## Verification` section needs exact, fresh, passing execution evidence.
+valid `## Verification` section needs exact, fresh, passing execution evidence
+bound to the active supervisor run and SPEC fingerprint.
 Only a resolved pyenv interpreter path may normalize to `python3`. Freshness is
 measured against code, tests, agents, plugins, runner, evals, skills, and deploy
 scripts, excluding docs, README, SPEC, progress, spikes, runs, and supervisor
@@ -46,8 +50,8 @@ the fingerprint. Idle events evaluate an existing run only. Child sessions walk
 their real parent chain; unrelated sessions are ignored. Corrupt state fails
 closed, and blocked state remains terminal until explicit user intervention.
 
-`.opencode/runs/**` and `.opencode/supervisor/**` are readonly to all agent
-mutation tools. The trusted runner and supervisor write them directly.
+`.opencode/runs/` and `.opencode/supervisor/` are intrinsically readonly to all
+agent mutation tools. The trusted runner and supervisor write them directly.
 
 The runner source is an OpenCode SDK custom-tool definition with a validated
 argument schema and execute callback. Committed control-plane inputs use visible
@@ -68,3 +72,9 @@ Reviewer are read-only.
 
 Default deployment installs agents, root `skills/`, the runner, supervisor, and
 immutability hook. No Git commit is created without explicit user instruction.
+Live planning and build evaluations fail closed when provider credentials are
+unavailable. Dry-run evaluator checks never qualify as release evidence.
+The live harness loads the gitignored root `.env` without logging values, redacts
+loaded secrets from child output, provisions workspace-local writable XDG data,
+cache, and state directories, passes an explicit workspace through `--dir`, and
+uses an isolated Git worktree so plugins resolve the same project root.

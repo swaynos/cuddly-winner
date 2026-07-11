@@ -35,9 +35,9 @@ from _harness import (
 )
 
 ORACLE    = Path(__file__).resolve().parent / "oracle"
-CANONICAL = ORACLE / "CANONICAL_SPEC.md"
+CANONICAL = Path(__file__).resolve().parent / "CANONICAL_SPEC.md"
 ACCEPTANCE = ORACLE / "acceptance"
-REPORTS   = Path(__file__).resolve().parent / "reports"
+REPORTS   = Path(tempfile.gettempdir()) / "opencode-seed-build-reports"
 ROOT      = Path(__file__).resolve().parents[2]
 
 
@@ -120,6 +120,12 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     # Copy the canonical SPEC into the workspace
     canonical_text = CANONICAL.read_text(encoding="utf-8")
     (workspace / "SPEC.md").write_text(canonical_text, encoding="utf-8")
+    (workspace / ".python-version").write_text(
+        (ROOT / ".python-version").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    (workspace / "scripts").mkdir()
+    shutil.copy2(ROOT / "scripts" / "ensure-venv.sh", workspace / "scripts" / "ensure-venv.sh")
 
     # Copy oracle acceptance dir as read-only reference (for context, not editing)
     oracle_dest = workspace / ".oracle_readonly"
@@ -138,12 +144,17 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
             agent="autonomous",
             prompt=prompt,
             workspace=workspace,
-            timeout_seconds=900,
+            timeout_seconds=int(os.environ.get("OPENCODE_BUILD_TIMEOUT", "900")),
         )
 
     report.evidence["opencode_exit_code"] = rc
     report.evidence["stdout_tail"] = stdout[-3000:] if stdout else ""
     report.evidence["stderr_tail"] = stderr[-1000:] if stderr else ""
+    report.checks.append({
+        "name": "OpenCode run completed",
+        "passed": rc == 0,
+        "note": "" if rc == 0 else f"OpenCode exited with status {rc}.",
+    })
 
     # Find the built rules engine
     engine_path = _find_rules_engine(workspace)
@@ -169,7 +180,7 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     report.checks.append({
         "name": "Frozen acceptance suite passes",
         "passed": acceptance_ok,
-        "note": "" if acceptance_ok else "One or more acceptance tests failed.",
+        "note": "" if acceptance_ok else f"One or more acceptance tests failed:\n{acceptance_output[-1500:]}",
     })
 
     # Run failure-mode checks
@@ -220,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
             print(report.render())
             out_path = write_report(report, Path(args.out).parent if args.out else REPORTS)
             print(f"Report: {out_path}")
-            return 0
+            return 1
 
     workspace = make_workspace("build")
     try:
@@ -240,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
         shutil.copy(out_path, args.out)
     print(f"Report: {out_path}")
 
-    return 0 if report.verdict in (PASS, SKIPPED) else 1
+    return 0 if report.verdict == PASS else 1
 
 
 if __name__ == "__main__":

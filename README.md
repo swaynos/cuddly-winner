@@ -40,5 +40,15 @@ PYTHON="$(bash scripts/ensure-venv.sh)"
 node --test tests/plugins/*.test.mjs
 "$PYTHON" -m unittest discover -s evals/mutation/tests -p 'test_*.py'
 "$PYTHON" evals/seed_build/test_planning.py
+"$PYTHON" evals/seed_build/test_build.py
 bash scripts/deploy-opencode-agents.sh status
 ```
+
+The live planning and build evaluations require provider credentials and fail
+closed when unavailable. `--dry-run` tests evaluator plumbing only and is not
+release evidence.
+
+The harness loads provider credentials from the gitignored root `.env`, redacts
+their values from captured output, gives each nested OpenCode process isolated
+writable XDG runtime directories, and runs it against an explicit disposable Git
+worktree.

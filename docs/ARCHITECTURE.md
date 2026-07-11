@@ -30,8 +30,9 @@ tool registry.
   see the project read-only, with private temporary storage and the seed report
   output as the only writable exception, so they cannot forge control-plane
   artifacts.
-- **Immutability hook:** independent per-path project-root discovery, readonly
-  rules, Prometheus confinement, unknown-identity fail-closed handling, and
+- **Immutability hook:** independent per-path project-root discovery, explicit
+  readonly source files, intrinsic runtime-evidence protection, exclusive
+  `write_allowlist` ownership, unknown-identity fail-closed handling, and
   denial of unrestricted shell/interpreter execution for scoped agents.
 - **Supervisor:** strict contract parsing, exact/fresh evidence matching,
   serialized durable state, deduplication, and correction caps. A top-level
@@ -43,3 +44,8 @@ The deployment script installs these components globally by default. The visible
 root marker `opencode-immutable.json` activates project-local policy. Committed
 control-plane inputs remain outside hidden directories; ignored runtime evidence
 and supervisor state are written below `.opencode/` in the command's project.
+
+Live seed-build evaluations execute nested OpenCode processes in disposable Git
+worktrees. Workspace-local XDG directories provide writable runtime storage
+without making the source project writable, and sanitized child output remains
+visible in failed evaluation reports.

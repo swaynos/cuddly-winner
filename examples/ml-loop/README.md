@@ -11,9 +11,9 @@ binary classification problem via `@autonomous`. No dependencies beyond Python s
   the baseline logistic regression scores ~70-75%; a well-tuned nonlinear
   model can reach ~85-90%.
 - A `program.md` with explicit stop criteria, constraints, and acceptance criteria.
-- A `.opencode/karpathy.json` config that wires the loop: baseline command,
+- An `opencode-karpathy.json` config that wires the loop: baseline command,
   score file, noise probe seeds, and immutability declarations.
-- A `.opencode/immutable.json` that activates the ImmutabilityGuard plugin to
+- An `opencode-immutable.json` that activates the ImmutabilityGuard plugin to
   prevent any agent from accidentally editing `prepare.py`.
 
 ## How to run

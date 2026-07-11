@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import tempfile
 import sys
 from pathlib import Path
 
@@ -31,7 +32,7 @@ from _harness import (
 
 ORACLE   = Path(__file__).resolve().parent / "oracle"
 SEED     = Path(__file__).resolve().parent / "seed" / "idea.md"
-REPORTS  = Path(__file__).resolve().parent / "reports"
+REPORTS  = Path(tempfile.gettempdir()) / "opencode-seed-build-reports"
 
 
 def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
@@ -59,6 +60,11 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     report.evidence["opencode_exit_code"] = rc
     report.evidence["stdout_tail"] = stdout[-3000:] if stdout else ""
     report.evidence["stderr_tail"] = stderr[-1000:] if stderr else ""
+    report.checks.append({
+        "name": "OpenCode run completed",
+        "passed": rc == 0,
+        "note": "" if rc == 0 else f"OpenCode exited with status {rc}.",
+    })
 
     spec_text: str | None = None
     if (workspace / "SPEC.md").exists():
@@ -81,7 +87,7 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
 
     # Score with planning_checks
     import importlib.util
-    spec_path = ORACLE / "planning_checks.py"
+    spec_path = Path(__file__).resolve().parent / "planning_checks.py"
     mod_spec = importlib.util.spec_from_file_location("planning_checks", spec_path)
     planning = importlib.util.module_from_spec(mod_spec)
     sys.modules["planning_checks"] = planning  # register before exec for @dataclass compat
@@ -132,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
             print(report.render())
             out_path = write_report(report, Path(args.out).parent if args.out else REPORTS)
             print(f"Report: {out_path}")
-            return 0
+            return 1
 
     workspace = make_workspace("planning")
     try:
@@ -154,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
         _shutil.copy(out_path, args.out)
     print(f"Report: {out_path}")
 
-    return 0 if report.verdict in (PASS, SKIPPED) else 1
+    return 0 if report.verdict == PASS else 1
 
 
 if __name__ == "__main__":

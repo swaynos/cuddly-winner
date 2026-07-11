@@ -1,14 +1,22 @@
 {
   "readonly": [
-    "evals/seed_build/oracle/**",
     "opencode-immutable.json",
     "tools/run.ts",
-    ".opencode/runs/**",
-    ".opencode/supervisor/**",
     "plugins/immutability.ts",
     "plugins/opencode-autonomous-supervisor.js",
-    "plugins/opencode-autonomous-supervisor/**"
+    "plugins/opencode-autonomous-supervisor/index.js",
+    "plugins/opencode-autonomous-supervisor/package.json",
+    "evals/seed_build/oracle/CANONICAL_SPEC.md",
+    "evals/seed_build/oracle/failure_modes.py",
+    "evals/seed_build/oracle/planning_checks.py",
+    "evals/seed_build/oracle/acceptance/test_rules_engine.py",
+    "evals/seed_build/oracle/reference/rules_engine.py",
+    "evals/seed_build/oracle/reference/selfcheck.py"
   ],
-  "prometheus_only": ["SPEC.md", ".spike/**"],
-  "write_allowlist": { "prometheus": ["SPEC.md", ".spike/**"] }
+  "write_allowlist": {
+    "prometheus": [
+      "SPEC.md",
+      ".spike/**"
+    ]
+  }
 }
