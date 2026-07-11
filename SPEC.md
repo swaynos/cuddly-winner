@@ -31,6 +31,44 @@ Follow these rules throughout the cleanup.
 8. Enforcement must be traceable to the runner, immutability hook, or supervisor.
 9. Do not auto-commit.
 10. Update durable documentation in the same change as behavior.
+11. **Strangler first, then delete.** Build and validate the replacement before
+    removing the component it replaces. Never leave completion unenforced during
+    a phase transition.
+12. **Commit checkpoints.** Stop, verify, and get human sign-off at five natural
+    boundaries: (a) after all deletions (Phase 3), (b) after supervisor is green
+    and gate/loop are removed (Phase 6–7), (c) after Prometheus rewrite (Phase 5),
+    (d) after deploy repairs (Phase 12), (e) after final audit (Phase 15).
+13. **Interleave test updates with deletions.** When a phase deletes a component,
+    update `tests/verify_opencode.py` and relevant test files in the same change.
+    Do not defer all test repair to Phase 13.
+
+---
+
+## Phase 0: Run the Pre-Cleanup Spike
+
+### Step 0.1: Spike A — Agent attribution
+
+Before any phase proceeds, verify that the immutability hook can reliably
+attribute writes to child or subagent sessions spawned by `@prometheus`.
+
+Create `.spike/attribution-check/QUESTION.md` containing:
+
+```
+Question: Can the immutability hook deny a write by a child session that
+@prometheus delegates to, when that write targets a path outside
+SPEC.md and .spike/**?
+
+Kill criterion: the hook denies the write attempt. If it does not, the
+Prometheus write-surface design must be revised before implementation begins.
+```
+
+Run the spike. Record the result in `SPEC.md`'s `## Grounding` section.
+
+**If attribution works:** proceed with Phases 1–15 as written.
+
+**If attribution fails:** stop. Revise `docs/REQUIREMENTS.md` and this plan
+before any implementation phases run. The Prometheus write-surface confinement
+(Phases 4.3 and 5.x) depends entirely on this working.
 
 ---
 
@@ -241,11 +279,18 @@ Promise tokens may remain as user-facing status signals only if they are require
 
 ### Step 3.5: Merge gate and loop behavior into the supervisor
 
-Locate the former gate and loop plugin implementations.
+**Strangler order — mandatory.** The supervisor must be built and validated
+(Phases 6–7) before the gate and loop plugins are deleted. Do not delete
+`plugins/opencode-autonomous-gate/` or `plugins/opencode-autonomous-loop/`
+until the supervisor passes its full test suite. Leaving completion unenforced
+during a phase transition violates Operating Rule 11.
 
-Move the required behavior into:
+The migration sequence:
 
-* `plugins/opencode-autonomous-supervisor/`
+1. Build `plugins/opencode-autonomous-supervisor/` (Phases 6–7).
+2. Validate supervisor in isolation (Phase 13 subset).
+3. Cut over: remove gate/loop plugins and their root shims.
+4. Re-run full suite to confirm nothing regressed.
 
 The supervisor must own:
 
@@ -256,9 +301,24 @@ The supervisor must own:
 * durable run state
 * restart recovery
 
-Delete superseded plugin implementations and references after migration.
-
 Avoid keeping wrapper plugins that provide no independent behavior.
+
+### Step 3.6: Delete stale eval suites
+
+Delete:
+
+* `evals/agent_value/` — scores compliance with payload and materialization
+  concepts removed in this cleanup. Dead on Phase 3 landing.
+* `evals/plan_outcome/` — reads a ledger written only by the gate plugin.
+  Dead when the gate plugin is removed.
+
+Remove the corresponding readonly entries from `.opencode/immutable.json`.
+
+Retain and update:
+
+* `evals/mutation/` — required by the mutation gate invariant.
+* `evals/seed_build/` — E2E oracle harness mapping to Phase 13 scenarios.
+  Update it to remove stale agent names and obsolete concept references.
 
 ---
 
@@ -266,17 +326,24 @@ Avoid keeping wrapper plugins that provide no independent behavior.
 
 ### Step 4.1: Make the runner the sole evidence writer
 
-Verify that:
+The current `run.ts` records `command`, `exit_code`, and `run_id` but is
+missing three required fields: `started_at`, spike-context detection, and the
+`QUESTION.md` pre-check. All three must be added as new code, not
+configuration.
+
+Verify and implement:
 
 * `.opencode/tool/run.ts` is the only mechanism that writes execution evidence into `.opencode/runs/`
 * agents cannot directly create trusted execution artifacts
 * artifact schemas are deterministic
-* the exact executed command string is recorded
+* the exact executed command string is recorded (with normalization rule for Python interpreter paths per `docs/REQUIREMENTS.md`)
 * `exit_code` is recorded
-* `started_at` is recorded
-* spike and execution contexts write to separate locations
+* `started_at` is recorded (new field — required for freshness gate)
+* spike and execution contexts write to separate locations (new behavior)
+* spike context refuses to execute without `QUESTION.md` present (new behavior)
 
-Remove any alternate evidence-writing mechanism.
+Remove `plugins/shared/evidence.js` — the transcript evidence parser — as an
+alternate evidence-writing mechanism after verifying nothing else imports it.
 
 ### Step 4.2: Enforce execution context separation
 
@@ -347,6 +414,26 @@ Add validation for:
 * missing `.gitignore` entry
 * existing valid entry
 * nested project behavior, if supported
+
+### Step 5.2a: Land permissions and allowlist atomically
+
+The Prometheus rewrite involves two interdependent changes that must land in
+the same commit:
+
+1. **Frontmatter permission flip** — add `write: allow` (scoped to `SPEC.md`
+   and `.spike/**`) and `bash: allow` (scoped to spike commands); remove
+   `bash: deny`.
+2. **Immutability allowlist entry** — add a `write_allowlist` entry for
+   `prometheus` in `.opencode/immutable.json` restricting writes to `SPEC.md`
+   and `.spike/**`.
+
+Permissions-first leaves Prometheus unconfined. Allowlist-first leaves it
+unable to write `SPEC.md`. Neither partial state is safe. Stage both changes
+and verify together before any other Phase 5 step.
+
+Note: today `@prometheus` has `write: deny` and the gate plugin silently writes
+`SPEC.md` on its behalf. Deleting the gate without this atomic swap leaves
+nobody able to write `SPEC.md`.
 
 ### Step 5.3: Align the Prometheus prompt with the requirements
 
@@ -660,25 +747,22 @@ Remove stale concepts and ensure it accurately describes the final system.
 
 Do not add speculative future architecture.
 
-### Step 11.2: Separate stable requirements from current implementation details
+### Step 11.2: Maintain the two-file doc structure
 
-Create or update:
-
-* `docs/ARCHITECTURE.md`
-* `docs/IMPLEMENTATION.md`
-
-Use them as follows.
+`docs/REQUIREMENTS.md` is already written. Create or update `docs/ARCHITECTURE.md`
+only. There is no `docs/IMPLEMENTATION.md` — concrete paths, schemas, and
+deployment behavior live in `docs/REQUIREMENTS.md` under "Required Components."
 
 #### `docs/REQUIREMENTS.md`
 
 Contains:
 
-* purpose
-* failure modes
+* purpose and failure modes
 * stable invariants
-* required responsibilities
+* required responsibilities and failure classes
 * non-requirements
 * rebuild bar
+* concrete paths, artifact schemas, plugin names, deployment behavior
 
 #### `docs/ARCHITECTURE.md`
 
@@ -688,22 +772,12 @@ Contains:
 * control flow
 * trust boundaries
 * state transitions
-* completion flow
-* spike flow
+* completion flow (disk-only gate)
+* spike flow (Prometheus → `.spike/` → SPEC.md → Autonomous)
 * Karpathy flow
 
-#### `docs/IMPLEMENTATION.md`
-
-Contains:
-
-* concrete paths
-* plugin names
-* configuration formats
-* artifact schemas
-* deployment behavior
-* validation commands
-
-Do not duplicate large sections across all three documents.
+Do not duplicate content between the two documents. If a fact belongs in both,
+it belongs only in `docs/REQUIREMENTS.md`.
 
 ### Step 11.3: Update README
 
@@ -747,20 +821,27 @@ Inspect every result and remove or update stale references.
 
 ## Phase 12: Align Deployment
 
-### Step 12.1: Install the runner by default
+### Step 12.1: Install the runner by default into the global tools directory
 
-Update the deploy script so target projects receive:
+The runner lives at `.opencode/tool/run.ts` in this repository. The deploy
+script's `--with-tools` flag currently reads from `${REPO_ROOT}/tools/` which
+does not exist. Fix the source path to `.opencode/tool/`.
 
-`.opencode/tool/run.ts`
+Move runner installation out of the `--with-tools` opt-in flag into the default
+install set. `@autonomous` emits `BLOCKED` when the runner is absent; it must
+not require a flag to be present after a standard deploy.
+
+Deploy destination: the global OpenCode tools directory (same target as agents
+and plugins). Evidence artifacts remain per-project because the runner resolves
+paths from the working directory.
 
 Validate:
 
-* correct destination
+* correct source path (`.opencode/tool/run.ts`)
+* correct destination (global OpenCode tools directory)
 * idempotent installation
 * updates to an existing installation
-* failure behavior
-* executable or runtime requirements
-* generated directories
+* failure behavior when source is missing
 
 ### Step 12.2: Install only required components
 
@@ -768,7 +849,23 @@ The deployment output should include only the supported agents, plugins, tools, 
 
 Remove installation of deleted or experimental components.
 
-### Step 12.3: Validate clean-project deployment
+### Step 12.3: Promote skills to top-level source directory
+
+Move `.opencode/skills/` to `skills/` at the repository root. `.opencode/skills/`
+is the runtime-consumption path, not the source of truth; skills buried there
+look like local config rather than a deliverable.
+
+Steps:
+
+1. Move `.opencode/skills/` → `skills/` at repo root.
+2. Update the deploy script's `--with-skills` source path from
+   `.opencode/skills/` to `skills/`.
+3. Verify global deploy installs skills to the correct destination.
+4. Confirm skills previously installed globally are not duplicated or broken.
+
+Skills are not subject to the four-failure-mode deletion audit.
+
+### Step 12.4: Validate clean-project deployment
 
 Create a temporary clean project.
 

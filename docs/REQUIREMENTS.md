@@ -20,6 +20,25 @@ implemented. This table marks each one. Delete the table when all are complete.
 | Supervisor enforces corrective caps and durable state | in-flight |
 | `@builder` and `@data-scientist` removed | in-flight |
 | Runner tool installed by deploy script | in-flight |
+| Agent attribution verified reliable for child/subagent sessions | spike required |
+
+The "spike required" row is load-bearing for the cleanup plan. Run that spike
+before executing any implementation phase. See "Pre-Cleanup Spikes."
+
+## Pre-Cleanup Spikes
+
+Two assumptions underlie the cleanup plan but have not been proven. Each must be
+spiked with a falsifiable kill criterion before implementation phases begin.
+
+**Spike A — Agent attribution.** Can the immutability hook reliably attribute
+writes to a child or subagent session that `@prometheus` has delegated to? The
+Prometheus write-surface restriction (`SPEC.md` and `.spike/**`) is theater if a
+child session can bypass it.
+Kill criterion: the hook denies a write attempt from a child session outside the
+Prometheus allowlist. If it cannot, the write-surface design must be revised
+before implementation begins.
+
+---
 
 ## Purpose
 
@@ -134,9 +153,8 @@ a **fresh, passing runner artifact** in `.opencode/runs/`:
 
 - *Passing* means `exit_code: 0` for the exact command string declared in the
   spec. Running a different command that also exits 0 does not satisfy the gate.
-- *Fresh* means the artifact's `started_at` timestamp is newer than the last
-  modification to any tracked file. A green artifact from before the last code
-  change is stale and does not satisfy the gate.
+- *Fresh* means the artifact's `started_at` timestamp is newer than the most
+  recent modification to any **source-tracked file** (see Freshness Scope below).
 
 The gate reads disk state only. Transcript claims — fenced JSON evidence blocks,
 promise token wording, reviewer verdict text — do not gate completion.
@@ -145,6 +163,27 @@ The gate enforcement has a hard cap on correctives: after N failed checks for
 the same failure class (default 3), the supervisor marks the run `blocked` and
 stops injecting corrective messages. The session then goes quiet until the user
 inspects state.
+
+**Freshness Scope.** "Tracked files" for freshness purposes means: source code,
+tests, agent definition files, plugin implementations, runner tool, and
+deployment scripts. The following are explicitly excluded:
+
+- `docs/` — the docs-current rule requires updating docs in the same change as
+  behavior; treating a doc edit as a freshness invalidator would make the gate
+  self-defeating (agent satisfies docs-current → artifact goes stale → agent
+  re-runs verification → must update docs again → infinite cycle).
+- Supervisor state under `.opencode/autonomous-loop/`
+- Runner artifacts under `.opencode/runs/` and `.spike/`
+- `progress.txt`
+- `.gitignore`, `README.md`, and other non-behavioral files
+
+**Command normalization.** Verification commands declared in `SPEC.md` may use
+`python3` or `$PYTHON`. The runner resolves the absolute interpreter path from
+the environment but records a normalized command string in the artifact for gate
+comparison (e.g., `python3 tests/verify.py` rather than
+`/Users/.../.pyenv/versions/.../bin/python tests/verify.py`). This normalization
+is the only permitted normalization. No other command rewriting is allowed. The
+runner schema must document the normalization rule precisely.
 
 ### Evidence Segregation
 
@@ -171,6 +210,31 @@ The supervisor plugin enforces:
 
 An autonomous loop without a spend ceiling is a liability. The corrective cap
 is not advisory.
+
+### Failure Classes
+
+The supervisor tracks corrective attempts by failure class. The complete list of
+recognized failure classes and their required outcomes:
+
+| Failure class | Owner | Required outcome |
+|---|---|---|
+| Invalid or incomplete `SPEC.md` | Prometheus | Rewrite before execution |
+| Malformed `## Verification` section | Prometheus | Rewrite before execution |
+| Missing runner tool | Autonomous | `BLOCKED` |
+| Missing dependency | Autonomous | `BLOCKED` |
+| Failed verification (non-zero exit) | Autonomous | Corrective attempt, subject to cap |
+| Stale evidence | Autonomous | Re-run verification |
+| Corrective cap exceeded | Supervisor | Persist blocked, stop injecting |
+| Missing Karpathy harness | Autonomous | `BLOCKED` |
+| Broken evaluator | Karpathy | `BLOCKED` |
+| Mutation threshold failure | Autonomous | Corrective attempt, subject to cap |
+| Immutable file violation | Immutability hook | Deny write |
+| Reviewer request | Autonomous or Karpathy | One bounded attempt, subject to cap |
+| Restart | Supervisor | Restore durable state |
+
+No component may independently choose a different outcome for the same failure
+class. Adding a new failure class requires updating this table and assigning an
+owner and outcome before any implementation.
 
 ### Karpathy Loop
 
@@ -220,9 +284,19 @@ When a project provides `.opencode/mutation.json` with `enabled: true`,
 
 ### Progress Is Durable
 
-`@autonomous` maintains `progress.txt` during execution. Strategy selection is
-recorded before the first edit. Pivots, blockers, attempted strategies, and
-stuck states are recorded as they happen, not summarized afterward.
+`@autonomous` maintains `progress.txt` during execution as a **human-readable
+narrative log**. The supervisor's structured state in
+`.opencode/autonomous-loop/` is the machine-readable truth for restart recovery,
+corrective counts, and completion decisions. Both must exist and serve distinct
+purposes:
+
+- `progress.txt` — human-readable log: strategy selection before the first edit,
+  pivots, blockers, attempted approaches, stuck states recorded as they happen.
+- `.opencode/autonomous-loop/status.json` — machine-readable state: run ID,
+  corrective counts by failure class, satisfied verifications, blocked state.
+
+The supervisor must not read `progress.txt` for completion decisions.
+`progress.txt` is not trusted evidence.
 
 ### Docs-Current Rule
 
@@ -266,9 +340,60 @@ Six agents:
 ### Runner Tool
 
 `.opencode/tool/run.ts` is required for `@autonomous` to produce evidence
-satisfying the completion gate. The deploy script installs it into target
-projects by default. `@autonomous` hard-requires it — it emits
+satisfying the completion gate. The deploy script installs it into the global
+OpenCode tools directory by default; evidence artifacts remain per-project
+because the runner resolves its runs directory from the working directory at
+execution time. `@autonomous` hard-requires it — it emits
 `<promise>BLOCKED</promise>` if it is absent.
+
+### Evals
+
+The `evals/` directory contains harnesses and oracles used to verify the
+project's own behavior. Not all suites are active; the deletion audit must
+apply the four-failure-mode test to each.
+
+Retained suites:
+
+- **`evals/mutation/`** — the mutation runner that the opt-in mutation gate
+  invariant depends on. Required.
+- **`evals/seed_build/`** — oracle-based seed→plan→build E2E harness. Maps
+  directly to the Phase 13 end-to-end scenarios. Stale references to removed
+  agents and concepts must be updated during cleanup, but the harness itself
+  is kept.
+
+Deleted suites:
+
+- **`evals/agent_value/`** — scores compliance with payload shapes,
+  materialization, and strategy directives; all removed concepts. Dead on Phase 3
+  landing. Remove along with its `immutable.json` readonly entries.
+- **`evals/plan_outcome/`** — reads a ledger written only by the gate plugin.
+  Dead when the gate plugin is deleted. Remove with Phase 3.
+
+### Skills
+
+The project maintains a set of OpenCode skills under `skills/` at the repository
+root. This directory is the canonical source; the deploy script ships it globally
+via `--with-skills`. Do not embed skills under `.opencode/skills/` — that
+directory is a runtime-consumption path, not the source of truth.
+
+Skills are not required to justify themselves against the four failure modes.
+They are out of scope for the deletion audit.
+
+### Documentation Structure
+
+The durable doc set is exactly two files:
+
+- **`docs/REQUIREMENTS.md`** — purpose, failure modes, stable invariants,
+  required responsibilities, failure classes, non-requirements, rebuild bar.
+  Concrete paths, artifact schemas, plugin names, and deployment behavior live
+  here under "Required Components."
+- **`docs/ARCHITECTURE.md`** — component relationships, control flow, trust
+  boundaries, state transitions, spike flow, completion flow, Karpathy flow.
+
+There is no `docs/IMPLEMENTATION.md`. If a fact would belong in both documents,
+it belongs only in `REQUIREMENTS.md`. Do not split a single concept across both
+files. The sync tax of three docs outweighs any organizational benefit when the
+project has already demonstrated it cannot keep docs in sync.
 
 ### Validation
 
@@ -293,6 +418,9 @@ The test suite must verify:
 - The project does not require all work to use a strategy subagent. Direct
   execution is valid for bounded, testable implementation work.
 - The project does not auto-commit changes.
+- The project does not require a `docs/IMPLEMENTATION.md`.
+- The project does not require per-project runner installation. The runner is
+  global; per-project evidence paths follow from working directory resolution.
 
 ## Rebuild Bar
 
@@ -301,9 +429,11 @@ The docs are sufficient only if a maintainer can rebuild from them alone:
 - the agent roster, permission posture, and delegation rules;
 - Prometheus's spike protocol and write surface;
 - the Prometheus to SPEC.md to Autonomous handoff (no payload grammar);
-- the deterministic completion gate (disk artifacts, freshness, exact commands);
+- the deterministic completion gate (disk artifacts, freshness scope, exact
+  commands, command normalization rule);
 - the Karpathy loop harness, delegation, and stop criteria;
-- the supervisor plugin's corrective cap and durability model;
+- the supervisor plugin's corrective cap, failure classes, and durability model;
 - the mutation gate lifecycle;
+- the role and format of `progress.txt` vs. supervisor structured state;
 - validation and audit commands;
 - deployment and runner tool installation.
