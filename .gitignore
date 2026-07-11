@@ -55,3 +55,6 @@ Thumbs.db
 evals/agent_value/results/
 evals/seed_build/reports/
 *.log
+
+# Spike workspaces are disposable and never committed
+.spike/

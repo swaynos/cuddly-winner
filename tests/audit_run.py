@@ -39,7 +39,7 @@ DEFAULT_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
 KARPATHY_ARTIFACTS = ["program.md", "experiments.md", ".opencode/karpathy.json"]
 
 # Agent names that indicate strategy subagent execution.
-STRATEGY_SUBAGENTS = {"karpathy", "ralph-wiggum", "octopus", "octopus-arm"}
+STRATEGY_SUBAGENTS = {"karpathy"}
 
 
 # ---------------------------------------------------------------------------
@@ -302,14 +302,6 @@ def verdict_autonomous_strategy(
         return Verdict("FAIL", evidence=evidence,
                        interpretation="Selected: karpathy but neither @karpathy delegation nor Karpathy artifacts found.")
 
-    if declared in ("ralph-wiggum", "octopus"):
-        expected_agent = declared
-        if expected_agent in delegated_to:
-            return Verdict("PASS", evidence=evidence,
-                           interpretation=f"@{expected_agent} child session found, matching declared strategy.")
-        return Verdict("FAIL", evidence=evidence,
-                       interpretation=f"Selected: {declared} but no @{expected_agent} child session found.")
-
     # direct / instrumentation / other
     if delegated_to:
         return Verdict("PASS", evidence=evidence,
@@ -354,23 +346,6 @@ def verdict_karpathy(
                    interpretation="@karpathy child session exists but experiments.md lacks baseline run.")
 
 
-def verdict_octopus(child_sessions: list[SessionRow]) -> Verdict:
-    octopus_children = [c for c in child_sessions if (c.agent or "").lower() == "octopus"]
-    arm_children = [c for c in child_sessions if (c.agent or "").lower() == "octopus-arm"]
-    if not octopus_children:
-        return Verdict("NOT_SELECTED", evidence=["No @octopus child session found"])
-
-    evidence = [
-        f"@octopus child sessions: {len(octopus_children)}",
-        f"@octopus-arm child sessions: {len(arm_children)}",
-    ]
-    if arm_children:
-        return Verdict("PASS", evidence=evidence,
-                       interpretation="Octopus brain and arm sessions both present.")
-    return Verdict("PARTIAL", evidence=evidence,
-                   interpretation="@octopus session found but no @octopus-arm sessions — arm dispatch may not have occurred.")
-
-
 # ---------------------------------------------------------------------------
 # Report formatting
 # ---------------------------------------------------------------------------
@@ -393,7 +368,6 @@ def print_report(
     prom_v: Verdict,
     auto_v: Verdict,
     karp_v: Verdict,
-    octo_v: Verdict,
     complete_emitted: bool,
     reviewer_approved: bool,
 ) -> int:
@@ -421,13 +395,10 @@ Autonomous strategy verdict:
 Karpathy verdict:
 {_fmt_verdict(karp_v)}
 
-Octopus verdict:
-{_fmt_verdict(octo_v)}
-
 Material difference verdict: {'YES' if child_sessions else 'NO'}
   Evidence: {'Child sessions present: ' + ', '.join(c.agent or '?' for c in child_sessions) if child_sessions else 'No child sessions found.'}
 """.strip())
-    verdicts = [prom_v, auto_v, karp_v, octo_v]
+    verdicts = [prom_v, auto_v, karp_v]
     worst = max(
         (VERDICT_EXIT.get(v.label, 0) for v in verdicts),
         default=0,
@@ -495,10 +466,9 @@ def main() -> int:
     prom_v  = verdict_prometheus(conn, session, switches, tool_calls, project)
     auto_v  = verdict_autonomous_strategy(conn, session, switches, child_sessions, project)
     karp_v  = verdict_karpathy(conn, child_sessions, project)
-    octo_v  = verdict_octopus(child_sessions)
 
     exit_code = print_report(
-        session, child_sessions, prom_v, auto_v, karp_v, octo_v,
+        session, child_sessions, prom_v, auto_v, karp_v,
         complete_emitted, reviewer_approved,
     )
     return exit_code

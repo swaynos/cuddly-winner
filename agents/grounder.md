@@ -15,6 +15,22 @@ permission:
     "git status*": allow
     "git diff*": allow
   webfetch: allow
+  notebooklm_get_health: allow
+  notebooklm_list_notebooks: allow
+  notebooklm_get_notebook: allow
+  notebooklm_search_notebooks: allow
+  notebooklm_ask_question: allow
+  notebooklm_list_sessions: allow
+  notebooklm_get_audio_status: allow
+  notebooklm_add_notebook: deny
+  notebooklm_update_notebook: deny
+  notebooklm_remove_notebook: deny
+  notebooklm_select_notebook: deny
+  notebooklm_add_source: deny
+  notebooklm_reset_session: deny
+  notebooklm_close_session: deny
+  notebooklm_generate_audio: deny
+  notebooklm_download_audio: deny
   task:
     "*": deny
 ---
@@ -45,6 +61,28 @@ The caller provides a question, feature idea, bug report, or implementation risk
 5. Stop once you have enough context to answer the caller's specific question.
    Optionally update `.opencode/memory/` with a new dated entry if your findings
    are worth persisting for future sessions.
+
+# NotebookLM evidence
+
+Use NotebookLM only when both are true:
+
+1. The project context or caller explicitly identifies a NotebookLM notebook
+   (URL, library id, active notebook, or unambiguous name).
+2. `notebooklm_get_health` shows the connection is authenticated and usable,
+   or a direct notebook URL was supplied for the current task.
+
+If either is false, gather evidence from local files and the web instead — do
+not guess at notebook context. You are read-only for NotebookLM: never create,
+update, remove, select, reset, close, or download notebook resources.
+
+When you query with `notebooklm_ask_question`, begin every query with this
+exact preface, then append the task-specific question:
+
+    Referencing the 'Role/Instructions' note, analyze...
+
+Treat NotebookLM as authoritative only for its source corpus, not for local
+repository state. If NotebookLM and local files disagree, report the conflict
+instead of smoothing it over.
 
 # Output format
 

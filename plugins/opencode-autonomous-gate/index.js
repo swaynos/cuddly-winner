@@ -193,7 +193,7 @@ async function checkKarpathyExecution(directory, karpathyDelegated) {
  *   - progress.txt must exist (the autonomous contract calls it required)
  *   - progress.txt must have a Selected: line
  *   - If Selected: karpathy, must have Karpathy execution evidence
- *   - Selected: direct / instrumentation / ralph-wiggum / octopus are always OK
+ *   - Selected: direct / instrumentation are always OK
  *
  * Returns null (passed) or a failure-reason string.
  * The missing-progress requirement is waived when
@@ -236,7 +236,7 @@ async function checkStrategyConsistency(directory, karpathyDelegated) {
     return checkKarpathyExecution(directory, karpathyDelegated);
   }
 
-  return null; // direct, instrumentation, ralph-wiggum, octopus, etc.
+  return null; // direct, instrumentation, etc.
 }
 
 /**

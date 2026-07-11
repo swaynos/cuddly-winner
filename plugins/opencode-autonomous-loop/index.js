@@ -328,7 +328,7 @@ export const AutonomousLoopPlugin = async ({ client, directory }) => {
     // Record observed subagent delegation events (any strategy subagent message).
     // These are stored in the run history for the autonomous parent session.
     const agentLower = String(agent || "").toLowerCase();
-    const STRATEGY_AGENTS = ["karpathy", "ralph-wiggum", "octopus", "octopus-arm", "builder", "reviewer"];
+    const STRATEGY_AGENTS = ["karpathy", "reviewer"];
     if (agentLower !== AGENT_NAME.toLowerCase() && STRATEGY_AGENTS.includes(agentLower)) {
       // Find the most recently active autonomous run to attach the delegation to.
       const state = await loadState().catch(() => ({ version: 1, runs: {} }));

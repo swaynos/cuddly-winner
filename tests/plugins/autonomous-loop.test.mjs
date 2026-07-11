@@ -125,7 +125,7 @@ test("plugin marks complete and stores last evidence", async () => {
   });
 });
 
-test("plugin records builder subagent messages in autonomous run history", async () => {
+test("plugin records karpathy subagent messages in autonomous run history", async () => {
   await withTempDir(async (directory) => {
     await writeFile(path.join(directory, "SPEC.md"), "# spec\n", "utf-8");
     const client = { app: { log: async () => {} } };
@@ -133,16 +133,16 @@ test("plugin records builder subagent messages in autonomous run history", async
 
     await hooks["message.part.updated"]({
       role: "assistant",
-      sessionId: "session-builder-parent",
+      sessionId: "session-karpathy-parent",
       agent: "autonomous",
       text: "Working on step 1",
     });
 
     await hooks["message.part.updated"]({
       role: "assistant",
-      sessionId: "session-builder-child",
-      agent: "builder",
-      text: "BUILDER RESULT: DONE",
+      sessionId: "session-karpathy-child",
+      agent: "karpathy",
+      text: "## Run 0 — Baseline",
     });
 
     const runs = JSON.parse(
@@ -151,9 +151,9 @@ test("plugin records builder subagent messages in autonomous run history", async
         "utf-8",
       ),
     );
-    const run = runs.runs["session-builder-parent"];
+    const run = runs.runs["session-karpathy-parent"];
     assert.ok(run.history.some((entry) => (
-      entry.event === "subagent_message" && entry.agent === "builder"
+      entry.event === "subagent_message" && entry.agent === "karpathy"
     )));
   });
 });
@@ -172,7 +172,6 @@ test("hasUncheckedItems: detects open checkbox in text", () => {
 test("parseSelectedStrategy: extracts strategy name from progress.txt", () => {
   assert.equal(parseSelectedStrategy("## Strategy\nSelected: karpathy\n"), "karpathy");
   assert.equal(parseSelectedStrategy("## Strategy\nSelected: direct\nReason: one-shot\n"), "direct");
-  assert.equal(parseSelectedStrategy("## Strategy\nSelected: ralph-wiggum\n"), "ralph-wiggum");
   assert.equal(parseSelectedStrategy("## Log\nno selected line\n"), null);
   assert.equal(parseSelectedStrategy(""), null);
   assert.equal(parseSelectedStrategy(null), null);

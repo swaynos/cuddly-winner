@@ -94,8 +94,6 @@ python3 tests/audit_run.py --project /path/to/project --session <session-id>
 - required docs files;
 - required root `AGENTS.md` rules;
 - shell script linting when shellcheck is available or required;
-- strategy registry structure;
-- strategy-subagent contract conformance;
 - Prometheus read-only handoff markers;
 - Autonomous spec materialization markers;
 - Karpathy admission gate markers;

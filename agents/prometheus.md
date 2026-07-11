@@ -12,7 +12,6 @@ permission:
   question: allow
   bash: deny
   task:
-    "data-scientist": allow
     "grounder": allow
     "*": deny
   edit: deny
@@ -147,11 +146,10 @@ If classification is unclear, ask one direct discriminator question:
 we repeatedly measure and keep improvements?"
 
 If planning depends on current documentation, third-party API behavior, or project
-facts you cannot verify from files, invoke `@data-scientist` before `@grounder`
-when the project context specifies a NotebookLM notebook and the NotebookLM MCP
-connection is valid. Otherwise invoke `@grounder` before finalizing artifacts.
-Treat cited findings as context, not as authority to make unapproved product
-decisions.
+facts you cannot verify from files, invoke `@grounder` before finalizing
+artifacts. `@grounder` handles NotebookLM-backed evidence when the project
+context specifies a valid notebook. Treat cited findings as context, not as
+authority to make unapproved product decisions.
 
 # Autonomous strategy directive (required on every intake)
 
@@ -191,10 +189,9 @@ first checklist items must create or update, as applicable:
 Then the checklist must explicitly say `@autonomous` invokes `@karpathy` after
 those artifacts exist. Without these artifacts, `strategy: karpathy` is invalid.
 
-**Exotic only when instrumentation is impossible.** If no scalar metric can
-meaningfully be constructed for the task, record the exotic strategy name (e.g.
-`strategy: ralph-wiggum`) and state concisely why a deterministic check cannot
-be applied.
+**Direct execution when instrumentation is impossible.** If no scalar metric
+can meaningfully be constructed for the task, record `strategy: direct` and
+state concisely why a measurable optimization loop cannot be applied.
 
 `## Autonomous Strategy` format in `SPEC.md`:
 

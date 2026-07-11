@@ -51,10 +51,6 @@ PLUGINS_DIR = REPO_ROOT / "plugins"
 DOCS_DIR = REPO_ROOT / "docs"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 AGENTS_MD = REPO_ROOT / "AGENTS.md"
-STRATEGIES_FILE = REPO_ROOT / ".opencode" / "strategies.json"
-STRATEGY_CONTRACT = REPO_ROOT / "docs" / "STRATEGY-CONTRACT.md"
-# Required contract body sections every active/reference strategy agent must contain.
-STRATEGY_REQUIRED_SECTIONS = ("applicability", "stop criteria", "escalation")
 # Key phrases that must be present in AGENTS.md.
 AGENTS_MD_REQUIRED = [
     "commit",          # no-auto-commit rule
@@ -75,8 +71,8 @@ REQUIRED_DOCS: dict[str, list[str]] = {
     ],
     "REQUIREMENTS.md": [
         "Core Invariants",
-        "Karpathy First",
-        "Runtime Evidence Beats Design Intent",
+        "Trusted Computing Base",
+        "Deterministic Completion Gate",
         "Rebuild Bar",
     ],
     "ARCHITECTURE.md": [
@@ -87,7 +83,6 @@ REQUIRED_DOCS: dict[str, list[str]] = {
     ],
     "AGENT-ARCHITECTURE.md": [
         "Agent Classes",
-        "Built-In Build Mode Vs Repo `@builder`",
         "Verification Ownership",
         "Adding Or Changing Agents",
     ],
@@ -96,10 +91,6 @@ REQUIRED_DOCS: dict[str, list[str]] = {
         "Karpathy Loop Workflow",
         "Worker Delegation Workflow",
         "Documentation Workflow",
-    ],
-    "STRATEGY-CONTRACT.md": [
-        "Loop Strategy Contract",
-        "Karpathy-first invariant",
     ],
     "PLUGINS.md": [
         "Immutability Plugin",
@@ -117,11 +108,6 @@ REQUIRED_DOCS: dict[str, list[str]] = {
     "CONVENTIONS.md": [
         "Shell and Script Portability Conventions",
         "Agent-emitted commands",
-    ],
-    "strategy-template.md": [
-        "Applicability",
-        "Stop criteria",
-        "Escalation",
     ],
     "testing-methodology.md": [
         "Testing Methodology",
@@ -142,9 +128,7 @@ EXPECTED_AGENT_FILES = [
     "prometheus.md",
     "autonomous.md",
     "karpathy.md",
-    "data-scientist.md",
     "grounder.md",
-    "builder.md",
     "reviewer.md",
 ]
 EXPECTED_SKILL_FILES = [
@@ -217,7 +201,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "glob",  "action": "allow", "pattern": "*"},
         {"permission": "list",  "action": "allow", "pattern": "*"},
         {"permission": "webfetch", "action": "ask", "pattern": "*"},
-        {"permission": "task",  "action": "allow", "pattern": "data-scientist"},
         {"permission": "task",  "action": "allow", "pattern": "grounder"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
@@ -229,7 +212,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",      "action": "deny",  "pattern": "*"},
         {"permission": "edit",      "action": "deny",  "pattern": "*"},
         {"permission": "write",     "action": "deny",  "pattern": "*"},
-        {"permission": "task",      "action": "allow", "pattern": "data-scientist"},
         {"permission": "task",      "action": "allow", "pattern": "grounder"},
         {"permission": "task",      "action": "deny",  "pattern": "*"},
         {"permission": "question",  "action": "allow", "pattern": "*"},
@@ -251,31 +233,9 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "git status*"},
         {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
         {"permission": "bash",  "action": "allow", "pattern": "git log*"},
-        {"permission": "task",  "action": "allow", "pattern": "data-scientist"},
         {"permission": "task",  "action": "allow", "pattern": "grounder"},
         {"permission": "task",  "action": "allow", "pattern": "reviewer"},
         {"permission": "task",  "action": "allow", "pattern": "karpathy"},
-        {"permission": "task",  "action": "allow", "pattern": "builder"},
-        {"permission": "task",  "action": "deny",  "pattern": "*"},
-    ],
-    "builder": [
-        {"permission": "bash",  "action": "ask",   "pattern": "*"},
-        {"permission": "bash",  "action": "allow", "pattern": "python *"},
-        {"permission": "bash",  "action": "allow", "pattern": "python3 *"},
-        {"permission": "bash",  "action": "allow", "pattern": "uv run *"},
-        {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
-        {"permission": "bash",  "action": "allow", "pattern": "npm test*"},
-        {"permission": "bash",  "action": "allow", "pattern": "pnpm test*"},
-        {"permission": "bash",  "action": "allow", "pattern": "bun test*"},
-        {"permission": "bash",  "action": "allow", "pattern": "go test *"},
-        {"permission": "bash",  "action": "allow", "pattern": "cargo test*"},
-        {"permission": "bash",  "action": "allow", "pattern": "make test*"},
-        {"permission": "bash",  "action": "allow", "pattern": "rg *"},
-        {"permission": "bash",  "action": "allow", "pattern": "git status*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git diff*"},
-        {"permission": "bash",  "action": "allow", "pattern": "git log*"},
-        {"permission": "edit",  "action": "allow", "pattern": "*"},
-        {"permission": "write", "action": "allow", "pattern": "*"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
     ],
     "karpathy": [
@@ -289,7 +249,6 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",  "action": "allow", "pattern": "pytest *"},
         {"permission": "bash",  "action": "allow", "pattern": "cat *"},
         {"permission": "bash",  "action": "allow", "pattern": "rg *"},
-        {"permission": "task",  "action": "allow", "pattern": "builder"},
         {"permission": "task",  "action": "allow", "pattern": "reviewer"},
         {"permission": "task",  "action": "allow", "pattern": "grounder"},
         {"permission": "task",  "action": "deny",  "pattern": "*"},
@@ -317,30 +276,21 @@ EXPECTED_RULES: dict[str, list[dict]] = {
         {"permission": "bash",      "action": "allow", "pattern": "git diff*"},
         {"permission": "webfetch",  "action": "allow", "pattern": "*"},
         {"permission": "task",      "action": "deny",  "pattern": "*"},
-    ],
-    "data-scientist": [
-        {"permission": "edit",                         "action": "deny",  "pattern": "*"},
-        {"permission": "bash",                         "action": "deny",  "pattern": "*"},
-        {"permission": "bash",                         "action": "allow", "pattern": "rg *"},
-        {"permission": "bash",                         "action": "allow", "pattern": "git status*"},
-        {"permission": "bash",                         "action": "allow", "pattern": "git diff*"},
-        {"permission": "webfetch",                     "action": "allow", "pattern": "*"},
-        {"permission": "task",                         "action": "deny",  "pattern": "*"},
         {"permission": "notebooklm_get_health",        "action": "allow", "pattern": "*"},
         {"permission": "notebooklm_list_notebooks",    "action": "allow", "pattern": "*"},
         {"permission": "notebooklm_get_notebook",      "action": "allow", "pattern": "*"},
         {"permission": "notebooklm_search_notebooks",  "action": "allow", "pattern": "*"},
         {"permission": "notebooklm_ask_question",      "action": "allow", "pattern": "*"},
         {"permission": "notebooklm_list_sessions",     "action": "allow", "pattern": "*"},
+        {"permission": "notebooklm_get_audio_status",  "action": "allow", "pattern": "*"},
         {"permission": "notebooklm_add_notebook",      "action": "deny",  "pattern": "*"},
         {"permission": "notebooklm_update_notebook",   "action": "deny",  "pattern": "*"},
         {"permission": "notebooklm_remove_notebook",   "action": "deny",  "pattern": "*"},
-        {"permission": "notebooklm_select_notebook",   "action": "ask",   "pattern": "*"},
-        {"permission": "notebooklm_add_source",        "action": "ask",   "pattern": "*"},
+        {"permission": "notebooklm_select_notebook",   "action": "deny",  "pattern": "*"},
+        {"permission": "notebooklm_add_source",        "action": "deny",  "pattern": "*"},
         {"permission": "notebooklm_reset_session",     "action": "deny",  "pattern": "*"},
         {"permission": "notebooklm_close_session",     "action": "deny",  "pattern": "*"},
         {"permission": "notebooklm_generate_audio",    "action": "deny",  "pattern": "*"},
-        {"permission": "notebooklm_get_audio_status",  "action": "allow", "pattern": "*"},
         {"permission": "notebooklm_download_audio",    "action": "deny",  "pattern": "*"},
     ],
 }
@@ -350,9 +300,7 @@ EXPECTED_MODES: dict[str, str] = {
     "prometheus":     "primary",
     "autonomous":     "all",
     "karpathy":       "subagent",
-    "data-scientist": "subagent",
     "grounder":       "subagent",
-    "builder":        "subagent",
     "reviewer":       "subagent",
 }
 
@@ -560,114 +508,10 @@ def _validate_skill_file(rel_path: str) -> list[Failure]:
 # Strategy registry + contract validation
 # ---------------------------------------------------------------------------
 
-def _strategy_agent_text(agent_name: str) -> str | None:
-    """Return the full text of a strategy agent file, core or project-local."""
-    for cand in (AGENTS_DIR / f"{agent_name}.md",
-                 REPO_ROOT / ".opencode" / "agents" / f"{agent_name}.md"):
-        if cand.exists():
-            return cand.read_text(encoding="utf-8")
-    return None
-
-
 def _frontmatter_block(text: str) -> str:
     """Return the YAML frontmatter block (between the first two '---' fences)."""
     parts = text.split("---", 2)
     return parts[1] if len(parts) >= 3 else ""
-
-
-def check_strategy_registry() -> list[Failure]:
-    """Validate the loop-strategy registry and the contract conformance of each
-    active/reference strategy agent. Pure local check — no sandbox required."""
-    failures: list[Failure] = []
-    _print_header("A2. Strategy registry + contract")
-
-    if not STRATEGY_CONTRACT.exists():
-        failures.append(Failure("strategy", "Missing docs/STRATEGY-CONTRACT.md"))
-
-    if not STRATEGIES_FILE.exists():
-        failures.append(Failure("strategy", "Missing .opencode/strategies.json"))
-        for f in failures:
-            _print_fail(f.message)
-        return failures
-
-    try:
-        data = json.loads(STRATEGIES_FILE.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        failures.append(Failure("strategy", f"strategies.json is not valid JSON: {exc}"))
-        _print_fail(failures[-1].message)
-        return failures
-
-    strategies = data.get("strategies") if isinstance(data, dict) else data
-    if not isinstance(strategies, list) or not strategies:
-        failures.append(Failure("strategy", "strategies.json must contain a non-empty 'strategies' array"))
-        _print_fail(failures[-1].message)
-        return failures
-
-    required_fields = {"name", "agent", "applicability", "status"}
-    valid_status = {"active", "reference", "planned"}
-    names = set()
-
-    for entry in strategies:
-        if not isinstance(entry, dict):
-            failures.append(Failure("strategy", f"registry entry is not an object: {entry!r}"))
-            continue
-        missing = sorted(required_fields - set(entry))
-        if missing:
-            failures.append(Failure("strategy", f"registry entry {entry.get('name', '?')} missing fields: {missing}"))
-            continue
-        names.add(entry["name"])
-        status = entry["status"]
-        if status not in valid_status:
-            failures.append(Failure("strategy", f"{entry['name']}: invalid status '{status}'"))
-            continue
-
-        # planned entries are documented slots — no agent file required yet.
-        if status == "planned":
-            continue
-
-        # active/reference entries must name a conformant hidden subagent.
-        text = _strategy_agent_text(entry["agent"])
-        if text is None:
-            failures.append(Failure("strategy", f"{entry['name']}: agent file for '{entry['agent']}' not found"))
-            continue
-
-        fm = _frontmatter_block(text)
-        if "mode: subagent" not in fm:
-            failures.append(Failure("strategy", f"{entry['name']}: agent must be 'mode: subagent'"))
-        if "hidden: true" not in fm:
-            failures.append(Failure("strategy", f"{entry['name']}: agent must be 'hidden: true'"))
-
-        # task posture: must allow reviewer and deny '*'. A single-agent strategy
-        # allows 'autonomous' (delegates implementation back); a coordinator-class
-        # brain instead allows its arm(s). Require reviewer + deny '*' + at least
-        # one delegation allow.
-        if not re.search(r'"reviewer"\s*:\s*allow', fm):
-            failures.append(Failure("strategy", f"{entry['name']}: task must allow 'reviewer'"))
-        if not re.search(r'"\*"\s*:\s*deny', fm):
-            failures.append(Failure("strategy", f"{entry['name']}: task must deny '*'"))
-        task_allows = re.findall(r'"([a-z0-9-]+)"\s*:\s*allow', fm)
-        delegation_allows = [a for a in task_allows if a != "reviewer"]
-        if not delegation_allows:
-            failures.append(Failure("strategy", f"{entry['name']}: task must allow a delegation target ('builder' for single-agent strategies)"))
-
-        # required contract sections (case-insensitive) must appear in the body.
-        body = text.split("---", 2)[-1].lower()
-        for section in STRATEGY_REQUIRED_SECTIONS:
-            if section not in body:
-                failures.append(Failure("strategy", f"{entry['name']}: body missing required '{section}' section"))
-
-    if "karpathy" not in names:
-        failures.append(Failure("strategy", "registry must include a 'karpathy' entry"))
-
-    if failures:
-        for f in failures:
-            _print_fail(f.message)
-    else:
-        active = [e["name"] for e in strategies if isinstance(e, dict) and e.get("status") in ("active", "reference")]
-        planned = [e["name"] for e in strategies if isinstance(e, dict) and e.get("status") == "planned"]
-        _print_pass(f"Strategy registry: {len(active)} active/reference ({', '.join(active)}), {len(planned)} planned ({', '.join(planned)})")
-
-    return failures
 
 
 # ---------------------------------------------------------------------------
@@ -869,109 +713,6 @@ def check_prometheus_planning_contract() -> list[Failure]:
 
 
 
-def check_builder_delegation_contract() -> list[Failure]:
-    """Verify the @autonomous -> @builder worker delegation contract.
-
-    Builder is deliberately not a strategy. It is a scoped implementation worker
-    with no authority over progress, reviewer, task delegation, strategy, or
-    promise completion.
-    """
-    failures: list[Failure] = []
-    _print_header("A5. Builder worker delegation contract")
-
-    builder_path = AGENTS_DIR / "builder.md"
-    autonomous_path = AGENTS_DIR / "autonomous.md"
-    loop_path = PLUGINS_DIR / "opencode-autonomous-loop" / "index.js"
-
-    for path_obj, label in (
-        (builder_path, "agents/builder.md"),
-        (autonomous_path, "agents/autonomous.md"),
-        (loop_path, "plugins/opencode-autonomous-loop/index.js"),
-    ):
-        if not path_obj.exists():
-            failures.append(Failure("builder", f"{label} missing"))
-
-    if failures:
-        for f in failures:
-            _print_fail(f.message)
-        return failures
-
-    builder_text = builder_path.read_text(encoding="utf-8")
-    builder_fm = _frontmatter_block(builder_text)
-    builder_body = builder_text.split("---", 2)[-1].lower()
-    autonomous_text = autonomous_path.read_text(encoding="utf-8")
-    autonomous_fm = _frontmatter_block(autonomous_text)
-    autonomous_body = autonomous_text.split("---", 2)[-1].lower()
-    loop_text = loop_path.read_text(encoding="utf-8")
-
-    checks = [
-        (
-            "mode: subagent" in builder_fm,
-            "builder.md: must be mode: subagent",
-        ),
-        (
-            "hidden: true" in builder_fm,
-            "builder.md: must be hidden",
-        ),
-        (
-            re.search(r'edit\s*:\s*allow', builder_fm) is not None,
-            "builder.md: edit must be allowed",
-        ),
-        (
-            re.search(r'write\s*:\s*allow', builder_fm) is not None,
-            "builder.md: write must be allowed",
-        ),
-        (
-            re.search(r'"\*"\s*:\s*deny', builder_fm) is not None,
-            "builder.md: task must deny '*'",
-        ),
-        (
-            "progress.txt" in builder_body and "do not update" in builder_body,
-            "builder.md: must forbid progress.txt ownership",
-        ),
-        (
-            "do not call `@reviewer`" in builder_body,
-            "builder.md: must forbid reviewer authority",
-        ),
-        (
-            "do not emit promise tokens" in builder_body,
-            "builder.md: must forbid promise authority",
-        ),
-        (
-            "SCOPE_EXPANSION_NEEDED" in builder_text,
-            "builder.md: must report required scope expansion instead of widening silently",
-        ),
-        (
-            re.search(r'"builder"\s*:\s*allow', autonomous_fm) is not None,
-            "autonomous.md: task must allow builder",
-        ),
-        (
-            "component-scoped" in autonomous_body and "@builder" in autonomous_text,
-            "autonomous.md: must document when to use @builder",
-        ),
-        (
-            "disjoint" in autonomous_body and "parallel" in autonomous_body,
-            "autonomous.md: must document disjoint file sets for parallel builder delegation",
-        ),
-        (
-            "inspect the diff" in autonomous_body and "rerun" in autonomous_body,
-            "autonomous.md: must require post-builder diff inspection and verification",
-        ),
-        (
-            "builder" in loop_text and "subagent_message" in loop_text,
-            "autonomous-loop plugin: must track builder subagent messages",
-        ),
-    ]
-
-    for passed, message in checks:
-        if not passed:
-            failures.append(Failure("builder", message))
-            _print_fail(message)
-
-    if not failures:
-        _print_pass("Builder: hidden worker, scoped delegation, no completion authority, tracked in loop history")
-
-    return failures
 
 
 # ---------------------------------------------------------------------------
@@ -2243,11 +1984,6 @@ def main() -> None:
     if all_failures:
         sys.exit(report(all_failures))
 
-    # A2. Strategy registry + contract (no sandbox needed)
-    all_failures += check_strategy_registry()
-    if all_failures:
-        sys.exit(report(all_failures))
-
     # A3. Prometheus read-only handoff contract (no sandbox needed)
     all_failures += check_prometheus_handoff()
     if all_failures:
@@ -2255,11 +1991,6 @@ def main() -> None:
 
     # A3b. Prometheus diverge-converge planning contract (no sandbox needed)
     all_failures += check_prometheus_planning_contract()
-    if all_failures:
-        sys.exit(report(all_failures))
-
-    # A5. Builder worker delegation contract (no sandbox needed)
-    all_failures += check_builder_delegation_contract()
     if all_failures:
         sys.exit(report(all_failures))
 

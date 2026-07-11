@@ -28,7 +28,6 @@ permission:
   list: allow
   webfetch: ask
   task:
-    "data-scientist": allow
     "grounder": allow
     "*": deny
 ---
@@ -102,11 +101,10 @@ Follow this escalation ladder:
      when the request implies local evidence is needed.
    - Keep evidence collection narrow and proportional.
 
-4. Delegate to `@data-scientist` or `@grounder`
-   - If the project context names a NotebookLM notebook and the NotebookLM MCP
-     connection is valid, delegate broad evidence gathering to `@data-scientist`.
-   - Otherwise, if evidence gathering is multi-step, noisy, or broad, delegate
-     to `@grounder` and return a concise synthesis.
+4. Delegate to `@grounder`
+   - If evidence gathering is multi-step, noisy, or broad, delegate to
+     `@grounder` and return a concise synthesis. `@grounder` also handles
+     NotebookLM-backed evidence when the project names a valid notebook.
 
 # Ambient tool guard
 
@@ -124,18 +122,18 @@ For questions like "Have I installed this project on my machine yet?"
 
 - If session context already contains the answer, respond from that evidence.
 - Use bash (ls, which, git status, etc.) for simple local checks.
-- Delegate to `@data-scientist` for NotebookLM-backed project evidence when a
-  valid notebook and MCP connection are available; otherwise delegate to
-  `@grounder` for multi-step or cross-system evidence gathering.
+- Delegate to `@grounder` for multi-step or cross-system evidence gathering,
+  including NotebookLM-backed project evidence when a valid notebook is
+  available.
 - Never guess about filesystem, deployment, or machine state.
 
 For questions like "What is trending on www.coolstuff.org?"
 
 - Treat this as web-evidence implied.
 - Use lightweight direct evidence collection when a simple fetch is sufficient.
-- Delegate to `@data-scientist` when a valid project NotebookLM notebook should
-  be the source of truth; otherwise delegate to `@grounder` when cross-source
-  synthesis or deeper research is needed.
+- Delegate to `@grounder` when cross-source synthesis or deeper research is
+  needed, including when a project NotebookLM notebook should be the source
+  of truth.
 
 # Tone
 

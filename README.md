@@ -20,14 +20,9 @@ and validation expectations are in `docs/VALIDATION.md`.
 |---|---|---|
 | `@ask` | primary | Quick questions and concise answers from session context first. |
 | `@prometheus` | primary | Read-only front-door planner: interviews, gathers evidence, and returns a complete `<spec filename="SPEC.md">...</spec>` payload or loop artifact payloads for `@autonomous`. |
-| `@autonomous` | primary + subagent | Materializes Prometheus SPEC payloads, then executes against `SPEC.md` in a relentless loop until done. Owns looping — selects and invokes the appropriate loop strategy subagent. |
-| `@builder` | subagent (hidden) | Scoped implementation worker invoked by `@autonomous` for component-sized build units. Implements locally, reports evidence, and never owns completion, review, strategy, or `progress.txt`. |
-| `@karpathy` | subagent (hidden) | Karpathy loop strategy — mandatory when a task has a scalar metric and a stable frozen evaluator. |
-| `@ralph-wiggum` | subagent (hidden) | Ralph Wiggum loop strategy — brute-force repeat-until-done; fresh context each iteration; memory is files + git; bounded by a hard iteration cap. For tasks that resist instrumentation. |
-| `@octopus` | subagent (hidden) | Octopus brain — coordinator-class sole builder. Dispatches read-only `@octopus-arm` persona lenses to feel the SPEC and implementation, integrates evidence-backed perceptions, and builds. Admission-gated; default 3 arms, 3 rounds. |
-| `@octopus-arm` | subagent (hidden) | Octopus perception arm — a read-only persona lens. Feels one perspective of the SPEC or implementation and returns a structured perception (evidence, confidence, actionability, dedup key). Cannot build, edit, or delegate. |
-| `@data-scientist` | subagent (hidden) | NotebookLM-backed research and analysis. Supersedes `@grounder` when a valid project notebook and NotebookLM MCP connection are available. |
-| `@grounder` | subagent (hidden) | Read-only RAG/grounding researcher with cited local and external evidence. |
+| `@autonomous` | primary + subagent | Materializes Prometheus SPEC payloads, then executes against `SPEC.md` in a relentless loop until done. Owns looping — invokes `@karpathy` when the task is measurable. |
+| `@karpathy` | subagent (hidden) | Karpathy loop strategy — mandatory when a task has a scalar metric and a stable frozen evaluator. Applies its own one-change-per-iteration edits. |
+| `@grounder` | subagent (hidden) | Read-only RAG/grounding researcher with cited local and external evidence, including NotebookLM-backed evidence when a valid project notebook is available. |
 | `@reviewer` | subagent (hidden) | Read-only critic. Returns `APPROVE` or `REQUEST_CHANGES` with evidence. |
 
 ## Assumptions
@@ -42,8 +37,6 @@ and validation expectations are in `docs/VALIDATION.md`.
 |-- agents/
 |   |-- ask.md
 |   |-- autonomous.md
-|   |-- builder.md
-|   |-- data-scientist.md
 |   |-- grounder.md
 |   |-- karpathy.md
 |   |-- prometheus.md
@@ -153,12 +146,12 @@ do not want planning or implementation.
 - `@ask` uses session context first, then code context only when needed.
 - It avoids edits, bash, and implementation workflows.
 - It uses a tool-escalation ladder: session context -> clarify intent -> minimal
-  direct evidence -> `@data-scientist` for valid NotebookLM-backed research,
-  otherwise `@grounder` for broad/noisy research.
+  direct evidence -> `@grounder` for broad/noisy research (including valid
+  NotebookLM-backed research).
 - It is tool-light by default (not tool-never): web/local evidence is used only
   when the wording implies it.
-- If evidence is missing, it can invoke `@data-scientist` or `@grounder` and
-  return a compact summary.
+- If evidence is missing, it can invoke `@grounder` and return a compact
+  summary.
 
 When to use `@ask` vs others:
 
@@ -167,9 +160,9 @@ When to use `@ask` vs others:
 - Use `plan` with the `project-agent-scaffolding` skill when you want project-local agents or skills for the current repo.
 - Use `@prometheus` when you need a new or improved `SPEC.md` or loop setup artifacts.
 - Use `@autonomous` when a `SPEC.md` exists and you want execution — it handles both spec-driven work and metric loops (selecting `@karpathy` automatically when the strategy calls for it).
-- Use `@data-scientist` when the task is evidence gathering itself and the
-  project specifies a valid NotebookLM notebook with an authenticated MCP
-  connection; otherwise use `@grounder`.
+- Use `@grounder` when the task is evidence gathering itself, including when
+  the project specifies a valid NotebookLM notebook with an authenticated MCP
+  connection.
 - Use `@reviewer` for formal approve/request-changes review.
 
 ## Workflow: Project Agent Scaffolding
@@ -232,15 +225,11 @@ OpenCode after changing any of these files.
 Project NotebookLM notebook:
 https://notebooklm.google.com/notebook/63e72bfa-9025-435d-909c-1fd35db1d505
 
-`@data-scientist` is the preferred grounding subagent when the project context
-specifies a NotebookLM notebook and the NotebookLM MCP connection is valid. It
+`@grounder` is the read-only evidence gatherer. When the project context
+specifies a NotebookLM notebook and the NotebookLM MCP connection is valid, it
 queries NotebookLM with the required `Referencing the 'Role/Instructions' note,
-analyze...` preface, then separates notebook evidence, local facts, analysis,
-risks, and a recommendation.
-
-`@grounder` remains the read-only fallback for evidence gathering when NotebookLM
-context is absent, invalid, ambiguous, or unnecessary. `@prometheus` and
-`@autonomous` can invoke either subagent when requirements or implementation
+analyze...` preface; otherwise it gathers evidence from local files and the web.
+`@prometheus` and `@autonomous` invoke it when requirements or implementation
 depend on current docs, third-party APIs, uncertain project conventions, or
 project knowledge outside the repo.
 
@@ -263,17 +252,10 @@ a last resort.
 if that genuinely fails may it select a different strategy — and it must record
 why in `progress.txt`.
 
-**Exotic strategies are named subagents** that `@autonomous` invokes only after
-the instrument-first step has failed. An exotic strategy is an admission that
-the task resisted a deterministic check. Current exotic strategies:
-
-| Strategy | When to use |
-|---|---|
-| Ralph Wiggum | Brute-force repeat-until-done for tasks with no meaningful scalar metric — high variability, no stable evaluator, or purely creative/exploratory work. |
-
-Future strategies (animal-kingdom, game-design AI, refined practice) follow the
-same pattern: each is a hidden subagent `@autonomous` can invoke, documented
-here when added.
+**When instrumentation genuinely fails**, `@autonomous` records
+`Selected: direct` with the reason and executes the checklist directly. There
+are exactly two execution paths: the Karpathy loop for measurable work, and
+direct execution for everything else.
 
 ## Workflow: Karpathy Loop (via `@autonomous`)
 
@@ -296,45 +278,12 @@ Karpathy's process (executed by the `@karpathy` strategy subagent):
 2. Establishes a baseline measurement.
 3. Measures the noise floor (3+ runs with varied seeds).
 4. Proposes exactly one change, states the hypothesis.
-5. Delegates implementation to `@autonomous` if non-trivial.
+5. Applies the one-lever change itself, touching only mutable targets.
 6. Runs the measurement. Keeps if improvement > 2× noise floor; reverts otherwise.
 7. Calls `@reviewer` with loop rubric and measurement.
 8. Repeats until stop criteria are met or 3 consecutive runs with no KEEP.
 
 If `program.md` is missing, Karpathy will tell you to create it first.
-
-## Strategy-Authoring Framework
-
-New loop strategies are added as **hidden subagents** that conform to a shared
-contract. The framework has four parts:
-
-- **Contract** (`docs/STRATEGY-CONTRACT.md`) — the required shape of any strategy
-  subagent: `mode: subagent` + `hidden: true` frontmatter, a `task` posture that
-  allows `autonomous` + `reviewer` and denies everything else, and three
-  mandatory body sections: **applicability**, **bounded stop criteria**, and
-  **escalation**. Open-ended / "run forever" strategies are forbidden by the
-  contract.
-- **Registry** (`.opencode/strategies.json`) — a declarative list of strategies
-  with `name`, `agent`, `applicability`, and `status` (`active` / `reference` /
-  `planned`). `@autonomous` reads this to discover selectable strategies.
-  `karpathy` is the `reference` entry; `ralph-wiggum` and `octopus` are `active`.
-- **Template** (`docs/strategy-template.md`) — a copy-to-create scaffold with
-  every required section as fill-in placeholders.
-- **Validation** — `tests/verify_opencode.py` loads the registry and fails any
-  non-conformant or open-ended strategy.
-
-**Adding a single-agent strategy requires no edit to `@autonomous`.** Drop a
-conformant agent file in `agents/` (or `.opencode/agents/`), add a registry entry
-with status `active`, and restart OpenCode. **Coordinator-class strategies** (a
-brain that dispatches its own arms, like `@octopus`) additionally require a
-`task: <brain>: allow` entry in `@autonomous`'s permission map and a matching
-`EXPECTED_RULES` entry in `tests/verify_opencode.py` — see
-`docs/STRATEGY-CONTRACT.md` section 5. The registry never overrides the Karpathy
-hard rule: if a task is measurable, Karpathy is mandatory regardless of what else
-the registry lists.
-
-`@karpathy` is the reference implementation — read it alongside the contract when
-authoring a new strategy.
 
 ## Conventions
 
@@ -345,16 +294,10 @@ prevents case-insensitive filesystem drift between contributors.
 **Status language.** No XML ceremony. Agents report completion with a plain
 summary. Blocked agents end their message with `STATUS: BLOCKED — <reason>`.
 
-**Subagents are composable.** `@data-scientist` can support planning or
-implementation with NotebookLM-backed cited evidence when valid notebook context
-exists; `@grounder` handles the non-NotebookLM fallback. `@reviewer` is spawned
-by `@autonomous` and `@karpathy` for reflection and final quality gates.
-
-**`@builder` is a worker, not Build mode.** `@autonomous` may invoke hidden
-`@builder` for component-scoped implementation units with declared file and
-verification boundaries. `@builder` may provide local evidence, but `@autonomous`
-inspects the diff, reruns verification, updates `progress.txt`, calls reviewer,
-and owns completion.
+**Subagents are composable.** `@grounder` supports planning or implementation
+with cited evidence — local, web, or NotebookLM-backed when valid notebook
+context exists. `@reviewer` is spawned by `@autonomous` and `@karpathy` for
+reflection and final quality gates.
 
 **`@reviewer` is composable.** Both `@autonomous` and `@karpathy` spawn it.
 The caller passes the rubric as Task input — acceptance criteria for Autonomous,
@@ -500,8 +443,8 @@ require confirmation (`external_directory: ask`).
 
 - **Per-agent permissions still win.** Agent files declare their own `permission:`
   blocks that take precedence over this project config. `@prometheus` stays
-  `bash: deny`; `@reviewer`, `@data-scientist`, and `@grounder` stay read-only —
-  regardless of what the project config says.
+  `bash: deny`; `@reviewer` and `@grounder` stay read-only — regardless of
+  what the project config says.
 
 - **Immutability plugin still fires.** `.opencode/immutable.json` rules are enforced
   by a plugin hook, not a permission rule. `edit: allow` in the project config does

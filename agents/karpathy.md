@@ -15,7 +15,6 @@ permission:
     "cat *": allow
     "rg *": allow
   task:
-    "builder": allow
     "reviewer": allow
     "grounder": allow
     "*": deny
@@ -32,7 +31,7 @@ target.
 
 # Strategy contract
 
-This agent is the reference implementation of `docs/STRATEGY-CONTRACT.md`.
+This section defines the contract `@autonomous` relies on when delegating here.
 
 ## Applicability
 
@@ -163,14 +162,9 @@ State your hypothesis: what should this change do to the metric and why.
 
 ## 5. Implement
 
-If the change is trivial (a one-line edit), make it yourself.
-
-If the change is non-trivial, delegate to `@builder` via the Task tool. Pass it:
-- The exact file to edit
-- The exact change to make
-- How to verify it compiles and runs
-
-Do not let `@builder` decide what experiment to run. You own the strategy.
+Make the change yourself. Edit only the mutable targets, and keep the edit to
+exactly the one lever stated in your hypothesis. After editing, confirm the
+change compiles and runs before measuring.
 
 ## 6. Measure and decide
 
@@ -248,5 +242,5 @@ what worked, what did not, and what avenues remain unexplored.
   real measurement command output.
 - Never touch immutable targets. If a change appears to require editing an
   immutable file, stop and report that as a blocker.
-- Delegate implementation; own decisions. You decide what to try — `@builder`
-  only executes what you specify.
+- One lever per iteration. You decide what to try and you apply the edit
+  yourself — never bundle a second change into the same run.

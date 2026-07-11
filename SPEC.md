@@ -35,12 +35,34 @@ Follow these rules throughout the cleanup.
     removing the component it replaces. Never leave completion unenforced during
     a phase transition.
 12. **Commit checkpoints.** Stop, verify, and get human sign-off at five natural
-    boundaries: (a) after all deletions (Phase 3), (b) after supervisor is green
-    and gate/loop are removed (Phase 6–7), (c) after Prometheus rewrite (Phase 5),
-    (d) after deploy repairs (Phase 12), (e) after final audit (Phase 15).
+    boundaries, listed in execution order: (a) after the safe deletions land
+    (Steps 3.1–3.2), (b) after the Prometheus rewrite (Phase 5), (c) after the
+    supervisor is green and the gate/loop cutover completes (Phases 6–7 plus
+    Steps 3.3–3.6), (d) after deploy repairs (Phase 12), (e) after the final
+    audit (Phase 15).
 13. **Interleave test updates with deletions.** When a phase deletes a component,
     update `tests/verify_opencode.py` and relevant test files in the same change.
     Do not defer all test repair to Phase 13.
+
+---
+
+## Execution Order
+
+The phases below are grouped by concern, not by execution sequence. Steps
+3.3–3.6 depend on later phases and must not land in phase order. Execute in
+this dependency order:
+
+1. Phase 0 (Spike A), then Phases 1–2 (baseline and responsibility map).
+2. Steps 3.1–3.2 — deletions nothing else depends on.
+3. Phase 4 — runner hardening and the immutability-hook allowlist extension
+   (Step 4.0).
+4. Phase 5 — Prometheus rewrite and atomic permission swap.
+5. Phases 6–7 — build and validate the supervisor.
+6. Cutover: Steps 3.3–3.6 — remove payload grammar, transcript evidence, the
+   gate/loop plugins, and the stale eval suites.
+7. Phases 8–10 — advisory agents, Karpathy, failure semantics.
+8. Phases 11–13 — docs, deployment, validation suite.
+9. Phases 14–15 — deletion audit and final consistency audit.
 
 ---
 
@@ -54,17 +76,23 @@ attribute writes to child or subagent sessions spawned by `@prometheus`.
 Create `.spike/attribution-check/QUESTION.md` containing:
 
 ```
-Question: Can the immutability hook deny a write by a child session that
-@prometheus delegates to, when that write targets a path outside
+Question: Can the immutability hook attribute a write by a child session
+that @prometheus delegates to — identifying prometheus (or its child
+session) as the originating agent — when that write targets a path outside
 SPEC.md and .spike/**?
 
-Kill criterion: the hook denies the write attempt. If it does not, the
-Prometheus write-surface design must be revised before implementation begins.
+Kill criterion: the hook observes and logs the originating agent identity
+for the delegated write, and denies it. Denial alone is insufficient:
+today's hook denies readonly paths agent-blind, so a bare denial would not
+prove the attribution that the write_allowlist mechanism (Step 4.0)
+requires. If agent identity is not observable for delegated writes, the
+Prometheus write-surface design must be revised before implementation
+begins.
 ```
 
 Run the spike. Record the result in `SPEC.md`'s `## Grounding` section.
 
-**If attribution works:** proceed with Phases 1–15 as written.
+**If attribution works:** proceed per the Execution Order above.
 
 **If attribution fails:** stop. Revise `docs/REQUIREMENTS.md` and this plan
 before any implementation phases run. The Prometheus write-surface confinement
@@ -219,6 +247,22 @@ Also remove all references to deleted agents from:
 
 Do not leave compatibility aliases unless required by an explicit documented migration need.
 
+Before deleting, reassign the two capabilities that currently live only on
+these agents:
+
+* **Karpathy implementer.** `@karpathy` currently delegates code edits to
+  `@builder`. Grant `@karpathy` direct edit capability (or confirm it already
+  has it) and remove `builder` from its task allowlist in the same change.
+  The Karpathy loop must remain able to apply its one-change-per-iteration
+  edits after builder is gone.
+* **NotebookLM access.** The `notebooklm_*` permissions exist only on
+  `@data-scientist`. Migrate the read-only subset to `@grounder` (Step 8.3
+  expects Grounder to handle NotebookLM). Do not migrate mutation
+  permissions.
+
+Update the task allowlists of `@ask`, `@prometheus`, `@autonomous`, and
+`@karpathy`, all of which currently reference deleted agents.
+
 ### Step 3.2: Remove obsolete strategy infrastructure
 
 The project does not require:
@@ -245,6 +289,12 @@ Retain only the minimum routing logic required for:
 * `strategy: karpathy`
 
 Do not preserve Ralph Wiggum, Octopus, or other experimental strategies unless they are explicitly restored to `docs/REQUIREMENTS.md` before implementation.
+
+Note: `.opencode/strategies.json` already registers only `karpathy`. Ralph
+Wiggum and Octopus survive only in prose and code references (README,
+`docs/testing-methodology.md`, `tests/audit_run.py`, the gate and loop
+plugins). The registry deletion is small; the terminology sweep (Step 11.4)
+and test updates are where the work is.
 
 ### Step 3.3: Remove payload grammar and materialization behavior
 
@@ -292,6 +342,11 @@ The migration sequence:
 3. Cut over: remove gate/loop plugins and their root shims.
 4. Re-run full suite to confirm nothing regressed.
 
+Cutover timing: the gate/loop deletion lands at commit checkpoint (c), and
+the supervisor takes effect at the OpenCode restart performed at that
+checkpoint. Do not delete the gate/loop plugins mid-session — the executing
+session would strand itself with no active completion gate until restart.
+
 The supervisor must own:
 
 * disk-only completion evaluation
@@ -312,17 +367,46 @@ Delete:
 * `evals/plan_outcome/` — reads a ledger written only by the gate plugin.
   Dead when the gate plugin is removed.
 
-Remove the corresponding readonly entries from `.opencode/immutable.json`.
+Remove the four `evals/agent_value/**` readonly entries from
+`.opencode/immutable.json`. (`evals/plan_outcome` has no readonly entries —
+do not expect any.)
 
 Retain and update:
 
 * `evals/mutation/` — required by the mutation gate invariant.
 * `evals/seed_build/` — E2E oracle harness mapping to Phase 13 scenarios.
-  Update it to remove stale agent names and obsolete concept references.
+  This is a structural rework, not a rename: `test_planning.py` extracts a
+  `<spec>` payload from stdout (`_extract_spec_payload`,
+  `spec_source: payload_in_stdout`) and `oracle/planning_checks.py` scores a
+  "single complete SPEC payload." After Phase 5, Prometheus writes `SPEC.md`
+  to disk — the harness must inspect the file on disk instead of capturing a
+  stdout payload, in addition to removing stale agent names.
 
 ---
 
 ## Phase 4: Normalize the Trusted Computing Base
+
+### Step 4.0: Extend the immutability hook with agent-scoped write allowlists
+
+Grounding correction (Spike A audit): `plugins/immutability.ts` already
+implements this mechanism — `write_allowlist`, `prometheus_only`, and the
+agent-identity resolver all exist and pass their unit tests. This step is
+therefore verification, not new code. Confirm the following behavior holds
+and close the one coverage gap (write_allowlist denial attributed through a
+delegated child session):
+
+* support a `write_allowlist` map keyed by agent name, restricting that
+  agent's writes to the listed path patterns
+* deny writes outside the allowlist for a listed agent, regardless of
+  prompt-level permissions
+* keep `readonly` semantics unchanged for agents without an allowlist entry
+
+This is new trusted-computing-base code and is gated on Spike A (Phase 0):
+if the hook cannot attribute writes from delegated child sessions, this
+design must be revised first.
+
+Add tests for allowed paths, denied paths, and non-listed agents before any
+Phase 5 step depends on this mechanism.
 
 ### Step 4.1: Make the runner the sole evidence writer
 
@@ -548,6 +632,13 @@ The supervisor must enforce:
 
 The gate must read the committed artifact, not transcript claims.
 
+Sequencing note: `.opencode/immutable.json` currently lists
+`.opencode/mutation.json` as readonly while the file does not exist. If
+readonly denies creation, the gate can never be enabled. Define the
+enablement procedure explicitly: remove the readonly entry while mutation
+gating is disabled, then create the configuration and re-add the readonly
+entry in the same change ("create, then freeze").
+
 ---
 
 ## Phase 7: Make Run State Durable
@@ -671,6 +762,11 @@ When any prerequisite is missing, do not silently fall back while preserving the
 
 Report the run as blocked or require explicit correction of the spec.
 
+Note: `docs/REQUIREMENTS.md` lists only the first four admission inputs; the
+runner tool is an addition. Add it to the REQUIREMENTS Karpathy admission
+list in the same change (its own rules require the table to be updated
+before new admission conditions are enforced).
+
 ### Step 9.2: Enforce the loop protocol
 
 The Karpathy loop must:
@@ -718,6 +814,11 @@ Add or refine durable documentation for at least:
 * corrective cap exceeded
 * immutable file violation
 * restart recovery failure
+
+`docs/REQUIREMENTS.md` currently defines 13 failure classes; "impossible
+acceptance criterion" and "broken verifier" are not among them. Add them to
+the REQUIREMENTS failure-class table in the same change that introduces them
+here.
 
 ### Step 10.2: Assign each failure an owner and outcome
 
@@ -778,6 +879,21 @@ Contains:
 
 Do not duplicate content between the two documents. If a fact belongs in both,
 it belongs only in `docs/REQUIREMENTS.md`.
+
+The `docs/` directory currently contains 11 files. Dispose of the nine extra
+files explicitly:
+
+| File | Disposition |
+| --- | --- |
+| `docs/STRATEGY-CONTRACT.md` | Delete (Step 3.2) |
+| `docs/strategy-template.md` | Delete (Step 3.2) |
+| `docs/AGENT-ARCHITECTURE.md` | Merge agent taxonomy and authority boundaries into `docs/ARCHITECTURE.md`, then delete |
+| `docs/PLUGINS.md` | Merge surviving plugin behavior (immutability hook, supervisor) into `docs/ARCHITECTURE.md`; drop gate/loop content; delete |
+| `docs/WORKFLOWS.md` | Merge surviving control flow into `docs/ARCHITECTURE.md`; drop the payload workflow; delete |
+| `docs/VALIDATION.md` | Move the canonical validation command list into `docs/REQUIREMENTS.md`; delete |
+| `docs/CONVENTIONS.md` | Move the pyenv/virtualenv policy and shell portability rules into `docs/REQUIREMENTS.md`; delete |
+| `docs/testing-methodology.md` | Delete — built around `evals/agent_value/`, which Step 3.6 removes |
+| `docs/README.md` | Delete — a reading-order index is unnecessary for two files |
 
 ### Step 11.3: Update README
 
@@ -862,6 +978,10 @@ Steps:
    `.opencode/skills/` to `skills/`.
 3. Verify global deploy installs skills to the correct destination.
 4. Confirm skills previously installed globally are not duplicated or broken.
+5. Preserve project-local runtime consumption: OpenCode discovers project
+   skills at `.opencode/skills/`. Either symlink `.opencode/skills` →
+   `../skills` or verify the runtime also discovers `skills/` at the repo
+   root. Do not silently break local skill loading.
 
 Skills are not subject to the four-failure-mode deletion audit.
 
@@ -901,6 +1021,14 @@ Remove tests whose only purpose is validating:
 * auto-commit behavior
 
 Do not rewrite obsolete tests merely to preserve coverage counts.
+
+Scope note: `tests/verify_opencode.py` (~2,300 lines) asserts builder and
+data-scientist in its expected-agent tables, validates the strategy registry,
+requires payload grammar in the Prometheus prompt, and asserts gate/loop
+plugin internals by function name — expect a rewrite, not an edit.
+`tests/audit_run.py` audits transcript promise tokens, Prometheus payloads,
+and ralph/octopus delegation; rewrite it against supervisor disk state, or
+delete it if the Phase 7 state files cover its purpose.
 
 ### Step 13.2: Add required structural tests
 
@@ -1055,6 +1183,14 @@ Run:
 
 Do not claim completion with failing or skipped required checks.
 
+Ordering rule for freshness: land every documentation and bookkeeping edit
+(the Spike A grounding entry, the Step 15.3 status-table resolution, the
+Phase 15.5 report) before producing the final verification artifacts. Run
+the suite once to gather results, write the report and remaining bookkeeping
+edits, then produce the final fresh verification artifacts as the last write
+action of the run. Any tracked-file modification after the last verification
+run invalidates artifact freshness under Step 6.4.
+
 ### Step 15.5: Produce a cleanup report
 
 Create a concise final report containing:
@@ -1070,6 +1206,67 @@ Create a concise final report containing:
 * remaining deviations from `docs/REQUIREMENTS.md`
 
 Do not auto-commit.
+
+---
+
+## Grounding
+
+Dry-run findings recorded 2026-07-10 (pre-execution audit of this plan
+against the repository):
+
+* `.opencode/tool/run.ts` records `run_id`, `exit_code`, `duration_ms`,
+  `stdout_tail`, `stderr_tail`, `timed_out`, `command` — no `started_at`, no
+  spike/execution context split, no `QUESTION.md` check. Step 4.1 confirmed
+  necessary.
+* CORRECTED 2026-07-10 (Spike A audit): `plugins/immutability.ts` already
+  implements `readonly`, `prometheus_only`, AND `write_allowlist` with a
+  three-stage agent-identity resolver (chat.params cache → session messages
+  → parentID walk). The earlier finding that "no allowlist mechanism exists"
+  was stale. Step 4.0 reduces to verifying test coverage, not writing new
+  enforcement code.
+* The deploy script's `--with-tools` reads `${REPO_ROOT}/tools/`, which does
+  not exist; the runner is never installed by any flag. Step 12.1 confirmed
+  necessary.
+* `.opencode/strategies.json` registers only `karpathy`; Ralph Wiggum and
+  Octopus exist only as prose/code references.
+* `@builder` and `@data-scientist` exist and carry capabilities needing
+  reassignment (Karpathy implementer, NotebookLM) — see Step 3.1.
+* Spike A result: PASS (2026-07-10). Attribution is observable and enforced
+  end to end. Evidence: (1) tests/plugins/immutability.test.mjs — 18/18 pass
+  under Node v22.23.1, including child-session parent-inheritance and
+  write_allowlist denial; (2) OpenCode's session store
+  (~/.local/share/opencode/opencode.db) holds 169 real task-spawned child
+  sessions with parent_id populated; (3) real user messages carry the agent
+  field the hook's messages-fallback reads. The parentID walk the hook
+  performs is backed by real runtime data. Proceed per the Execution Order.
+* Environment constraint (2026-07-10): the default `node` on PATH is
+  v20.18.1, which cannot import the `.ts` plugin sources
+  (ERR_UNKNOWN_FILE_EXTENSION). `node --test tests/plugins/*.test.mjs`
+  requires Node >= 22.6 (type stripping); v22.23.1 is available via nvm.
+  The verification artifact for the node suite must be produced under
+  Node >= 22.6, or the default node must be switched before the completion
+  gate can pass. Flag at checkpoint (a) for the human to settle.
+
+## Verification
+
+The commands below are the completion checks for this cleanup. Each must
+have a fresh runner artifact with `exit_code: 0` (Phase 6 semantics) before
+completion is claimed.
+
+- `python3 tests/verify_opencode.py --skip-llm`
+- `node --test tests/plugins/*.test.mjs`
+
+Two clarifications on how these are evaluated:
+
+* Interpreter normalization: execution goes through the pyenv virtualenv
+  interpreter (`scripts/ensure-venv.sh`), but the runner records the
+  normalized `python3 ...` command string per the command-normalization rule
+  in `docs/REQUIREMENTS.md`, so the declared strings above match exactly.
+* Mid-cleanup enforcement: checkpoints (a) and (b) occur while the legacy
+  gate/loop plugins are still the active enforcement. Those checkpoints are
+  verified by a human running these commands directly. Phase 6 artifact
+  semantics (fresh runner artifact, `exit_code: 0`) apply from checkpoint
+  (c) onward, once the supervisor is active.
 
 ---
 
