@@ -429,3 +429,57 @@ test("no-op: no immutable.json means all writes pass through", async () => {
     assert.equal(err, null, "no config means no restrictions");
   });
 });
+
+test("relative paths resolve against tool cwd", async () => withTempDir(async (dir) => {
+  await setupImmutable(dir, { readonly: ["locked.txt"] });
+  const hooks = await ImmutabilityGuard({ directory: dir, worktree: dir, client: makeClient() });
+  await assert.rejects(hooks["tool.execute.before"]({tool:"write",sessionID:"unknown",callID:"r"},{args:{filePath:"locked.txt",cwd:dir}}), /readonly/);
+}));
+
+test("cross-project patch enforces every root", async () => withTempDir(async (outer) => {
+  const a=path.join(outer,"a"), b=path.join(outer,"b"); await mkdir(a); await mkdir(b);
+  await setupImmutable(a,{readonly:["locked.txt"]}); await setupImmutable(b,{readonly:["locked.txt"]});
+  const hooks=await ImmutabilityGuard({directory:a,worktree:a,client:makeClient()});
+  const patch=`*** Begin Patch\n*** Update File: ${path.join(a,"open.txt")}\n+x\n*** Update File: ${path.join(b,"locked.txt")}\n+x\n*** End Patch`;
+  await assert.rejects(hooks["tool.execute.before"]({tool:"apply_patch",sessionID:"x",callID:"p"},{args:{patchText:patch,cwd:a}}),/readonly/);
+}));
+
+test("scoped agents cannot use shell or interpreters to overwrite files", async () => withTempDir(async (dir) => {
+  await setupImmutable(dir,{write_allowlist:{prometheus:["SPEC.md"]}});
+  const client=makeClient({messagesBySession:{p:[{info:{role:"user",agent:"prometheus"}}]}});
+  const hooks=await ImmutabilityGuard({directory:dir,worktree:dir,client});
+  await assert.rejects(hooks["tool.execute.before"]({tool:"bash",sessionID:"p",callID:"s"},{args:{command:"> README.md",cwd:dir}}),/directly/);
+  await assert.rejects(hooks["tool.execute.before"]({tool:"run",sessionID:"p",callID:"s2"},{args:{command:"true",cwd:dir,context:"execution"}}),/contracted spike/);
+  await hooks["tool.execute.before"]({tool:"run",sessionID:"p",callID:"s3"},{args:{command:"printf x > .spike/s/x",cwd:dir,context:"spike",spike_id:"s"}});
+}));
+
+test("runner evidence and supervisor state reject agent mutation-tool forgery", async()=>withTempDir(async(dir)=>{
+  await setupImmutable(dir,{readonly:[".opencode/runs/**",".opencode/supervisor/**"]});
+  const client=makeClient({messagesBySession:{
+    a:[{info:{role:"user",agent:"autonomous"}}],
+    k:[{info:{role:"user",agent:"karpathy"}}],
+    r:[{info:{role:"user",agent:"reviewer"}}],
+    g:[{info:{role:"user",agent:"grounder"}}],
+    q:[{info:{role:"user",agent:"ask"}}],
+  }}), hooks=await ImmutabilityGuard({directory:dir,worktree:dir,client});
+  for(const sessionID of ["a","k","r","g","q"]){
+    for(const filename of [".opencode/runs/forged.json",".opencode/supervisor/run.json"]){
+      await assert.rejects(hooks["tool.execute.before"]({tool:"write",sessionID,callID:`${sessionID}-${filename}`},{args:{filePath:filename,cwd:dir}}),/readonly/);
+    }
+  }
+}));
+
+test("trusted computing base source rejects agent mutation", async()=>withTempDir(async(dir)=>{
+  const protectedFiles=[
+    ".opencode/immutable.json",
+    ".opencode/tool/run.ts",
+    "plugins/immutability.ts",
+    "plugins/opencode-autonomous-supervisor.js",
+    "plugins/opencode-autonomous-supervisor/index.js",
+  ];
+  await setupImmutable(dir,{readonly:protectedFiles});
+  const client=makeClient({messagesBySession:{a:[{info:{role:"user",agent:"autonomous"}}]}}), hooks=await ImmutabilityGuard({directory:dir,worktree:dir,client});
+  for(const filename of protectedFiles){
+    await assert.rejects(hooks["tool.execute.before"]({tool:"write",sessionID:"a",callID:filename},{args:{filePath:filename,cwd:dir}}),/readonly/);
+  }
+}));

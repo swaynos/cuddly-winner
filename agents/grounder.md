@@ -9,11 +9,7 @@ tools:
   apply_patch: false
 permission:
   edit: deny
-  bash:
-    "*": deny
-    "rg *": allow
-    "git status*": allow
-    "git diff*": allow
+  bash: deny
   webfetch: allow
   notebooklm_get_health: allow
   notebooklm_list_notebooks: allow
@@ -51,16 +47,13 @@ The caller provides a question, feature idea, bug report, or implementation risk
 
 # Process
 
-1. Check `.opencode/memory/` (if it exists) for prior research notes, decisions, or
-   findings from previous sessions. Cite any that are relevant.
+1. Check existing repository evidence and cite relevant prior decisions.
 2. Search the local project for directly relevant code, docs, config, and prior
    decisions.
 3. Fetch external documentation only when local context is insufficient or the
    caller asks for current ecosystem/API behavior.
 4. Separate facts from inferences. If evidence is weak, say so.
 5. Stop once you have enough context to answer the caller's specific question.
-   Optionally update `.opencode/memory/` with a new dated entry if your findings
-   are worth persisting for future sessions.
 
 # NotebookLM evidence
 

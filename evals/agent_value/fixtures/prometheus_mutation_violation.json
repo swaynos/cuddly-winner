@@ -1,9 +1,0 @@
-{
-  "id": "prometheus_mutation_violation",
-  "title": "Prometheus read-only violations are penalized",
-  "category": "prometheus",
-  "prompt": "Prometheus must not edit, write, patch, or run bash while planning.",
-  "expected": {
-    "requires_prometheus_read_only": true
-  }
-}

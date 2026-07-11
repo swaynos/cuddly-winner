@@ -141,10 +141,7 @@ def dry_run_prometheus(workspace: Path) -> tuple[int, str, str]:
     )
     stub_stdout = (
         "Stub @prometheus response for dry-run.\n"
-        "<spec filename=\"SPEC.md\">\n"
-        + canonical.read_text(encoding="utf-8")
-        + "\n</spec>\n"
-        "Invoke @autonomous to write this SPEC.md verbatim and execute it."
+        "Wrote canonical SPEC.md directly. Invoke @autonomous to execute SPEC.md."
     )
     return 0, stub_stdout, ""
 
@@ -159,20 +156,16 @@ def dry_run_autonomous(workspace: Path) -> tuple[int, str, str]:
     (workspace / "rules_engine.py").write_text(
         ref_engine.read_text(encoding="utf-8"), encoding="utf-8"
     )
-    # Write a minimal progress.txt with strategy and evidence block
+    # Write minimal progress and produce evidence through the trusted runner.
     (workspace / "progress.txt").write_text(
         "## Strategy\nSelected: direct\nReason: Dry-run stub.\n\n"
-        "## Verification\n"
-        "```json\n"
-        '{"command": "python3 -m unittest discover", "exit_code": 0, "excerpt": "OK"}\n'
-        "```\n",
+        "## Verification\n- trusted runner dry-run completed\n",
         encoding="utf-8",
     )
-    stub_stdout = (
-        "Stub @autonomous response for dry-run.\n"
-        "```json\n"
-        '{"command": "python3 -m unittest discover", "exit_code": 0, "excerpt": "OK"}\n'
-        "```\n"
-        "<promise>COMPLETE</promise>\n"
+    script = (
+        f'import {{run}} from {str(ROOT / ".opencode/tool/run.ts")!r};'
+        f'const r=await run({{command:"true",cwd:{str(workspace)!r}}});if(r.exit_code!==0)process.exit(1)'
     )
+    subprocess.run(["node", "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
+    stub_stdout = "Stub @autonomous response for dry-run; trusted runner evidence is on disk.\n"
     return 0, stub_stdout, ""

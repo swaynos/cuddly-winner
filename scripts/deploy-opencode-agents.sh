@@ -19,13 +19,10 @@ Options:
   --source-dir PATH   Source directory containing agent markdown files
   --config-dir PATH   OpenCode config directory
   --agents-dir PATH   OpenCode agents directory
-  --plugins-dir PATH  OpenCode plugins directory (used with --with-plugins)
-  --skills-dir PATH   OpenCode skills directory (used with --with-skills)
-  --tools-dir PATH    OpenCode tools directory (used with --with-tools)
+  --plugins-dir PATH  OpenCode plugins directory
+  --skills-dir PATH   OpenCode skills directory
+  --tools-dir PATH    OpenCode tools directory
   --mode MODE         Install mode: symlink (default) or copy
-  --with-plugins      Also install files from plugins/ into OpenCode plugins directory
-  --with-skills       Also install skill directories from .opencode/skills/ into OpenCode skills directory
-  --with-tools        Also install files from tools/ into OpenCode tools directory
   -h, --help          Show this help
 
 Override precedence (highest to lowest):
@@ -352,9 +349,9 @@ CLI_PLUGINS_DIR=""
 CLI_SKILLS_DIR=""
 CLI_TOOLS_DIR=""
 CLI_MODE=""
-WITH_PLUGINS=false
-WITH_SKILLS=false
-WITH_TOOLS=false
+WITH_PLUGINS=true
+WITH_SKILLS=true
+WITH_TOOLS=true
 
 if [[ $# -gt 0 ]]; then
   case "$1" in
@@ -477,25 +474,33 @@ printf 'Action: %s\n' "$ACTION"
 printf 'Mode: %s\n' "$MODE"
 printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
 
+# Remove managed links from the replaced split control plane during cutover.
+if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
+  for obsolete in opencode-autonomous-gate opencode-autonomous-loop shared; do
+    candidate="${PLUGINS_DIR}/${obsolete}"
+    if [[ -L "$candidate" ]]; then rm -f "$candidate"; printf 'Removed obsolete managed plugin: %s\n' "$candidate"; fi
+  done
+fi
+
 # --- AGENTS.md (global rules — installed to config dir root) ---
 install_files "Rules" "$REPO_ROOT" "$CONFIG_DIR" "$MODE" "$ACTION" "AGENTS.md"
 
 # --- Agents ---
 install_files "Agents" "$SOURCE_DIR" "$AGENTS_DIR" "$MODE" "$ACTION" "*.md"
 
-# --- Plugins (opt-in) ---
+# --- Trusted control plane (installed by default) ---
 if [[ "$WITH_PLUGINS" == true ]]; then
   install_entries "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION"
 fi
 
-# --- Skills (opt-in) ---
+# --- Skills ---
 if [[ "$WITH_SKILLS" == true ]]; then
-  install_entries "Skills" "${REPO_ROOT}/.opencode/skills" "$SKILLS_DIR" "$MODE" "$ACTION"
+  install_entries "Skills" "${REPO_ROOT}/skills" "$SKILLS_DIR" "$MODE" "$ACTION"
 fi
 
-# --- Tools (opt-in) ---
+# --- Trusted runner ---
 if [[ "$WITH_TOOLS" == true ]]; then
-  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "*.ts"
+  install_files "Tools" "${REPO_ROOT}/.opencode/tool" "$TOOLS_DIR" "$MODE" "$ACTION" "run.ts"
 fi
 
 if [[ "$ACTION" == "status" ]]; then
@@ -507,6 +512,3 @@ if [[ "$ACTION" == "remove" ]]; then
 fi
 
 printf 'Done. Start OpenCode anywhere and invoke an agent by name, e.g. @prometheus, @autonomous, @karpathy\n'
-if [[ "$WITH_PLUGINS" == false || "$WITH_SKILLS" == false || "$WITH_TOOLS" == false ]]; then
-  printf 'Tip: use --with-plugins, --with-skills, and --with-tools to also install plugins, skills, and any custom tools.\n'
-fi

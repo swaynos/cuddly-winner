@@ -51,9 +51,10 @@
  */
 
 import { readFileSync, existsSync } from "fs";
-import { join, basename, dirname, resolve, relative } from "path";
+import { join, basename, dirname, resolve, relative, isAbsolute as pathIsAbsolute } from "path";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
+const SHELL_TOOLS = new Set(["bash", "run"]);
 
 interface ImmutableConfig {
   readonly?: string[];
@@ -93,9 +94,9 @@ function matchesPattern(relPath: string, pattern: string): boolean {
   // 1. Match against full relative path
   if (re.test(norm)) return true;
 
-  // 2. Match against basename (allows "SPEC.md" to match any depth)
+  // 2. Bare names are project-root files, never same-named nested files.
   if (!pattern.includes("/") && !pattern.includes("*")) {
-    if (re.test(name)) return true;
+    if (!norm.includes("/") && re.test(name)) return true;
   }
 
   // 3. Pattern with no path sep and no glob: compare as basename
@@ -160,6 +161,17 @@ export const ImmutabilityGuard = async ({
 
   // Resolve agent identity for a session, with parent-session fallback.
   async function resolveAgent(sessionID: string): Promise<string | undefined> {
+    // Parent identity is authoritative for child sessions; do this before using
+    // a child agent cache so delegation cannot shed the origin's restrictions.
+    try {
+      const res = await client?.session?.get?.({ path: { id: sessionID } });
+      const parentID: string | undefined = (res?.data ?? res)?.parentID;
+      if (parentID) {
+        const parentAgent = await resolveAgent(parentID);
+        if (parentAgent) { sessionAgentCache.set(sessionID, parentAgent); return parentAgent; }
+      }
+    } catch { /* continue with direct attribution */ }
+
     // 1. Hot-path: cache populated by chat.params
     const cached = sessionAgentCache.get(sessionID);
     if (cached) return cached;
@@ -184,24 +196,6 @@ export const ImmutabilityGuard = async ({
       // SDK unavailable or session not found — fall through to parent lookup.
     }
 
-    // 3. Walk parentID chain — covers subagent/task child sessions whose own
-    //    messages may not carry the originating agent name.
-    try {
-      const res = await client.session.get({ path: { id: sessionID } });
-      const session = res?.data ?? res;
-      const parentID: string | undefined = session?.parentID;
-      if (parentID) {
-        // Recurse once — a single parent walk is enough in practice.
-        const parentAgent = await resolveAgent(parentID);
-        if (parentAgent) {
-          sessionAgentCache.set(sessionID, parentAgent);
-          return parentAgent;
-        }
-      }
-    } catch {
-      // Parent lookup failed — give up gracefully.
-    }
-
     return undefined;
   }
 
@@ -220,9 +214,24 @@ export const ImmutabilityGuard = async ({
       input: { tool: string; sessionID: string; callID: string },
       output: { args?: Record<string, unknown> }
     ) => {
-      if (!MUTATING_TOOLS.has(input.tool)) return;
+      if (!MUTATING_TOOLS.has(input.tool) && !SHELL_TOOLS.has(input.tool)) return;
 
       const args = (output as any).args ?? {};
+      const agent = await resolveAgent(input.sessionID);
+      if (SHELL_TOOLS.has(input.tool)) {
+        const root = findConfigRoot(String(args.cwd ?? defaultRoot));
+        const config = root ? loadConfig(root) : null;
+        if (agent && config?.write_allowlist?.[agent]) {
+          if (input.tool === "bash") throw new Error(`ImmutabilityGuard: @${agent} may not execute shell commands directly.`);
+          if (args.context !== "spike" || typeof args.spike_id !== "string") {
+            throw new Error(`ImmutabilityGuard: @${agent} may invoke run only with contracted spike context.`);
+          }
+        }
+        if (!agent && config && (config.prometheus_only?.length || Object.keys(config.write_allowlist ?? {}).length)) {
+          throw new Error("ImmutabilityGuard: shell execution denied because agent identity could not be resolved.");
+        }
+        return;
+      }
       const rawPath =
         (args.filePath as string | undefined) ??
         (args.file_path as string | undefined) ??
@@ -232,7 +241,7 @@ export const ImmutabilityGuard = async ({
 
       // Build list of absolute paths being written
       const absPaths: string[] = rawPath
-        ? [resolve(rawPath)]
+        ? [pathIsAbsolute(rawPath) ? rawPath : resolve(rawCwd, rawPath)]
         : input.tool === "apply_patch" && patchText
           ? extractPatchedPaths(patchText).map((p) =>
               p.startsWith("/") ? p : resolve(rawCwd, p)
@@ -241,21 +250,14 @@ export const ImmutabilityGuard = async ({
 
       if (absPaths.length === 0) return;
 
-      // Find config root once from first path
-      const configRoot = findConfigRoot(dirname(absPaths[0]));
-      if (!configRoot) return;
-      const cfg = loadConfig(configRoot);
-      if (!cfg) return;
-
-      // --- Resolve agent identity ---
-      const agent = await resolveAgent(input.sessionID);
-
-      const readonlyPatterns: string[]    = cfg.readonly ?? [];
-      const prometheusOnlyPatterns: string[] = cfg.prometheus_only ?? [];
-      const writeAllowlistPatterns: Record<string, string[]> =
-        cfg.write_allowlist ?? {};
-
       for (const absPath of absPaths) {
+        const configRoot = findConfigRoot(dirname(absPath));
+        if (!configRoot) continue;
+        const cfg = loadConfig(configRoot);
+        if (!cfg) continue;
+        const readonlyPatterns: string[] = cfg.readonly ?? [];
+        const prometheusOnlyPatterns: string[] = cfg.prometheus_only ?? [];
+        const writeAllowlistPatterns: Record<string, string[]> = cfg.write_allowlist ?? {};
         // Compute path relative to configRoot for glob matching
         const relPath = relative(configRoot, absPath).replace(/\\/g, "/");
         const name    = basename(absPath);

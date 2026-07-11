@@ -1,10 +1,15 @@
 {
   "readonly": [
-    "evals/agent_value/fixtures/**",
-    "evals/agent_value/golden/**",
-    "evals/agent_value/score.py",
-    "evals/agent_value/tests/**",
     "evals/seed_build/oracle/**",
-    ".opencode/mutation.json"
-  ]
+    ".opencode/immutable.json",
+    ".opencode/mutation.json",
+    ".opencode/tool/run.ts",
+    ".opencode/runs/**",
+    ".opencode/supervisor/**",
+    "plugins/immutability.ts",
+    "plugins/opencode-autonomous-supervisor.js",
+    "plugins/opencode-autonomous-supervisor/**"
+  ],
+  "prometheus_only": ["SPEC.md", ".spike/**"],
+  "write_allowlist": { "prometheus": ["SPEC.md", ".spike/**"] }
 }

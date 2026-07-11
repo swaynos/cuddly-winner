@@ -16,7 +16,6 @@ Exits:
 from __future__ import annotations
 
 import argparse
-import re
 import shutil
 import sys
 from pathlib import Path
@@ -35,16 +34,6 @@ SEED     = Path(__file__).resolve().parent / "seed" / "idea.md"
 REPORTS  = Path(__file__).resolve().parent / "reports"
 
 
-def _extract_spec_payload(text: str) -> str | None:
-    """Extract the content inside <spec filename="SPEC.md">...</spec>."""
-    m = re.search(r'<spec\s+filename=["\']SPEC\.md["\']\s*>(.*?)</spec>',
-                  text, re.S | re.I)
-    if m:
-        return m.group(1).strip()
-    # If no payload tags, check if SPEC.md was written to disk
-    return None
-
-
 def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     report = TestReport(test_name="test_planning")
 
@@ -58,7 +47,7 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
         # Run @prometheus with the loose idea as the prompt
         prompt = (
             "Read idea.md and use the @prometheus workflow to plan this project. "
-            "Return a complete <spec filename=\"SPEC.md\"> payload."
+            "Write the complete canonical SPEC.md directly in the workspace."
         )
         rc, stdout, stderr = run_opencode_agent(
             agent="prometheus",
@@ -71,21 +60,15 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     report.evidence["stdout_tail"] = stdout[-3000:] if stdout else ""
     report.evidence["stderr_tail"] = stderr[-1000:] if stderr else ""
 
-    # Find the SPEC: either extracted from stdout payload or written to SPEC.md
     spec_text: str | None = None
-
-    payload = _extract_spec_payload(stdout)
-    if payload:
-        spec_text = payload
-        report.evidence["spec_source"] = "payload_in_stdout"
-    elif (workspace / "SPEC.md").exists():
+    if (workspace / "SPEC.md").exists():
         spec_text = (workspace / "SPEC.md").read_text(encoding="utf-8")
         report.evidence["spec_source"] = "SPEC.md_on_disk"
     else:
         report.checks.append({
             "name": "SPEC produced by @prometheus",
             "passed": False,
-            "note": "No SPEC payload found in stdout and no SPEC.md written to workspace.",
+            "note": "No SPEC.md was written to the workspace.",
         })
         report.verdict = FAIL
         return report

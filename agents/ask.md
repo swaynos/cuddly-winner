@@ -7,21 +7,7 @@ tools:
   patch: false
   apply_patch: false
 permission:
-  bash:
-    "*": deny
-    "ls *": allow
-    "ls": allow
-    "cat *": allow
-    "echo *": allow
-    "pwd": allow
-    "uname *": allow
-    "which *": allow
-    "git status*": allow
-    "git log*": allow
-    "git diff*": allow
-    "git branch*": allow
-    "rg *": allow
-    "find *": allow
+  bash: deny
   read: allow
   grep: allow
   glob: allow

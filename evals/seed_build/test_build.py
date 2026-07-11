@@ -103,29 +103,12 @@ def _check_contract_compliance(workspace: Path) -> list[dict]:
         "note": "" if strategy_recorded else "No 'Selected:' line found in progress.txt.",
     })
 
-    # 3. Evidence block present (look in any txt/md file in workspace)
-    evidence_found = False
-    for p in workspace.rglob("*.txt"):
-        try:
-            text = p.read_text(encoding="utf-8", errors="replace")
-            if '"exit_code"' in text and '"command"' in text:
-                evidence_found = True
-                break
-        except Exception:
-            pass
-    if not evidence_found:
-        for p in workspace.rglob("*.md"):
-            try:
-                text = p.read_text(encoding="utf-8", errors="replace")
-                if '"exit_code"' in text and '"command"' in text:
-                    evidence_found = True
-                    break
-            except Exception:
-                pass
+    # 3. Trusted runner evidence present on disk.
+    evidence_found = any((workspace / ".opencode" / "runs").glob("*.json"))
     checks.append({
-        "name": "Evidence block present",
+        "name": "Trusted runner evidence present",
         "passed": evidence_found,
-        "note": "" if evidence_found else "No evidence block (exit_code + command) found.",
+        "note": "" if evidence_found else "No .opencode/runs JSON artifact found.",
     })
 
     return checks
@@ -147,7 +130,7 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     else:
         # Run @autonomous against the canonical SPEC
         prompt = (
-            "Materialize the SPEC.md in this workspace verbatim and execute it. "
+            "Read the canonical SPEC.md in this workspace and execute it. "
             "Implement the workflow rules engine as specified. "
             "Write tests, verify, review, and emit COMPLETE when done."
         )

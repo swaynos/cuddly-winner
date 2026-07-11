@@ -1,8 +1,0 @@
-{
-  "name": "opencode-autonomous-gate",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "description": "OpenCode plugin that enforces promise semantics for the @autonomous agent.",
-  "main": "index.js"
-}

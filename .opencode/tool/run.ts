@@ -1,126 +1,106 @@
-/**
- * run.ts — Deterministic bash command runner tool for OpenCode agents.
- *
- * Always spawns `bash -c` (never $SHELL) so behavior is reproducible across
- * macOS (zsh login shell) and Linux (bash login shell).
- *
- * Writes two artifacts per run into .opencode/runs/:
- *   {run_id}.json  — structured result (RunResult)
- *   {run_id}.log   — raw stdout+stderr interleaved
- *
- * The gate plugin reads .opencode/runs/ to satisfy evidence requirements
- * without relying on transcript scanning.
- */
-
+/** Trusted command runner. Evidence is durable before this tool resolves. */
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
-export interface RunInput {
-  command: string;
-  cwd?: string;
-  timeoutSec?: number;
-}
-
+export type RunContext = "execution" | "spike";
+export interface RunInput { command: string; cwd?: string; timeoutSec?: number; context?: RunContext; spike_id?: string }
 export interface RunResult {
-  run_id: string;
-  exit_code: number;
-  duration_ms: number;
-  stdout_tail: string;
-  stderr_tail: string;
-  timed_out: boolean;
-  command: string;
+  run_id: string; started_at: string; finished_at: string; duration_ms: number;
+  command: string; exit_code: number; stdout_tail: string; stderr_tail: string;
+  timed_out: boolean; context: RunContext; spike_id?: string;
 }
 
-const MAX_CONCURRENT = 5;
-const DEFAULT_TIMEOUT_SEC = 30;
-const TAIL_CHARS = 4096;
+const MAX_CONCURRENT = 5, DEFAULT_TIMEOUT_SEC = 30, TAIL_CHARS = 4096;
+let running = 0;
+const tail = (s: string) => s.length > TAIL_CHARS ? `...${s.slice(-TAIL_CHARS)}` : s;
+export const normalizeCommand = (command: string) => command.replace(/\/home\/[^/]+\/\.pyenv\/versions\/[^/]+\/bin\/python3/g, "python3");
 
-let _running = 0;
+async function atomicWrite(file: string, data: string | Buffer): Promise<void> {
+  const temp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
+  try { await fs.writeFile(temp, data); await fs.rename(temp, file); }
+  catch (error) { await fs.rm(temp, { force: true }).catch(() => undefined); throw error; }
+}
 
-function tail(s: string): string {
-  return s.length > TAIL_CHARS ? "..." + s.slice(-TAIL_CHARS) : s;
+async function destination(cwd: string, input: RunInput): Promise<{dir: string; context: RunContext}> {
+  const context = input.context ?? "execution";
+  if (context !== "execution" && context !== "spike") throw new Error(`Unknown execution context: ${context}`);
+  if (context === "execution") {
+    if (input.spike_id) throw new Error("spike_id is only valid in spike context");
+    return { dir: path.join(cwd, ".opencode", "runs"), context };
+  }
+  if (!input.spike_id || !/^[a-z0-9][a-z0-9-]*$/.test(input.spike_id)) throw new Error("Spike context requires a safe spike_id");
+  const questionPath = path.join(cwd, ".spike", input.spike_id, "QUESTION.md");
+  const question = await fs.readFile(questionPath, "utf8").catch(() => { throw new Error(`Missing spike contract: ${questionPath}`); });
+  if (!/^##?\s+Question/im.test(question) || !/kill criterion/i.test(question)) throw new Error("QUESTION.md must contain a question and kill criterion");
+  return { dir: path.join(cwd, ".spike", input.spike_id, "runs"), context };
+}
+
+async function processCommand(cwd: string, input: RunInput): Promise<{file: string; args: string[]}> {
+  const bwrap = process.env.OPENCODE_BWRAP_PATH || "/usr/bin/bwrap";
+  try { await fs.access(bwrap); } catch { throw new Error(`Runner sandbox unavailable: ${bwrap} is required`); }
+  if ((input.context ?? "execution") === "execution") {
+    const reports = path.join(cwd, "evals", "seed_build", "reports");
+    const reportsArgs: string[] = [];
+    try { if ((await fs.stat(reports)).isDirectory()) reportsArgs.push("--bind", reports, reports); } catch {}
+    const tempProjectArgs = cwd.startsWith(`/tmp${path.sep}`) ? ["--dir", cwd, "--ro-bind", cwd, cwd] : [];
+    return {
+      file: bwrap,
+      args: ["--die-with-parent", "--new-session", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", ...tempProjectArgs, ...reportsArgs,
+        "--chdir", cwd, "bash", "-c", input.command],
+    };
+  }
+  const spikeDir = path.join(cwd, ".spike", input.spike_id!);
+  const tempProjectArgs = cwd.startsWith(`/tmp${path.sep}`) ? ["--dir", cwd, "--ro-bind", cwd, cwd] : [];
+  return {
+    file: bwrap,
+    args: ["--die-with-parent", "--new-session", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", ...tempProjectArgs, "--bind", spikeDir, spikeDir, "--chdir", cwd, "bash", "-c", input.command],
+  };
 }
 
 export async function run(input: RunInput): Promise<RunResult> {
-  if (_running >= MAX_CONCURRENT) {
-    throw new Error(`Too many concurrent runs (max ${MAX_CONCURRENT})`);
-  }
-
-  const run_id = crypto.randomBytes(8).toString("hex");
-  const timeoutMs = (input.timeoutSec ?? DEFAULT_TIMEOUT_SEC) * 1000;
-  const cwd = input.cwd ?? process.cwd();
-
-  const runsDir = path.join(cwd, ".opencode", "runs");
-  await fs.mkdir(runsDir, { recursive: true });
-
-  const logPath = path.join(runsDir, `${run_id}.log`);
-  const jsonPath = path.join(runsDir, `${run_id}.json`);
-
-  _running++;
-  const start = Date.now();
-
-  let stdout = "";
-  let stderr = "";
-  let timed_out = false;
-
-  const result = await new Promise<RunResult>((resolve) => {
-    const proc = spawn("bash", ["-c", input.command], {
-      cwd,
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
+  if (!input.command || typeof input.command !== "string") throw new Error("command is required");
+  if (running >= MAX_CONCURRENT) throw new Error(`Too many concurrent runs (max ${MAX_CONCURRENT})`);
+  running++;
+  try {
+    const cwd = path.resolve(input.cwd ?? process.cwd());
+    const cwdStat = await fs.stat(cwd).catch(() => null);
+    if (!cwdStat?.isDirectory()) throw new Error(`Invalid cwd: ${cwd}`);
+    const dest = await destination(cwd, input);
+    await fs.mkdir(dest.dir, { recursive: true });
+    if (dest.context === "execution") {
+      await fs.mkdir(path.join(cwd, ".opencode", "supervisor"), { recursive: true });
+    }
+    const processSpec = await processCommand(cwd, input);
+    const run_id = crypto.randomBytes(12).toString("hex");
+    const startMs = Date.now(), started_at = new Date(startMs).toISOString();
+    let stdout = "", stderr = "", timed_out = false, signal: NodeJS.Signals | null = null;
+    const chunks: Buffer[] = [];
+    const exit_code = await new Promise<number>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => { if (!settled) { settled = true; clearTimeout(timer); fn(); } };
+      let proc;
+      try { proc = spawn(processSpec.file, processSpec.args, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] }); }
+      catch (error) { reject(error); return; }
+      proc.stdout.on("data", (b: Buffer) => { stdout += b; chunks.push(b); });
+      proc.stderr.on("data", (b: Buffer) => { stderr += b; chunks.push(b); });
+      proc.on("error", (error) => settle(() => reject(error)));
+      proc.on("close", (code, sig) => settle(() => { signal = sig; resolve(timed_out || sig ? -1 : (code ?? -1)); }));
+      const timer = setTimeout(() => { timed_out = true; proc.kill("SIGKILL"); }, Math.max(1, input.timeoutSec ?? DEFAULT_TIMEOUT_SEC) * 1000);
     });
-
-    const logParts: string[] = [];
-
-    proc.stdout.on("data", (chunk: Buffer) => {
-      const s = chunk.toString();
-      stdout += s;
-      logParts.push(s);
-    });
-
-    proc.stderr.on("data", (chunk: Buffer) => {
-      const s = chunk.toString();
-      stderr += s;
-      logParts.push(s);
-    });
-
-    const timer = setTimeout(() => {
-      timed_out = true;
-      proc.kill("SIGKILL");
-    }, timeoutMs);
-
-    proc.on("close", (code) => {
-      clearTimeout(timer);
-      const duration_ms = Date.now() - start;
-
-      fs.writeFile(logPath, logParts.join(""), "utf-8").catch(() => {});
-
-      const r: RunResult = {
-        run_id,
-        exit_code: timed_out ? -1 : (code ?? -1),
-        duration_ms,
-        stdout_tail: tail(stdout),
-        stderr_tail: tail(stderr),
-        timed_out,
-        command: input.command,
-      };
-
-      fs.writeFile(jsonPath, JSON.stringify(r, null, 2) + "\n", "utf-8").catch(() => {});
-
-      resolve(r);
-    });
-  });
-
-  _running--;
-  return result;
+    const finishMs = Date.now();
+    const result: RunResult = {
+      run_id, started_at, finished_at: new Date(finishMs).toISOString(), duration_ms: finishMs - startMs,
+      command: normalizeCommand(input.command), exit_code, stdout_tail: tail(stdout),
+      stderr_tail: tail(signal ? `${stderr}\nTerminated by ${signal}` : stderr), timed_out, context: dest.context,
+      ...(input.spike_id ? { spike_id: input.spike_id } : {}),
+    };
+    await atomicWrite(path.join(dest.dir, `${run_id}.log`), Buffer.concat(chunks));
+    await atomicWrite(path.join(dest.dir, `${run_id}.json`), `${JSON.stringify(result, null, 2)}\n`);
+    return result;
+  } finally { running--; }
 }
 
-// OpenCode tool registration: default export consumed by the runtime to
-// auto-register this file as an invocable tool.
-export type RunParams = RunInput;
-
-export default async function(params: RunParams): Promise<RunResult> {
-  return run(params);
-}
+export const __testing = { get running() { return running; } };
+export default run;

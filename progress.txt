@@ -1,0 +1,47 @@
+## Strategy
+Selected: direct
+Reason: The SPEC defines ordered checklist work and deterministic verification commands, not a scalar optimization objective.
+
+## Implementation Checklist
+- [x] Checkpoint 1: prove attribution, capture baseline, add contract tests, update requirements.
+- [x] Checkpoint 2: harden the trusted runner and its tests.
+- [x] Checkpoint 3: close immutability bypasses and activate Prometheus confinement.
+- [x] Checkpoint 4: build and prove the supervisor beside the old plugins.
+- [x] Checkpoint 5: atomically flip agent handoff and runtime ownership.
+- [x] Checkpoint 6: remove replaced plugins, utilities, tests, and evals.
+- [x] Checkpoint 7: repair deployment, root skills, validation, and surviving evals.
+- [x] Checkpoint 8: rewrite durable docs and README; remove stale docs.
+- [x] Checkpoint 9: run exact verification, audit references/worktree/docs, and obtain review.
+
+## Run Log
+- Perceive: SPEC.md loaded; deterministic runner exists; no mutation gate configuration exists.
+- Plan: run the load-bearing attribution spike and old-architecture baseline before edits.
+- Python preflight: user reports success at /home/bendy/.pyenv/versions/cuddly-winner/bin/python3.
+- Attribution spike `attribution-check`: PASS; child session resolved to @prometheus and README.md write was denied with identity in the error.
+- Baseline: Python validator exit 0; Node old-architecture suite 82/82 passed.
+- Replacement isolated suite: 26/26 passed before old control-plane deletion.
+- First final runner pass: all five commands exited 0; seed planning honestly reported SKIPPED for missing model credentials.
+- Plan: refresh all artifacts after the final deploy/evaluator edits, audit worktree and removed references, then request advisory review.
+- Advisory Reviewer cycle 1: REQUEST_CHANGES. Added fail-closed malformed/duplicate artifact handling, mutation path/file/future checks, SPEC-change blocking, runtime correction delivery, persistence-failure coverage, authoritative parent attribution, and root-only bare patterns.
+- Advisory Reviewer after bounded correction: REQUEST_CHANGES. The remaining fundamental conflict is allowing arbitrary Prometheus spike commands while proving they cannot mutate anything outside `.spike/**`; the conservative command guard preserves confinement but rejects unrestricted runner commands.
+- Attempt 1: guarded both shell and trusted-run commands for scoped agents with a conservative read-only command allowlist; this closes Python/shell overwrite bypasses but limits Prometheus spikes.
+- Attempt 2: considered runner-side after-the-fact workspace comparison/rollback; rejected because a transient forbidden write violates immutability and rollback can destroy concurrent user changes.
+- Attempt 3: probed OS sandbox availability (`bwrap` exists), but a safe cross-platform bind-mount design and OpenCode identity injection are not specified or proven by the current contract, so integrating it now would guess across the trust boundary.
+- Grounder was not consulted: this is a local enforcement/design contradiction evidenced by the checked-in runner, hook, and Reviewer findings; external research would not decide the required portability and identity contract.
+- Final exact runner pass: validator 0; Node 31/31; mutation 9/9; seed planning command 0 with credential-based SKIPPED; deploy status 0.
+- Reviewer continuation findings addressed: runner and supervisor paths are readonly to mutation tools; execution commands now run with the project read-only; Prometheus spike runs use bubblewrap with only their spike writable.
+- Supervisor now initializes only on top-level Autonomous `chat.params`, resolves parent runs, ignores unrelated idle events, retains original fingerprints, keeps blocked state terminal, fails closed on corrupt state, and deduplicates bounded verification/runtime/Reviewer corrections.
+- Focused attribution measurement ran through spike context: run `ad000240867c8c66c781cf97`, exit 0, 1/1. It proves deterministic mocked OpenCode parent attribution only; `.spike/attribution-check/MEASURED.md` explicitly does not claim a live runtime session.
+- `progress.txt` is deliberately retained because the active Autonomous and seed-build contracts require it; it is not completion evidence.
+- Latest local suite after correction: validator exit 0; Node 39/39 passed. Exact SPEC verification artifacts will be refreshed after final review edits.
+- Latest nine-item request mapping: (1) runner/supervisor readonly policy plus mutation and execution-forgery tests; (2) Autonomous-only start, parent-scoped idle, immutable fingerprint, terminal blocking; (3) corrupt state throws and is preserved; (4) bubblewrap spike sandbox and Prometheus context guard; (5) real spawn EACCES coverage; (6) event, unrelated, concurrent, child, SPEC-change, terminal, corruption, advisory, duplicate tests; (7) validator behavior/load/deploy checks and seed disk evidence; (8) focused attribution spike with honest mocked-runtime scope; (9) progress retained deliberately because governing contracts require it.
+- Final trusted artifacts: validator run `3c813024d0dac1b20084a5f1` exit 0; Node run `f3d6c88752c88f66b28f6ca5` exit 0 (40/40); mutation run `4671747370dd474371672538` exit 0 (9/9); seed run `28773a3afb175e0921fc2492` exit 0 with credential-based SKIPPED; deploy run `8ed158e335ff810759c92e47` exit 0.
+- Supervisor state `.opencode/supervisor/final-audit.json`: `complete: true`, all five exact commands satisfied, mutation_ok true.
+- Final Reviewer: REQUEST_CHANGES solely on live child-session attribution and SPEC.md still saying Pending.
+- Live attribution Attempt 1: focused deterministic parent/child plugin integration passed through spike run `ad000240867c8c66c781cf97` (1/1), but uses mocked OpenCode session APIs.
+- Live attribution Attempt 2: launched a real isolated `opencode run --agent prometheus` with a project-local write-capable Grounder override; Prometheus reported that no Grounder delegation tool was available, so no child session was created.
+- Live attribution Attempt 3: preserved the failed live-runtime attempt and the deterministic test's limited scope in `.spike/attribution-check/MEASURED.md`; did not rewrite SPEC.md because Autonomous is prohibited from editing the implementation contract.
+- Grounder was not consulted for this blocker: the failure is directly observed runtime tool availability, not missing external knowledge.
+
+## Latest Verification
+- `bash scripts/deploy-opencode-agents.sh status` (trusted run `8ed158e335ff810759c92e47`) -> exit 0

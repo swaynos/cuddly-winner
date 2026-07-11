@@ -58,3 +58,5 @@ evals/seed_build/reports/
 
 # Spike workspaces are disposable and never committed
 .spike/
+.opencode/runs/
+.opencode/supervisor/
