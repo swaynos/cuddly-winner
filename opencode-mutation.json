@@ -1,0 +1,5 @@
+{
+  "enabled": false,
+  "score_threshold": 1,
+  "result_path": ".opencode/mutation-result.json"
+}

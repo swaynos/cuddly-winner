@@ -18,12 +18,13 @@ If `run` is unavailable, report that infrastructure blocker once and stop. Do
 not retry verification or substitute another command tool; custom tools require
 an OpenCode restart after deployment.
 
-Execute every checklist item in order. Run every declared verification command
-exactly through `run` with execution context. Maintain `progress.txt`. If the
-SPEC fingerprint changes, pause and require a new run. Use Karpathy only when a
+Execute every checklist item in order. Checklist boxes are planning aids and
+must not be rewritten during execution. Run every declared verification command
+exactly through `run` with execution context. The supervisor owns durable run
+progress and state. If the SPEC fingerprint changes, pause and require a new run. Use Karpathy only when a
 complete `program.md`, `opencode-karpathy.json`, and frozen evaluator exist.
-Record strategy selection in `progress.txt` as exactly `Selected: direct` or
-`Selected: karpathy` before implementation.
+Report strategy selection to the supervisor as `Selected: direct` or
+`Selected: karpathy` before implementation; do not create project progress files.
 
 Reviewer feedback is advisory and may trigger at most one bounded correction;
 it is not completion evidence. Tokens and transcript text are not evidence.

@@ -39,21 +39,16 @@ Do NOT commit to Git unless the user explicitly asks you to.
 Finishing a task, fixing a bug, or completing a workflow step does not mean committing it.
 Never auto-commit as part of any workflow.
 
-## Workaround dumps
+## Agent compatibility
 
-When a tool is unavailable or a task is out of your role:
-- Say so in **one sentence** and stop.
-- Do NOT produce manual command lists, "run this yourself" blocks, or handoff prompts.
-- Do NOT reclassify the blocked work as something you can partially do.
-- The supervisor records a terminal infrastructure blocker for `@autonomous` when the trusted runner is unavailable; it must not inject impossible verification retries.
+OpenCode's built-in Plan and Build modes are the default workflow and must work
+without custom routing, a `SPEC.md`, the trusted runner, or the supervisor. Do
+not redirect ordinary planning to Prometheus or ordinary implementation to
+Autonomous.
 
-## Agent routing
-
-When a task is out of your lane, name the right agent in one sentence:
-- Implementation / code changes → `@autonomous` (needs `SPEC.md` first from `@prometheus`)
-- Planning / spec writing → `@prometheus`
-- Evidence gathering / research → `@grounder`
-- Code review → `@reviewer`
+Prometheus, Autonomous, Karpathy, Reviewer, Grounder, and Ask are optional
+specialist agents. Apply their role-specific contracts only when the user
+explicitly invokes one of them.
 
 ## Project requirements documentation
 
@@ -69,6 +64,9 @@ Before claiming completion, verify that `docs/` still describes the resulting
 system. If behavior changed and the durable docs were not updated, the task is
 incomplete.
 
-## Autonomous Strategy
+## Optional Autonomous Strategy
+
+The following default applies only after the user explicitly invokes
+`@autonomous`; it does not govern built-in Plan or Build.
 strategy: karpathy
 rationale: Default — prefer forcing nondeterminism into a deterministic check wherever a scalar metric and frozen evaluator exist or can be constructed; reach for exotic strategies only when instrumentation is genuinely impossible.

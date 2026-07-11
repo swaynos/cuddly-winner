@@ -241,17 +241,10 @@ def dry_run_autonomous(workspace: Path) -> tuple[int, str, str]:
     (workspace / "rules_engine.py").write_text(
         ref_engine.read_text(encoding="utf-8"), encoding="utf-8"
     )
-    # Write minimal progress and produce evidence through the trusted runner.
-    (workspace / "progress.txt").write_text(
-        "## Strategy\nSelected: direct\nReason: Dry-run stub.\n\n"
-        "## Verification\n- trusted runner dry-run completed\n",
-        encoding="utf-8",
-    )
-    spec_fingerprint = "0" * 64
-    script = (
-        f'import {{run}} from {str(ROOT / "tools/run.ts")!r};'
-        f'const r=await run({{command:"true",cwd:{str(workspace)!r},supervisor_run_id:"dry-run",spec_fingerprint:{spec_fingerprint!r}}});if(r.exit_code!==0)process.exit(1)'
-    )
-    subprocess.run(["node", "--input-type=module", "-e", script], check=True, capture_output=True, text=True)
-    stub_stdout = "Stub @autonomous response for dry-run; trusted runner evidence is on disk.\n"
+    # Write clearly synthetic dry-run evidence. Dry runs exercise evaluator
+    # plumbing only and never qualify as release evidence.
+    runs = workspace / ".opencode" / "runs"
+    runs.mkdir(parents=True, exist_ok=True)
+    (runs / "dry-run.json").write_text('{"context":"dry-run","synthetic":true}\n', encoding="utf-8")
+    stub_stdout = "Stub @autonomous response for dry-run; synthetic evaluator evidence is on disk.\n"
     return 0, stub_stdout, ""

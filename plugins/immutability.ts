@@ -1,17 +1,24 @@
-import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 const SHELL_TOOLS = new Set(["bash", "run"]);
-const RESERVED_RUNTIME_PREFIXES = [".opencode/runs/", ".opencode/supervisor/"];
-
-interface ImmutableConfig {
-  readonly?: string[];
-  write_allowlist?: Record<string, string[]>;
-}
+const MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder"]);
+const READ_ONLY_AGENTS = new Set(["ask", "karpathy", "reviewer", "grounder"]);
+const PROMETHEUS_WRITABLE = ["SPEC.md", ".spike/**"];
+const TRUSTED_PATHS = [
+  ".opencode/runs",
+  ".opencode/supervisor",
+  ".opencode/progress",
+  ".opencode/quarantine",
+  "tools/run.ts",
+  "plugins/immutability.ts",
+  "plugins/opencode-autonomous-supervisor.js",
+  "plugins/opencode-autonomous-supervisor/index.js",
+  "plugins/opencode-autonomous-supervisor/package.json",
+];
 
 function matchesPattern(relPath: string, pattern: string): boolean {
-  const norm = relPath.replace(/\\/g, "/");
   const escaped = pattern
     .replace(/\\/g, "/")
     .replace(/[.+^${}()|[\]]/g, "\\$&")
@@ -19,7 +26,7 @@ function matchesPattern(relPath: string, pattern: string): boolean {
     .replace(/\*/g, "[^/]*")
     .replace(/\?/g, "[^/]")
     .replace(/\{\{DOUBLE_STAR\}\}/g, ".*");
-  return new RegExp(`^${escaped}$`).test(norm);
+  return new RegExp(`^${escaped}$`).test(relPath.replace(/\\/g, "/"));
 }
 
 function extractPatchedPaths(patchText: string): string[] {
@@ -31,32 +38,32 @@ function extractPatchedPaths(patchText: string): string[] {
   return [...paths];
 }
 
-function findConfigRoot(start: string): string | null {
-  let current = resolve(start);
-  while (true) {
-    if (existsSync(join(current, "opencode-immutable.json"))) return current;
-    const parent = dirname(current);
-    if (parent === current) return null;
-    current = parent;
+function canonicalTarget(target: string): string {
+  let existing = target;
+  const suffix: string[] = [];
+  while (!existsSync(existing)) {
+    suffix.unshift(basename(existing));
+    const parent = dirname(existing);
+    if (parent === existing) break;
+    existing = parent;
   }
+  let canonical = realpathSync(existing);
+  for (const part of suffix) canonical = join(canonical, part);
+  if (existsSync(target) && lstatSync(target).isSymbolicLink()) return realpathSync(target);
+  return canonical;
 }
 
-function loadConfig(root: string): ImmutableConfig {
-  try {
-    const value = JSON.parse(readFileSync(join(root, "opencode-immutable.json"), "utf8"));
-    if (!value || typeof value !== "object") throw new Error("policy must be an object");
-    if (value.prometheus_only !== undefined) throw new Error("prometheus_only is obsolete; use write_allowlist ownership");
-    if (value.readonly?.some((entry: unknown) => typeof entry !== "string" || entry.includes("*"))) {
-      throw new Error("readonly accepts explicit file paths only");
-    }
-    return value;
-  } catch (error) {
-    throw new Error(`ImmutabilityGuard: invalid opencode-immutable.json in ${root}`, { cause: error });
-  }
+function isInside(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+function isTrustedPath(relPath: string): boolean {
+  return TRUSTED_PATHS.some((trusted) => relPath === trusted || relPath.startsWith(`${trusted}/`));
 }
 
 export const ImmutabilityGuard = async ({ directory, worktree, client }: { directory: string; worktree: string; client: any }) => {
-  const defaultRoot = worktree || directory;
+  const root = realpathSync(resolve(worktree || directory));
   const sessionAgents = new Map<string, string>();
 
   async function resolveAgent(sessionID: string, visited = new Set<string>()): Promise<string | undefined> {
@@ -98,61 +105,38 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       output: { args?: Record<string, unknown> },
     ) => {
       if (!MUTATING_TOOLS.has(input.tool) && !SHELL_TOOLS.has(input.tool)) return;
-      const args = output.args ?? {};
       const agent = await resolveAgent(input.sessionID);
+      if (!agent || !MANAGED_AGENTS.has(agent)) return;
 
+      const args = output.args ?? {};
       if (SHELL_TOOLS.has(input.tool)) {
-        const root = findConfigRoot(String(args.cwd ?? defaultRoot));
-        const config = root ? loadConfig(root) : null;
-        if (agent && config?.write_allowlist?.[agent]) {
-          if (input.tool === "bash") throw new Error(`ImmutabilityGuard: @${agent} may not execute shell commands directly.`);
+        if (READ_ONLY_AGENTS.has(agent)) throw new Error(`ImmutabilityGuard: @${agent} is read-only.`);
+        if (agent === "prometheus") {
+          if (input.tool === "bash") throw new Error("ImmutabilityGuard: @prometheus may not execute shell commands directly.");
           if (args.context !== "spike" || typeof args.spike_id !== "string") {
-            throw new Error(`ImmutabilityGuard: @${agent} may invoke run only with contracted spike context.`);
+            throw new Error("ImmutabilityGuard: @prometheus may invoke run only with contracted spike context.");
           }
-        }
-        if (!agent && config && Object.keys(config.write_allowlist ?? {}).length) {
-          throw new Error("ImmutabilityGuard: shell execution denied because agent identity could not be resolved.");
         }
         return;
       }
 
+      if (READ_ONLY_AGENTS.has(agent)) throw new Error(`ImmutabilityGuard: @${agent} is read-only.`);
       const rawPath = (args.filePath ?? args.file_path ?? args.path) as string | undefined;
-      const cwd = (args.cwd as string | undefined) ?? defaultRoot;
+      const cwd = (args.cwd as string | undefined) ?? root;
       const paths = rawPath
         ? [isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath)]
         : input.tool === "apply_patch" && typeof args.patchText === "string"
           ? extractPatchedPaths(args.patchText).map((item) => isAbsolute(item) ? item : resolve(cwd, item))
           : [];
+      if (!paths.length) throw new Error(`ImmutabilityGuard: ${input.tool} did not expose mutation targets.`);
 
-      for (const absolutePath of paths) {
-        const root = findConfigRoot(dirname(absolutePath));
-        if (!root) continue;
-        const config = loadConfig(root);
+      for (const unresolvedPath of paths) {
+        const absolutePath = canonicalTarget(unresolvedPath);
+        if (!isInside(root, absolutePath)) throw new Error(`ImmutabilityGuard: target escapes active worktree: ${unresolvedPath}`);
         const relPath = relative(root, absolutePath).replace(/\\/g, "/");
-        const readonly = config.readonly ?? [];
-        const allowlists = config.write_allowlist ?? {};
-        const allOwnedPatterns = Object.values(allowlists).flat();
-
-        for (const pattern of [...readonly, ...allOwnedPatterns]) {
-          if (!pattern.includes("*") && !pattern.includes("/") && basename(relPath).toLowerCase() === pattern.toLowerCase() && relPath !== pattern) {
-            throw new Error(`ImmutabilityGuard: "${basename(relPath)}" is a case variant of the protected file "${pattern}".`);
-          }
-        }
-
-        if (RESERVED_RUNTIME_PREFIXES.some((prefix) => relPath.startsWith(prefix)) || readonly.includes(relPath)) {
-          throw new Error(`ImmutabilityGuard: "${relPath}" is readonly.`);
-        }
-
-        const owners = Object.entries(allowlists)
-          .filter(([, patterns]) => patterns.some((pattern) => matchesPattern(relPath, pattern)))
-          .map(([owner]) => owner);
-        if (owners.length > 1) throw new Error(`ImmutabilityGuard: "${relPath}" has ambiguous write_allowlist ownership.`);
-        if (owners.length === 1 && agent !== owners[0]) {
-          const identity = agent ? `@${agent}` : "an agent whose identity could not be resolved";
-          throw new Error(`ImmutabilityGuard: "${relPath}" is owned by @${owners[0]} and cannot be written by ${identity}.`);
-        }
-        if (agent && allowlists[agent] && !allowlists[agent].some((pattern) => matchesPattern(relPath, pattern))) {
-          throw new Error(`ImmutabilityGuard: @${agent} is restricted to writing [${allowlists[agent].join(", ")}].`);
+        if (isTrustedPath(relPath)) throw new Error(`ImmutabilityGuard: "${relPath}" is trusted control-plane state.`);
+        if (agent === "prometheus" && !PROMETHEUS_WRITABLE.some((pattern) => matchesPattern(relPath, pattern))) {
+          throw new Error(`ImmutabilityGuard: @prometheus is restricted to writing [${PROMETHEUS_WRITABLE.join(", ")}].`);
         }
       }
     },

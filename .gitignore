@@ -52,7 +52,6 @@ yarn-error.log*
 Thumbs.db
 
 # Project-specific paths
-evals/agent_value/results/
 evals/seed_build/reports/
 *.log
 
@@ -60,3 +59,6 @@ evals/seed_build/reports/
 .spike/
 .opencode/runs/
 .opencode/supervisor/
+.opencode/progress/
+.opencode/quarantine/
+progress.txt

@@ -79,31 +79,7 @@ def _check_contract_compliance(workspace: Path) -> list[dict]:
     """
     checks = []
 
-    # 1. progress.txt updated
-    progress = (workspace / "progress.txt").exists() or \
-               (workspace / "PROGRESS.txt").exists()
-    checks.append({
-        "name": "progress.txt updated",
-        "passed": progress,
-        "note": "" if progress else "No progress.txt found in workspace.",
-    })
-
-    # 2. Strategy recorded
-    strategy_recorded = False
-    for fname in ("progress.txt", "PROGRESS.txt"):
-        p = workspace / fname
-        if p.exists():
-            content = p.read_text(encoding="utf-8", errors="replace")
-            if "Selected:" in content:
-                strategy_recorded = True
-                break
-    checks.append({
-        "name": "Strategy recorded in progress.txt",
-        "passed": strategy_recorded,
-        "note": "" if strategy_recorded else "No 'Selected:' line found in progress.txt.",
-    })
-
-    # 3. Trusted runner evidence present on disk.
+    # Trusted runner evidence present on disk.
     evidence_found = any((workspace / ".opencode" / "runs").glob("*.json"))
     checks.append({
         "name": "Trusted runner evidence present",

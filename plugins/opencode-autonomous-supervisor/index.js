@@ -1,6 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const execFileAsync = promisify(execFile);
 
 export const FAILURE_CAP = 3;
 export const GLOBAL_CAP = 12;
@@ -32,17 +35,26 @@ export function validateRunArtifact(value) {
 }
 
 export async function newestRelevantMtime(root) {
-  const include = ["agents","plugins","tests","evals","scripts","skills","tools"];
   let newest = 0;
-  async function walk(dir) {
-    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-      if (entry.name === "reports" || entry.name === "__pycache__" || entry.name.startsWith(".")) continue;
-      const file = path.join(dir, entry.name);
-      if (entry.isDirectory()) await walk(file);
-      else newest = Math.max(newest, (await fs.stat(file)).mtimeMs);
+  const excluded = /^(?:SPEC\.md|README(?:\.[^/]*)?|docs\/|\.spike\/|\.opencode\/|progress\.txt$)|(?:^|\/)(?:__pycache__|reports|node_modules)\//;
+  let files = [];
+  try {
+    const { stdout } = await execFileAsync("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, encoding: "buffer" });
+    files = stdout.toString().split("\0").filter(Boolean);
+  } catch {
+    async function walk(dir, prefix = "") {
+      for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (excluded.test(rel)) continue;
+        if (entry.isDirectory()) await walk(path.join(dir, entry.name), rel); else files.push(rel);
+      }
     }
+    await walk(root);
   }
-  for(const rel of include){const target=path.join(root,rel);try{const stat=await fs.stat(target);if(stat.isDirectory())await walk(target);else newest=Math.max(newest,stat.mtimeMs)}catch{}}
+  for (const rel of files) {
+    if (excluded.test(rel)) continue;
+    try { newest = Math.max(newest, (await fs.stat(path.join(root, rel))).mtimeMs); } catch {}
+  }
   return newest;
 }
 
@@ -59,7 +71,7 @@ export async function evaluate(root, specText, expected = {}) {
     catch { return { complete: false, missing: commands, invalid_artifact: name }; }
     if (name !== `${artifact.run_id}.json`) return { complete:false, missing:commands, invalid_artifact:`filename mismatch ${name}` };
     if (seen.has(artifact.run_id)) return { complete: false, missing: commands, invalid_artifact: `duplicate run_id ${artifact.run_id}` }; seen.add(artifact.run_id);
-    if (artifact.exit_code === 0 && Date.parse(artifact.finished_at) >= newest && artifact.supervisor_run_id === expected.runID && artifact.spec_fingerprint === expected.specFingerprint) passing.set(normalizeCommand(artifact.command), artifact);
+    if (artifact.exit_code === 0 && Date.parse(artifact.started_at) >= newest && artifact.supervisor_run_id === expected.runID && artifact.spec_fingerprint === expected.specFingerprint) passing.set(normalizeCommand(artifact.command), artifact);
   }
   const missing = commands.filter((command) => !passing.has(command));
   return { complete: missing.length === 0, missing, satisfied: commands.filter((c) => passing.has(c)) };
@@ -98,14 +110,19 @@ export async function atomicStateUpdate(file, update) {
   }
   const next = await update(structuredClone(state));
   const temp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
-  await fs.writeFile(temp, `${JSON.stringify(next, null, 2)}\n`); await fs.rename(temp, file); return next;
+  const handle = await fs.open(temp, "w");
+  try { await handle.writeFile(`${JSON.stringify(next, null, 2)}\n`); await handle.sync(); } finally { await handle.close(); }
+  await fs.rename(temp, file);
+  const directory = await fs.open(path.dirname(file), "r"); try { await directory.sync(); } finally { await directory.close(); }
+  return next;
 }
 
 const locks = new Map();
 export function serializedStateUpdate(file, update) {
   const prior = locks.get(file) ?? Promise.resolve();
   const next = prior.then(() => atomicStateUpdate(file, update));
-  locks.set(file, next.catch(() => undefined)); return next;
+  const tracked = next.finally(() => { if (locks.get(file) === tracked) locks.delete(file); });
+  locks.set(file, tracked.catch(() => undefined)); return next;
 }
 
 async function sessionInfo(client, sessionID) {
@@ -163,19 +180,6 @@ export default async function Supervisor({ directory, worktree, client }) {
       if(shouldPrompt && state.status!=="blocked" && client?.session?.promptAsync) await client.session.promptAsync({path:{id:runID},body:{parts:[{type:"text",text:"Supervisor: correct the runtime failure and re-run exact verification."}]}}).catch(()=>undefined);
       return;
     }
-    const reviewerText = event?.properties?.part?.text ?? event?.properties?.text ?? "";
-    if ((event?.type === "message.part.updated" || event?.type === "message.updated") && /(?:trusted\s+)?`?run`?\s+tool\s+is\s+unavailable/i.test(reviewerText) && event?.properties?.sessionID) {
-      const runID=await existingRun(event.properties.sessionID); if(!runID) return;
-      await serializedStateUpdate(stateFile(runID),(state)=>state.status==="blocked"?state:{...state,status:"blocked",blocker_reason:"Trusted run capability unavailable; deploy the custom tool and restart OpenCode"});
-      return;
-    }
-    if ((event?.type === "message.part.updated" || event?.type === "message.updated") && /REQUEST_CHANGES/.test(reviewerText) && event?.properties?.sessionID) {
-      const runID=await existingRun(event.properties.sessionID); if(!runID) return;
-      let shouldPrompt=false;
-      const state=await serializedStateUpdate(stateFile(runID),(state)=>{if(state.status==="blocked"||state.history?.some(h=>h.dedupeKey==="reviewer-request"))return state;shouldPrompt=true;return applyCorrection(state,"reviewer","reviewer-request")});
-      if(shouldPrompt && state.status!=="blocked" && client?.session?.promptAsync) await client.session.promptAsync({path:{id:runID},body:{parts:[{type:"text",text:"Advisory Reviewer requested changes. Address the grounded findings once, then re-run deterministic verification."}]}}).catch(()=>undefined);
-      return;
-    }
     if (event?.type !== "session.idle" || !event?.properties?.sessionID) return;
     const runID=await existingRun(event.properties.sessionID); if(!runID) return;
     const spec = await fs.readFile(path.join(root, "SPEC.md"), "utf8");
@@ -189,9 +193,9 @@ export default async function Supervisor({ directory, worktree, client }) {
       if (state.spec_fingerprint !== specFingerprint) return { ...state, status:"blocked", blocker_reason:"SPEC changed; start a new run" };
       let mutation_ok = true;
       try {
-        const config=JSON.parse(await fs.readFile(path.join(root,".opencode/mutation.json"),"utf8"));
+        const config=JSON.parse(await fs.readFile(path.join(root,"opencode-mutation.json"),"utf8"));
         if(config.enabled){const result=JSON.parse(await fs.readFile(path.join(root,config.result_path),"utf8")); mutation_ok=await validateMutation(config,result,root,await newestRelevantMtime(root));}
-      } catch (error) { if ((await fs.access(path.join(root,".opencode/mutation.json")).then(()=>true).catch(()=>false))) mutation_ok=false; }
+      } catch (error) { if ((await fs.access(path.join(root,"opencode-mutation.json")).then(()=>true).catch(()=>false))) mutation_ok=false; }
       if(verdict.complete && mutation_ok) return { ...state, ...verdict, mutation_ok, status:"complete" };
       const key=JSON.stringify({missing:verdict.missing,invalid:verdict.invalid_artifact,mutation_ok});
       if(!state.history?.some(h=>h.dedupeKey===key)) shouldPrompt=true;

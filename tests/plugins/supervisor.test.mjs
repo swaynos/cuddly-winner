@@ -50,19 +50,25 @@ test("evaluation requires exact fresh execution evidence", async () => {
   artifact.context="spike"; await fs.writeFile(path.join(root,".opencode/runs/a.json"),JSON.stringify(artifact)); assert.equal((await evaluate(root,spec,{runID:"run-a",specFingerprint})).complete,false);
   assert.equal(fingerprint("x"),fingerprint("x"));
 });
+test("verification started before a source change is stale even if it finishes after", async () => {
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),"supervisor-started-")); await fs.mkdir(path.join(root,"src")); await fs.mkdir(path.join(root,".opencode/runs"),{recursive:true});
+  const spec=section(["verify"]), specFingerprint=fingerprint(spec), started=new Date().toISOString();
+  await new Promise(resolve=>setTimeout(resolve,20)); await fs.writeFile(path.join(root,"src/changed.js"),"changed");
+  const finished=new Date(Date.now()+1000).toISOString();
+  await fs.writeFile(path.join(root,".opencode/runs/a.json"),JSON.stringify({run_id:"a",supervisor_run_id:"run-a",spec_fingerprint:specFingerprint,started_at:started,finished_at:finished,duration_ms:1001,command:"verify",exit_code:0,stdout_tail:"",stderr_tail:"",timed_out:false,context:"execution"}));
+  assert.equal((await evaluate(root,spec,{runID:"run-a",specFingerprint})).complete,false);
+});
 
 function mockClient(meta,agents,prompts=[]){return {session:{get:async({path:p})=>({data:meta[p.id]??{}}),messages:async({path:p})=>({data:agents[p.id]?[{info:{role:"user",agent:agents[p.id]}}]:[]}),promptAsync:async(x)=>prompts.push(x)}};}
-test("event hook is run-scoped, parent-aware, terminal, and reviewer-advisory",async()=>{
+test("event hook is run-scoped, parent-aware, and terminal",async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"supervisor-hooks-")); await fs.writeFile(path.join(root,"SPEC.md"),section(["x"]));
   const prompts=[], client=mockClient({child:{parentID:"run-a"}},{"run-a":"autonomous",other:"ask",child:"reviewer"},prompts);
   const hooks=await Supervisor({directory:root,worktree:root,client});
   await hooks.event({type:"session.idle",properties:{sessionID:"other"}}); await assert.rejects(fs.access(path.join(root,".opencode/supervisor/other.json")));
   await hooks["chat.params"]({sessionID:"run-a",agent:"autonomous"});
   const file=path.join(root,".opencode/supervisor/run-a.json"), initial=JSON.parse(await fs.readFile(file,"utf8")); assert.equal(initial.status,"running");
-  await hooks.event({type:"message.updated",properties:{sessionID:"child",text:"REQUEST_CHANGES"}}); await hooks.event({type:"message.updated",properties:{sessionID:"child",text:"REQUEST_CHANGES"}});
-  assert.equal(JSON.parse(await fs.readFile(file,"utf8")).corrective_counts.reviewer,1);
   await hooks.event({type:"session.error",properties:{sessionID:"child",error:{name:"same"}}}); await hooks.event({type:"session.error",properties:{sessionID:"child",error:{name:"same"}}});
-  const corrected=JSON.parse(await fs.readFile(file,"utf8")); assert.equal(corrected.global_count,2); assert.equal(corrected.corrective_counts.runtime,1); assert.equal(prompts[0].path.id,"run-a");
+  const corrected=JSON.parse(await fs.readFile(file,"utf8")); assert.equal(corrected.global_count,1); assert.equal(corrected.corrective_counts.runtime,1); assert.equal(prompts[0].path.id,"run-a");
   await fs.writeFile(path.join(root,"SPEC.md"),section(["changed"])); await hooks.event({type:"session.idle",properties:{sessionID:"child"}});
   const blocked=JSON.parse(await fs.readFile(file,"utf8")); assert.equal(blocked.status,"blocked"); assert.equal(blocked.spec_fingerprint,initial.spec_fingerprint);
   await fs.writeFile(path.join(root,"SPEC.md"),section(["x"])); await hooks.event({type:"session.idle",properties:{sessionID:"run-a"}}); assert.equal(JSON.parse(await fs.readFile(file,"utf8")).status,"blocked");
@@ -72,19 +78,11 @@ test("idle verification correction is bounded and deduplicated",async()=>{
   const hooks=await Supervisor({directory:root,worktree:root,client}); await hooks["chat.params"]({sessionID:"a",agent:"autonomous"}); await hooks.event({type:"session.idle",properties:{sessionID:"a"}}); await hooks.event({type:"session.idle",properties:{sessionID:"a"}});
   const state=JSON.parse(await fs.readFile(path.join(root,".opencode/supervisor/a.json"),"utf8")); assert.equal(state.corrective_counts.verification,1); assert.equal(state.global_count,1); assert.equal(prompts.length,1);
 });
-test("missing trusted runner blocks once without a verification retry",async()=>{
-  const root=await fs.mkdtemp(path.join(os.tmpdir(),"supervisor-capability-"));
-  await fs.writeFile(path.join(root,"SPEC.md"),section(["x"]));
-  const prompts=[],client=mockClient({}, {a:"autonomous"},prompts);
-  const hooks=await Supervisor({directory:root,worktree:root,client});
-  await hooks["chat.params"]({sessionID:"a",agent:"autonomous"});
-  await hooks.event({type:"message.updated",properties:{sessionID:"a",text:"The trusted `run` tool is unavailable in this session. <promise>BLOCKED</promise>"}});
-  const file=path.join(root,".opencode/supervisor/a.json");
-  const state=JSON.parse(await fs.readFile(file,"utf8"));
-  assert.equal(state.status,"blocked");
-  assert.match(state.blocker_reason,/trusted run capability unavailable/i);
-  await hooks.event({type:"session.idle",properties:{sessionID:"a"}});
-  assert.equal(prompts.length,0);
+test("native plan and build never initialize supervisor state",async()=>{
+  const root=await fs.mkdtemp(path.join(os.tmpdir(),"supervisor-native-")); await fs.writeFile(path.join(root,"SPEC.md"),section(["x"]));
+  const hooks=await Supervisor({directory:root,worktree:root,client:mockClient({}, {plan:"plan",build:"build"})});
+  await hooks["chat.params"]({sessionID:"plan",agent:"plan"}); await hooks["chat.params"]({sessionID:"build",agent:"build"});
+  await assert.rejects(fs.access(path.join(root,".opencode/supervisor/plan.json"))); await assert.rejects(fs.access(path.join(root,".opencode/supervisor/build.json")));
 });
 test("failed reevaluation clears a previously complete status",async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"supervisor-recheck-"));

@@ -1,60 +1,97 @@
 #!/usr/bin/env python3
-"""Static and clean-sandbox validation for the final control plane."""
+"""Validate native compatibility and optional OpenCode extension profiles."""
 from __future__ import annotations
-import argparse, json, os, pathlib, subprocess, tempfile
+
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+MANAGED_AGENTS = {"ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder"}
+
 
 def require(condition: bool, message: str) -> None:
-    if not condition: raise AssertionError(message)
+    if not condition:
+        raise AssertionError(message)
+
+
+def deploy(config: pathlib.Path, *args: str) -> None:
+    env = os.environ | {"OPENCODE_DEPLOY_CONFIG_DIR": str(config)}
+    subprocess.run(
+        ["bash", str(ROOT / "scripts/deploy-opencode-agents.sh"), "install", "--mode", "copy", *args],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
 
 def main() -> int:
-    parser = argparse.ArgumentParser(); parser.add_argument("--skip-llm", action="store_true"); parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--skip-llm", action="store_true")
+    parser.parse_args()
+
     agents = {p.stem: p.read_text() for p in (ROOT / "agents").glob("*.md")}
-    require(set(agents) == {"ask","prometheus","autonomous","karpathy","reviewer","grounder"}, "six-agent roster mismatch")
-    require("run: allow" in agents["prometheus"] and "bash: deny" in agents["prometheus"], "Prometheus runner confinement missing")
-    require("run: allow" in agents["karpathy"] and "bash: deny" in agents["karpathy"], "Karpathy must use the trusted runner")
-    require("python *" not in agents["karpathy"] and "python3 *" not in agents["karpathy"], "Karpathy has a direct interpreter bypass")
-    for read_only_agent in ("ask", "reviewer", "grounder"):
-        require("bash: deny" in agents[read_only_agent], f"{read_only_agent} has a shell-based control-plane bypass")
-    require("write: allow" in agents["prometheus"] and "payload" not in agents["prometheus"].lower(), "Prometheus direct SPEC handoff missing")
-    require("advisory" in agents["reviewer"].lower(), "Reviewer must be advisory")
-    require("update `.opencode/memory/`" not in agents["grounder"], "Grounder claims writes")
-    require((ROOT/"plugins/opencode-autonomous-supervisor/index.js").is_file(), "supervisor missing")
-    require(not (ROOT/"plugins/opencode-autonomous-gate.js").exists() and not (ROOT/"plugins/opencode-autonomous-loop.js").exists(), "split control plane remains")
-    immutable = json.loads((ROOT/"opencode-immutable.json").read_text())
-    require(immutable["write_allowlist"]["prometheus"] == ["SPEC.md", ".spike/**"], "Prometheus policy missing")
-    require("prometheus_only" not in immutable, "obsolete prometheus_only policy remains")
-    require(all("*" not in item for item in immutable["readonly"]), "readonly must enumerate files, not directory globs")
-    required_readonly = {
-        "opencode-immutable.json", "tools/run.ts", "plugins/immutability.ts",
-        "plugins/opencode-autonomous-supervisor.js",
-        "plugins/opencode-autonomous-supervisor/index.js",
-        "plugins/opencode-autonomous-supervisor/package.json",
-    }
-    require(required_readonly <= set(immutable["readonly"]), "trusted control-plane source or artifacts are forgeable")
-    require((ROOT/"tools/run.ts").is_file(), "runner missing")
-    require((ROOT/"evals/seed_build/CANONICAL_SPEC.md").is_file(), "canonical build SPEC missing")
-    require((ROOT/"evals/seed_build/planning_checks.py").is_file(), "canonical planning scorer missing")
-    require((ROOT/"skills").is_dir() and not (ROOT/".opencode/skills").exists(), "root skills migration incomplete")
-    with tempfile.TemporaryDirectory(prefix="opencode-deploy-") as tmp:
-        config = pathlib.Path(tmp)/"config"; project = pathlib.Path(tmp)/"project"; project.mkdir()
-        env = os.environ | {"OPENCODE_DEPLOY_CONFIG_DIR": str(config)}
-        subprocess.run(["bash",str(ROOT/"scripts/deploy-opencode-agents.sh"),"install","--mode","copy"],cwd=ROOT,env=env,check=True,capture_output=True,text=True)
-        require((ROOT/"node_modules/@opencode-ai/plugin").is_dir(), "OpenCode tool SDK dependency missing")
-        os.symlink(ROOT/"node_modules", config/"node_modules", target_is_directory=True)
-        runner = config/"tools/run.ts"
-        require(runner.is_file(), "global runner not deployed")
-        require((config/"plugins/opencode-autonomous-supervisor.js").exists() and (config/"plugins/immutability.ts").exists(), "control-plane plugins not deployed")
-        provenance = "0" * 64
-        code = f'import tool,{{run}} from {str(runner)!r}; if(typeof tool?.description!=="string"||typeof tool?.args?.command?.safeParse!=="function"||typeof tool?.execute!=="function")process.exit(2); const r=await run({{command:"true",cwd:{str(project)!r},supervisor_run_id:"verify",spec_fingerprint:{provenance!r}}}); if(r.context!=="execution")process.exit(3)'
-        subprocess.run(["node","--input-type=module","-e",code],check=True,capture_output=True,text=True)
-        require(any((project/".opencode/runs").glob("*.json")), "runner evidence was not project-local")
-        failure = f'import {{run,__testing}} from {str(runner)!r}; try{{await run({{command:"true",cwd:{str(project/"missing")!r}}});process.exit(2)}}catch{{if(__testing.running!==0)process.exit(3)}}'
-        subprocess.run(["node","--input-type=module","-e",failure],check=True,capture_output=True,text=True)
-        load = f'import Supervisor from {str(config/"plugins/opencode-autonomous-supervisor/index.js")!r}; import {{ImmutabilityGuard}} from {str(config/"plugins/immutability.ts")!r}; if(typeof Supervisor!=="function"||typeof ImmutabilityGuard!=="function")process.exit(2)'
-        subprocess.run(["node","--input-type=module","-e",load],check=True,capture_output=True,text=True)
-    print("All final control-plane checks passed.")
+    require(set(agents) == MANAGED_AGENTS, "optional managed-agent roster mismatch")
+    require("bash: deny" in agents["prometheus"] and "run: allow" in agents["prometheus"], "Prometheus defaults missing")
+    for name in ("ask", "karpathy", "reviewer", "grounder"):
+        require("bash: deny" in agents[name], f"{name} must remain read-only")
+    require("Make the change yourself" not in agents["karpathy"], "Karpathy still claims edit ownership")
+
+    rules = (ROOT / "AGENTS.md").read_text()
+    require("built-in Plan and Build modes are the default workflow" in rules, "project rules do not preserve native Plan/Build")
+    require("Implementation / code changes → `@autonomous`" not in rules, "project rules still reroute Build")
+    require("Planning / spec writing → `@prometheus`" not in rules, "project rules still reroute Plan")
+
+    plugin = (ROOT / "plugins/immutability.ts").read_text()
+    require('MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder"])' in plugin, "managed identity boundary missing")
+    require("if (!agent || !MANAGED_AGENTS.has(agent)) return" in plugin, "native/unmanaged bypass missing")
+    require("opencode-immutable.json" not in plugin, "placeholder policy is still a runtime input")
+
+    placeholder = json.loads((ROOT / "opencode-immutable.json").read_text())
+    require("placeholder" in placeholder.get("_status", "").lower(), "root placeholder is not clearly labelled")
+    example = json.loads((ROOT / "examples/immutable.json.example").read_text())
+    require("not load or enforce" in example.get("_status", ""), "placeholder example makes a false enforcement claim")
+
+    readme = (ROOT / "README.md").read_text()
+    requirements = (ROOT / "docs/REQUIREMENTS.md").read_text()
+    architecture = (ROOT / "docs/ARCHITECTURE.md").read_text()
+    for name, text in (("README", readme), ("requirements", requirements), ("architecture", architecture)):
+        require("Plan" in text and "Build" in text, f"{name} omits native Plan/Build compatibility")
+    require("does **not** replace, wrap, redirect, restrict" in readme, "README product goal is ambiguous")
+    require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
+
+    require(not (ROOT / "progress.txt").exists(), "stale root progress.txt remains")
+    require(not any(p.is_file() for p in (ROOT / "evals/agent_value").rglob("*")), "retired agent_value evaluation returned")
+    require(not any(p.is_file() for p in (ROOT / "evals/plan_outcome").rglob("*")), "retired plan_outcome evaluation returned")
+    require(not (ROOT / "examples/ml-loop/.opencode/immutable.json").exists(), "legacy hidden immutable example remains")
+
+    with tempfile.TemporaryDirectory(prefix="opencode-default-") as tmp:
+        config = pathlib.Path(tmp) / "config"
+        deploy(config)
+        require(not (config / "AGENTS.md").exists(), "repository rules were installed globally")
+        require({p.stem for p in (config / "agents").glob("*.md")} == MANAGED_AGENTS, "specialist agents not deployed")
+        require((config / "plugins/immutability.ts").is_file(), "managed-agent immutability plugin missing")
+        require(not (config / "plugins/opencode-autonomous-supervisor.js").exists(), "supervisor installed in default profile")
+        require(not (config / "tools/run.ts").exists(), "runner installed in default profile")
+        require(not (config / "skills").exists(), "optional skills installed by default")
+
+    with tempfile.TemporaryDirectory(prefix="opencode-autonomous-") as tmp:
+        config = pathlib.Path(tmp) / "config"
+        deploy(config, "--with-autonomous")
+        require((config / "plugins/opencode-autonomous-supervisor.js").is_file(), "Autonomous supervisor not deployed")
+        require((config / "tools/run.ts").is_file(), "Autonomous runner not deployed")
+        require((config / "node_modules/@opencode-ai/plugin").is_dir(), "runner SDK dependency is not self-contained")
+        code = f'import tool from {str(config / "tools/run.ts")!r}; if(typeof tool?.execute!=="function")process.exit(2)'
+        subprocess.run(["node", "--input-type=module", "-e", code], check=True, capture_output=True, text=True)
+
+    print("Native Plan/Build compatibility and optional profiles validated.")
     return 0
 
-if __name__ == "__main__": raise SystemExit(main())
+
+if __name__ == "__main__":
+    raise SystemExit(main())

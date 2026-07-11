@@ -15,6 +15,8 @@ export interface RunInput {
   spike_id?: string;
   supervisor_run_id?: string;
   spec_fingerprint?: string;
+  active_worktree?: string;
+  network?: "none" | "verification";
 }
 
 export interface RunResult {
@@ -31,10 +33,18 @@ export interface RunResult {
   spike_id?: string;
   supervisor_run_id?: string;
   spec_fingerprint?: string;
+  worktree: string;
+  output_truncated: boolean;
+  network: "none" | "verification";
 }
 
 const MAX_CONCURRENT = 5;
 const DEFAULT_TIMEOUT_SEC = 30;
+const MAX_TIMEOUT_SEC = 900;
+const MAX_OUTPUT_BYTES = 1024 * 1024;
+const MAX_RUN_INVOCATIONS = 64;
+const MAX_RUN_WALL_MS = 2 * 60 * 60 * 1000;
+const MAX_RUN_OUTPUT_BYTES = 16 * 1024 * 1024;
 const TAIL_CHARS = 4096;
 let running = 0;
 
@@ -53,12 +63,57 @@ const fingerprint = (value: string) =>
 async function atomicWrite(file: string, data: string | Buffer): Promise<void> {
   const temp = `${file}.${process.pid}.${crypto.randomBytes(4).toString("hex")}.tmp`;
   try {
-    await fs.writeFile(temp, data);
+    const handle = await fs.open(temp, "w");
+    try { await handle.writeFile(data); await handle.sync(); } finally { await handle.close(); }
     await fs.rename(temp, file);
+    const directory = await fs.open(path.dirname(file), "r");
+    try { await directory.sync(); } finally { await directory.close(); }
   } catch (error) {
     await fs.rm(temp, { force: true }).catch(() => undefined);
     throw error;
   }
+}
+
+const SECRET_NAME = /(?:TOKEN|SECRET|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY|CREDENTIAL|COOKIE|AUTH)/i;
+const SAFE_ENV = new Set(["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "SHELL", "PYENV_ROOT", "PYENV_VERSION", "NODE_OPTIONS"]);
+
+function safeEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { TMPDIR: "/tmp" };
+  for (const [key, value] of Object.entries(process.env)) {
+    if (SAFE_ENV.has(key) && !SECRET_NAME.test(key) && value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
+function redact(value: string): string {
+  let result = value.replace(/\b(?:sk|ghp|github_pat)[-_][A-Za-z0-9_-]{12,}\b/g, "[REDACTED]");
+  for (const [key, secret] of Object.entries(process.env)) {
+    if (SECRET_NAME.test(key) && secret && secret.length >= 4) result = result.split(secret).join("[REDACTED]");
+  }
+  return result;
+}
+
+async function canonicalDirectory(value: string): Promise<string> {
+  const result = await fs.realpath(path.resolve(value));
+  if (!(await fs.stat(result)).isDirectory()) throw new Error(`Invalid cwd: ${result}`);
+  return result;
+}
+
+function isInside(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+async function consumeBudget(cwd: string, runID: string, outputBytes = 0, countInvocation = false): Promise<void> {
+  const file = path.join(cwd, ".opencode", "supervisor", `${runID}.budget.json`);
+  let budget = { started_at: new Date().toISOString(), invocations: 0, output_bytes: 0 };
+  try { budget = JSON.parse(await fs.readFile(file, "utf8")); } catch (error: any) { if (error?.code !== "ENOENT") throw new Error("Runner budget state is malformed", { cause: error }); }
+  if (Date.now() - Date.parse(budget.started_at) > MAX_RUN_WALL_MS) throw new Error("Runner wall-clock budget exhausted");
+  if (countInvocation) budget.invocations += 1;
+  budget.output_bytes += outputBytes;
+  if (budget.invocations > MAX_RUN_INVOCATIONS) throw new Error("Runner invocation budget exhausted");
+  if (budget.output_bytes > MAX_RUN_OUTPUT_BYTES) throw new Error("Runner aggregate output budget exhausted");
+  await atomicWrite(file, `${JSON.stringify(budget, null, 2)}\n`);
 }
 
 async function destination(
@@ -90,6 +145,7 @@ async function processCommand(
   cwd: string,
   input: RunInput,
 ): Promise<{ file: string; args: string[] }> {
+  if (process.platform !== "linux") throw new Error(`Runner sandbox unsupported on ${process.platform}; secure execution requires Linux with Bubblewrap`);
   const bwrap = process.env.OPENCODE_BWRAP_PATH || "/usr/bin/bwrap";
   try {
     await fs.access(bwrap);
@@ -105,7 +161,7 @@ async function processCommand(
     return {
       file: bwrap,
       args: [
-        "--die-with-parent", "--new-session", "--ro-bind", "/", "/",
+        "--die-with-parent", "--new-session", "--unshare-net", "--ro-bind", "/", "/",
         "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
         ...tempProjectArgs,
         "--chdir", cwd, "bash", "-c", input.command,
@@ -117,7 +173,7 @@ async function processCommand(
   return {
     file: bwrap,
     args: [
-      "--die-with-parent", "--new-session", "--ro-bind", "/", "/",
+      "--die-with-parent", "--new-session", "--unshare-net", "--ro-bind", "/", "/",
       "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
       ...tempProjectArgs,
       "--bind", spikeDir, spikeDir,
@@ -135,9 +191,9 @@ export async function run(input: RunInput): Promise<RunResult> {
   }
   running++;
   try {
-    const cwd = path.resolve(input.cwd ?? process.cwd());
-    const cwdStat = await fs.stat(cwd).catch(() => null);
-    if (!cwdStat?.isDirectory()) throw new Error(`Invalid cwd: ${cwd}`);
+    const cwd = await canonicalDirectory(input.cwd ?? process.cwd()).catch(() => { throw new Error(`Invalid cwd: ${input.cwd ?? process.cwd()}`); });
+    const worktree = input.active_worktree ? await canonicalDirectory(input.active_worktree) : cwd;
+    if (!isInside(worktree, cwd)) throw new Error(`Runner cwd escapes active worktree: ${cwd}`);
 
     const dest = await destination(cwd, input);
     if (dest.context === "execution" && (
@@ -150,6 +206,7 @@ export async function run(input: RunInput): Promise<RunResult> {
     await fs.mkdir(dest.dir, { recursive: true });
     if (dest.context === "execution") {
       await fs.mkdir(path.join(cwd, ".opencode", "supervisor"), { recursive: true });
+      await consumeBudget(cwd, input.supervisor_run_id!, 0, true);
     }
 
     const processSpec = await processCommand(cwd, input);
@@ -161,6 +218,9 @@ export async function run(input: RunInput): Promise<RunResult> {
     let timed_out = false;
     let signal: NodeJS.Signals | null = null;
     const chunks: Buffer[] = [];
+    let storedBytes = 0;
+    let outputBytes = 0;
+    let output_truncated = false;
 
     const exit_code = await new Promise<number>((resolve, reject) => {
       let settled = false;
@@ -176,7 +236,7 @@ export async function run(input: RunInput): Promise<RunResult> {
       try {
         proc = spawn(processSpec.file, processSpec.args, {
           cwd,
-          env: process.env,
+          env: safeEnvironment(),
           stdio: ["ignore", "pipe", "pipe"],
         });
       } catch (error) {
@@ -185,12 +245,18 @@ export async function run(input: RunInput): Promise<RunResult> {
       }
 
       proc.stdout.on("data", (chunk: Buffer) => {
-        stdout += chunk;
-        chunks.push(chunk);
+        outputBytes += chunk.length;
+        const remaining = Math.max(0, MAX_OUTPUT_BYTES - storedBytes);
+        if (remaining) { const saved = Buffer.from(redact(chunk.subarray(0, remaining).toString("utf8"))); chunks.push(saved); storedBytes += saved.length; }
+        stdout = tail(redact(`${stdout}${chunk.toString("utf8")}`));
+        if (outputBytes > MAX_OUTPUT_BYTES) { output_truncated = true; proc.kill("SIGKILL"); }
       });
       proc.stderr.on("data", (chunk: Buffer) => {
-        stderr += chunk;
-        chunks.push(chunk);
+        outputBytes += chunk.length;
+        const remaining = Math.max(0, MAX_OUTPUT_BYTES - storedBytes);
+        if (remaining) { const saved = Buffer.from(redact(chunk.subarray(0, remaining).toString("utf8"))); chunks.push(saved); storedBytes += saved.length; }
+        stderr = tail(redact(`${stderr}${chunk.toString("utf8")}`));
+        if (outputBytes > MAX_OUTPUT_BYTES) { output_truncated = true; proc.kill("SIGKILL"); }
       });
       proc.on("error", (error) => settle(() => reject(error)));
       proc.on("close", (code, receivedSignal) => settle(() => {
@@ -200,10 +266,11 @@ export async function run(input: RunInput): Promise<RunResult> {
       timer = setTimeout(() => {
         timed_out = true;
         proc.kill("SIGKILL");
-      }, Math.max(1, input.timeoutSec ?? DEFAULT_TIMEOUT_SEC) * 1000);
+      }, Math.min(MAX_TIMEOUT_SEC, Math.max(1, input.timeoutSec ?? DEFAULT_TIMEOUT_SEC)) * 1000);
     });
 
     const finishMs = Date.now();
+    if (dest.context === "execution") await consumeBudget(cwd, input.supervisor_run_id!, outputBytes);
     const result: RunResult = {
       run_id,
       started_at,
@@ -218,6 +285,9 @@ export async function run(input: RunInput): Promise<RunResult> {
       ...(input.spike_id ? { spike_id: input.spike_id } : {}),
       ...(input.supervisor_run_id ? { supervisor_run_id: input.supervisor_run_id } : {}),
       ...(input.spec_fingerprint ? { spec_fingerprint: input.spec_fingerprint } : {}),
+      worktree,
+      output_truncated,
+      network: input.network ?? "none",
     };
 
     await atomicWrite(path.join(dest.dir, `${run_id}.log`), Buffer.concat(chunks));
@@ -250,8 +320,9 @@ export default tool({
     const cwd = path.resolve(
       args.cwd ?? context.worktree ?? context.directory ?? process.cwd(),
     );
+    const active_worktree = path.resolve(context.worktree ?? context.directory ?? cwd);
     if ((args.context ?? "execution") === "spike") {
-      return JSON.stringify(await run({ ...args, cwd }), null, 2);
+      return JSON.stringify(await run({ ...args, cwd, active_worktree }), null, 2);
     }
 
     const sessionID = (context as { sessionID?: string }).sessionID;
@@ -263,6 +334,7 @@ export default tool({
       await run({
         ...args,
         cwd,
+        active_worktree,
         supervisor_run_id: sessionID,
         spec_fingerprint: fingerprint(spec),
       }),

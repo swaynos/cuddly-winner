@@ -1,11 +1,12 @@
 {
-  "_comment": "Copy to opencode-immutable.json in your project root to activate the ImmutabilityGuard plugin. Replace filenames with the files you want to protect.",
+  "_status": "RESERVED PLACEHOLDER: the current plugin does not load or enforce this file.",
+  "_comment": "Future project overrides may narrow managed-agent permissions. Native Plan and Build remain unaffected.",
 
   "readonly": [
     "<frozen-file.py>"
   ],
 
-  "prometheus_only": [],
-
-  "write_allowlist": {}
+  "write_allowlist": {
+    "prometheus": ["SPEC.md", ".spike/**"]
+  }
 }

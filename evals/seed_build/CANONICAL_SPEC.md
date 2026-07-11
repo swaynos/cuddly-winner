@@ -67,6 +67,6 @@ reason: it weakens validation, determinism, and security boundaries.
 - [ ] Validate and resolve action specifications.
 - [ ] Implement the pure `evaluate` composition.
 - [ ] Run every exact verification command through the trusted runner.
-- [ ] Update `progress.txt` with the selected direct strategy and results.
+- [ ] Report the selected direct strategy and results; durable state belongs to the supervisor.
 
 Invoke @autonomous to execute SPEC.md.

@@ -20,9 +20,12 @@ Options:
   --config-dir PATH   OpenCode config directory
   --agents-dir PATH   OpenCode agents directory
   --plugins-dir PATH  OpenCode plugins directory
-  --skills-dir PATH   OpenCode skills directory
+  --skills-dir PATH   OpenCode skills directory (used with --with-skills)
   --tools-dir PATH    OpenCode tools directory
-  --mode MODE         Install mode: symlink (default) or copy
+  --mode MODE         Install mode: copy (default) or symlink
+  --with-autonomous   Install the optional Autonomous supervisor and runner
+  --with-skills       Install optional non-core skills
+  --with-tools        Install only the trusted runner (advanced)
   -h, --help          Show this help
 
 Override precedence (highest to lowest):
@@ -236,6 +239,16 @@ install_files() {
       ln -s "$src" "$dst"
       printf 'Linked: %s -> %s\n' "$dst" "$src"
     else
+      if [[ -L "$dst" ]]; then
+        rm -f "$dst"
+      elif [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
+        printf 'Unchanged: %s\n' "$dst"
+        continue
+      elif [[ -e "$dst" ]]; then
+        local backup="${dst}.bak.${timestamp}"
+        mv "$dst" "$backup"
+        printf 'Backed up existing file: %s -> %s\n' "$dst" "$backup"
+      fi
       cp "$src" "$dst"
       printf 'Copied: %s -> %s\n' "$src" "$dst"
     fi
@@ -330,8 +343,14 @@ install_entries() {
       ln -s "$src" "$dst"
       printf 'Linked: %s -> %s\n' "$dst" "$src"
     else
+      if [[ -L "$dst" ]]; then
+        rm -f "$dst"
+      elif [[ -e "$dst" ]]; then
+        local backup="${dst}.bak.${timestamp}"
+        mv "$dst" "$backup"
+        printf 'Backed up existing entry: %s -> %s\n' "$dst" "$backup"
+      fi
       if [[ -d "$src" ]]; then
-        rm -rf "$dst"
         cp -R "$src" "$dst"
       else
         cp "$src" "$dst"
@@ -350,8 +369,9 @@ CLI_SKILLS_DIR=""
 CLI_TOOLS_DIR=""
 CLI_MODE=""
 WITH_PLUGINS=true
-WITH_SKILLS=true
-WITH_TOOLS=true
+WITH_SKILLS=false
+WITH_TOOLS=false
+WITH_AUTONOMOUS=false
 
 if [[ $# -gt 0 ]]; then
   case "$1" in
@@ -408,6 +428,11 @@ while [[ $# -gt 0 ]]; do
       WITH_TOOLS=true
       shift
       ;;
+    --with-autonomous)
+      WITH_AUTONOMOUS=true
+      WITH_TOOLS=true
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -435,7 +460,7 @@ RAW_PLUGINS_DIR="$(path_or_default "$CLI_PLUGINS_DIR" "${OPENCODE_DEPLOY_PLUGINS
 RAW_SKILLS_DIR="$(path_or_default "$CLI_SKILLS_DIR" "${OPENCODE_DEPLOY_SKILLS_DIR:-}" "$FILE_SKILLS_DIR" "")"
 RAW_TOOLS_DIR="$(path_or_default "$CLI_TOOLS_DIR" "${OPENCODE_DEPLOY_TOOLS_DIR:-}" "$FILE_TOOLS_DIR" "")"
 RAW_SOURCE_DIR="$(path_or_default "$CLI_SOURCE_DIR" "${OPENCODE_DEPLOY_SOURCE_DIR:-}" "$FILE_SOURCE_DIR" "${REPO_ROOT}/agents")"
-MODE="$(path_or_default "$CLI_MODE" "${OPENCODE_DEPLOY_MODE:-}" "$FILE_MODE" "symlink")"
+MODE="$(path_or_default "$CLI_MODE" "${OPENCODE_DEPLOY_MODE:-}" "$FILE_MODE" "copy")"
 
 if [[ -z "$RAW_CONFIG_DIR" ]]; then
   die "Unable to resolve OpenCode config directory. Set --config-dir or OPENCODE_DEPLOY_CONFIG_DIR."
@@ -474,22 +499,38 @@ printf 'Action: %s\n' "$ACTION"
 printf 'Mode: %s\n' "$MODE"
 printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
 
-# Remove managed links from the replaced split control plane during cutover.
+# Remove obsolete managed entries and repository-specific global instructions.
 if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
-  for obsolete in opencode-autonomous-gate opencode-autonomous-loop shared; do
+  for obsolete in opencode-autonomous-gate opencode-autonomous-loop opencode-autonomous-gate.js opencode-autonomous-loop.js shared; do
     candidate="${PLUGINS_DIR}/${obsolete}"
     if [[ -L "$candidate" ]]; then rm -f "$candidate"; printf 'Removed obsolete managed plugin: %s\n' "$candidate"; fi
   done
+  for obsolete in builder data-scientist octopus-arm octopus ralph-wiggum; do
+    candidate="${AGENTS_DIR}/${obsolete}.md"
+    if [[ -L "$candidate" ]]; then rm -f "$candidate"; printf 'Removed obsolete managed agent: %s\n' "$candidate"; fi
+  done
+  candidate="${CONFIG_DIR}/AGENTS.md"
+  if [[ -L "$candidate" && "$(readlink "$candidate" || true)" == "${REPO_ROOT}/AGENTS.md" ]]; then
+    rm -f "$candidate"
+    printf 'Removed repository-specific global rules: %s\n' "$candidate"
+  fi
+  if [[ "$WITH_AUTONOMOUS" == false ]]; then
+    for optional in "${PLUGINS_DIR}/opencode-autonomous-supervisor" "${PLUGINS_DIR}/opencode-autonomous-supervisor.js" "${TOOLS_DIR}/run.ts"; do
+      if [[ -L "$optional" ]]; then rm -f "$optional"; printf 'Removed optional Autonomous entry: %s\n' "$optional"; fi
+    done
+  fi
 fi
-
-# --- AGENTS.md (global rules — installed to config dir root) ---
-install_files "Rules" "$REPO_ROOT" "$CONFIG_DIR" "$MODE" "$ACTION" "AGENTS.md"
 
 # --- Agents ---
 install_files "Agents" "$SOURCE_DIR" "$AGENTS_DIR" "$MODE" "$ACTION" "*.md"
 
-# --- Trusted control plane (installed by default) ---
-if [[ "$WITH_PLUGINS" == true ]]; then
+# --- Managed-agent immutability (does not affect native Plan/Build) ---
+if [[ "$WITH_PLUGINS" == true && "$WITH_AUTONOMOUS" == false ]]; then
+  install_files "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION" "immutability.ts"
+fi
+
+# --- Optional Autonomous profile ---
+if [[ "$WITH_AUTONOMOUS" == true ]]; then
   install_entries "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION"
 fi
 
@@ -503,6 +544,14 @@ if [[ "$WITH_TOOLS" == true ]]; then
   install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "run.ts"
 fi
 
+# Custom tools resolve SDK imports from the deployment target, never from this
+# repository. Install the pinned runtime dependency for both copy and symlink
+# modes without requiring a repository node_modules link.
+if [[ "$ACTION" == "install" && "$WITH_AUTONOMOUS" == true ]]; then
+  command -v npm >/dev/null 2>&1 || die "npm is required to install the OpenCode tool runtime"
+  npm install --prefix "$CONFIG_DIR" --no-save --no-audit --no-fund @opencode-ai/plugin@1.15.10 >/dev/null
+fi
+
 if [[ "$ACTION" == "status" ]]; then
   exit 0
 fi
@@ -511,4 +560,4 @@ if [[ "$ACTION" == "remove" ]]; then
   exit 0
 fi
 
-printf 'Done. Start OpenCode anywhere and invoke an agent by name, e.g. @prometheus, @autonomous, @karpathy\n'
+printf 'Done. Native Plan/Build remain unchanged; optional specialist agents are available by name.\n'

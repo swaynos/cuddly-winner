@@ -13,8 +13,8 @@ binary classification problem via `@autonomous`. No dependencies beyond Python s
 - A `program.md` with explicit stop criteria, constraints, and acceptance criteria.
 - An `opencode-karpathy.json` config that wires the loop: baseline command,
   score file, noise probe seeds, and immutability declarations.
-- An `opencode-immutable.json` that activates the ImmutabilityGuard plugin to
-  prevent any agent from accidentally editing `prepare.py`.
+- An `opencode-immutable.json` placeholder illustrating a future project
+  override. It is not currently enforced; `prepare.py` is frozen by contract.
 
 ## How to run
 
@@ -29,10 +29,11 @@ Then invoke `@autonomous`. It reads the `AGENTS.md` strategy directive
 1. Reads `program.md` and restates the objective.
 2. Establishes a baseline score (~0.745 with default seed).
 3. Probes the noise floor across three seeds.
-4. Proposes one change, implements it, measures, and decides KEEP or REVERT.
+4. Proposes one change for Autonomous to implement, then measures and decides
+   KEEP or REVERT.
 5. Repeats until accuracy >= 0.85 or 10 consecutive non-improvements.
 
-Results are logged to `experiments.md` (created by the agent on first run).
+Autonomous owns any project edits and experiment log persistence.
 
 ## Running manually
 

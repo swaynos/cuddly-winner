@@ -1,80 +1,100 @@
-# Control-Plane Requirements
+# Requirements
 
-## Durable contract
+## Product Goal
 
-The trusted computing base is `tools/run.ts`, `plugins/immutability.ts`,
-and `plugins/opencode-autonomous-supervisor/`. Prometheus alone owns root
-`SPEC.md`; it is confined to `SPEC.md` and `.spike/**`, and commands go through
-the runner. Autonomous reads and fingerprints that canonical file and never
-rewrites it.
+This project is an optional extension to OpenCode. It adds specialist agents and
+evidence-backed autonomous profiles for work that benefits from stronger
+planning, durable state, bounded execution, or scalar-metric optimization.
 
-The checked-in root `opencode-immutable.json` policy enumerates trusted source
-files explicitly and contains no recursive readonly globs. Runtime runner and
-supervisor evidence paths are intrinsically protected by the immutability plugin.
-`write_allowlist` entries establish exclusive path ownership and also confine the
-named agent to those paths.
+It is not a replacement for OpenCode's built-in Plan and Build modes.
 
-The runner durably and atomically writes a log and JSON result before resolving.
-Every execution result contains `run_id`, `supervisor_run_id`, `spec_fingerprint`,
-`started_at`, `finished_at`, `duration_ms`, exact
-normalized `command`, `exit_code`, output tails, `timed_out`, and `context`, plus
-`spike_id` for a contracted spike. Execution evidence lives under
-`.opencode/runs/`; spike evidence lives only under `.spike/<id>/runs/`.
-On Linux, spike commands require `/usr/bin/bwrap`: the runner bind-mounts `/`
-read-only and rebinds only `.spike/<id>` writable. Spike execution fails closed
-when that sandbox is unavailable. Prometheus may use `run` only with `context`
-`spike`; direct shell and execution-context runs are denied by the hook.
-Execution-context commands use the same sandbox with the project read-only and a
-private writable `/tmp`. Evaluation reports are written beneath that private
-temporary directory rather than through a writable project mount.
-This prevents command-level forgery of runner and supervisor state; source edits
-remain the responsibility of mutation tools before verification.
+## Native Compatibility Invariant
 
-Completion is a pure disk-state decision. Every unique command item in the one
-valid `## Verification` section needs exact, fresh, passing execution evidence
-bound to the active supervisor run and SPEC fingerprint.
-Only a resolved pyenv interpreter path may normalize to `python3`. Freshness is
-measured against code, tests, agents, plugins, runner, evals, skills, and deploy
-scripts, excluding docs, README, SPEC, progress, spikes, runs, and supervisor
-state. Promise tokens request evaluation but are not evidence. Reviewer output
-is advisory.
+Built-in `plan` and `build` are outside this project's enforcement boundary.
+Installation must not alter their prompts, routing, permissions, Bash access,
+mutation tools, or completion behavior. They must work without a `SPEC.md`, a
+custom runner, a supervisor, an immutability policy, or any specialist agent.
 
-Supervisor state is atomically serialized per run and survives restart with run
-ID, SPEC fingerprint, command satisfaction, correction counters, status,
-history, and blocker reason. Corrections are deduplicated and capped at three
-per failure class and twelve globally; reaching either cap blocks automatic
-delivery pending user intervention. Parent/child activity is scoped to its
-actual run.
-Only a top-level Autonomous `chat.params` event initializes a run and captures
-the fingerprint. Idle events evaluate an existing run only. Child sessions walk
-their real parent chain; unrelated sessions are ignored. Corrupt state fails
-closed, and blocked state remains terminal until explicit user intervention.
+The project must not install repository-specific `AGENTS.md` instructions into
+the global OpenCode configuration. Documentation and tests must not direct
+ordinary planning to Prometheus or ordinary implementation to Autonomous.
 
-`.opencode/runs/` and `.opencode/supervisor/` are intrinsically readonly to all
-agent mutation tools. The trusted runner and supervisor write them directly.
+Unknown, future built-in, and third-party agent identities are also outside the
+managed-agent enforcement boundary.
 
-The runner source is an OpenCode SDK custom-tool definition with a validated
-argument schema and execute callback. Committed control-plane inputs use visible
-root paths; `.opencode/` is reserved for ignored runtime evidence and supervisor
-state. If Autonomous reports that `run` is unavailable, the supervisor records
-a terminal infrastructure blocker and does not issue impossible verification
-retries. Tool deployment changes require restarting OpenCode.
+## Managed Agents
 
-Mutation validation is opt-in. A configured result is an uncommitted repository
-artifact; no agent auto-commits it. It must have a valid generation timestamp,
-finite threshold-passing score, non-empty existing file list, and freshness
-against the files it evaluates.
+The agents introduced by this project are `ask`, `prometheus`, `autonomous`,
+`karpathy`, `reviewer`, and `grounder`. They are optional and selected explicitly.
 
-The six supported agents are Ask, Prometheus, Autonomous, Karpathy, Reviewer,
-and Grounder. Karpathy requires `program.md`, `opencode-karpathy.json`, and a
-frozen evaluator, and routes every measurement through the runner. Grounder and
-Reviewer are read-only.
+Fixed immutability defaults apply only to these identities and their descendants:
 
-Default deployment installs agents, root `skills/`, the runner, supervisor, and
-immutability hook. No Git commit is created without explicit user instruction.
-Live planning and build evaluations fail closed when provider credentials are
-unavailable. Dry-run evaluator checks never qualify as release evidence.
-The live harness loads the gitignored root `.env` without logging values, redacts
-loaded secrets from child output, provisions workspace-local writable XDG data,
-cache, and state directories, passes an explicit workspace through `--dir`, and
-uses an isolated Git worktree so plugins resolve the same project root.
+- Prometheus may mutate root `SPEC.md` and `.spike/**` only.
+- Autonomous may mutate ordinary project files but not trusted runner,
+  supervisor, or evidence paths.
+- Ask, Karpathy, Reviewer, and Grounder are read-only.
+- A descendant inherits the managed identity of its highest managed ancestor.
+
+Unresolved or unmanaged identity bypasses this plugin rather than restricting
+native functionality.
+
+## Reserved Project Policy
+
+Root `opencode-immutable.json` reserves a future project-override format. It is
+not currently loaded or enforced. Its presence, absence, or contents must have
+no runtime effect, and users must not be told that it currently protects files.
+
+The placeholder documents intended explicit readonly paths and per-agent
+refinements. Future project overrides may narrow managed-agent permissions. They
+must not affect native Plan or Build without a deliberate revision of this
+compatibility contract.
+
+## Optional Autonomous Profile
+
+The Autonomous profile consists of `tools/run.ts` and
+`plugins/opencode-autonomous-supervisor/`. It is installed only through an
+explicit deployment option and activates only for top-level Autonomous sessions.
+
+Native Plan and Build sessions never initialize supervisor state and never need
+trusted runner evidence. Checklist boxes in `SPEC.md` are planning aids; exact,
+fresh verification evidence defines Autonomous completion. The supervisor owns
+durable run state, so agents are not asked to mutate protected progress files.
+
+The trusted runner binds evidence to the active Autonomous run, enforces finite
+timeouts and budgets, redacts likely credentials, bounds output, persists state
+atomically, and uses Linux Bubblewrap for sandboxed commands. Unsupported runner
+platforms do not reduce native Plan/Build functionality.
+
+Reviewer output remains advisory. Free-form message text is not control-plane
+input. A structured event may affect state only after a real producer and an
+end-to-end test exist.
+
+## Optional Karpathy Profile
+
+Karpathy is a read-only optimization strategist. It requires `program.md`, root
+`opencode-karpathy.json`, and a frozen evaluator. It proposes one change at a
+time; Autonomous owns edits. This profile is optional and does not govern normal
+Plan/Build work.
+
+## Deployment
+
+Default deployment uses copy mode, installs optional agent definitions and the
+managed-agent immutability hook, and leaves native Plan/Build unchanged.
+
+The Autonomous supervisor and runner require `--with-autonomous`. Non-core skills
+require `--with-skills`. Deployment tracks managed entries, removes obsolete
+managed links, and never installs this repository's `AGENTS.md` globally.
+
+## Validation
+
+Release validation must separately prove:
+
+1. Native Plan/Build compatibility and unmanaged-agent bypass.
+2. Managed-agent role defaults and descendant inheritance.
+3. Optional Autonomous runner/supervisor behavior.
+4. Optional evaluator behavior.
+5. Deployment isolation and stale-entry cleanup.
+6. Documentation consistency with this product goal.
+
+Core validation must not require a six-agent workflow, a literal handoff footer,
+or use of Prometheus/Autonomous for ordinary work.

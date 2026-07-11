@@ -190,12 +190,10 @@ def has_prometheus_payload(conn: sqlite3.Connection, session_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def read_progress_strategy(project: str) -> Optional[str]:
-    for name in ("progress.txt", "PROGRESS.txt"):
-        p = Path(project) / name
-        if p.exists():
-            text = p.read_text(encoding="utf-8", errors="replace")
-            m = re.search(r"^Selected:\s*(\S+)", text, re.MULTILINE)
-            return m.group(1).lower() if m else None
+    for p in sorted((Path(project) / ".opencode" / "progress").glob("*.md")):
+        text = p.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"^Selected:\s*(\S+)", text, re.MULTILINE)
+        return m.group(1).lower() if m else None
     return None
 
 
@@ -233,14 +231,12 @@ def verdict_prometheus(
     if not prometheus_switches:
         return Verdict("NOT_APPLICABLE", evidence=["No agent-switched to prometheus found"])
 
-    # Check read-only: no edit/write/bash tool calls during prometheus phase
-    forbidden = [t for t in tool_calls if t.tool in ("edit", "write", "apply_patch", "bash")]
-    payload_present = has_prometheus_payload(conn, session.id)
+    # Prometheus may write SPEC.md and spike artifacts, but never uses Bash.
+    forbidden = [t for t in tool_calls if t.tool == "bash"]
     approaches_ok = spec_has_approaches_considered(project)
 
     evidence = [
         f"Prometheus agent-switched at {prometheus_switches[0].created}",
-        f"Prometheus payload in session: {'yes' if payload_present else 'no'}",
         f"SPEC.md has ## Approaches Considered: {'yes' if approaches_ok else 'no'}",
     ]
     if forbidden:
@@ -248,15 +244,12 @@ def verdict_prometheus(
 
     if forbidden:
         return Verdict("FAIL", evidence=evidence,
-                       interpretation="Prometheus made edit/write/bash calls — violates read-only contract.")
-    if payload_present and approaches_ok:
+                       interpretation="Prometheus made a direct Bash call outside its managed role defaults.")
+    if approaches_ok:
         return Verdict("PASS", evidence=evidence,
-                       interpretation="Prometheus ran read-only and returned a payload with Approaches Considered.")
-    if payload_present and not approaches_ok:
-        return Verdict("PARTIAL", evidence=evidence,
-                       interpretation="Prometheus returned a payload but SPEC.md is missing ## Approaches Considered.")
+                       interpretation="Prometheus produced a direct SPEC with Approaches Considered.")
     return Verdict("PARTIAL", evidence=evidence,
-                   interpretation="Prometheus switched into session but no payload or Approaches Considered found.")
+                   interpretation="Prometheus switched into session but canonical SPEC evidence is incomplete.")
 
 
 def verdict_autonomous_strategy(
@@ -270,19 +263,15 @@ def verdict_autonomous_strategy(
     if not autonomous_switches:
         return Verdict("NOT_APPLICABLE", evidence=["No agent-switched to autonomous found"])
 
-    declared = read_progress_strategy(project)
     child_agents = {c.agent.lower() for c in child_sessions if c.agent}
     delegated_to = child_agents & STRATEGY_SUBAGENTS
+    declared = "karpathy" if "karpathy" in delegated_to else "direct"
 
     evidence = [
-        f"Declared strategy (progress.txt Selected:): {declared or 'not recorded'}",
+        f"Observed strategy: {declared}",
         f"Child session agents: {sorted(child_agents) or 'none'}",
         f"Strategy subagent delegations observed: {sorted(delegated_to) or 'none'}",
     ]
-
-    if declared is None:
-        return Verdict("FAIL", evidence=evidence,
-                       interpretation="No 'Selected:' line in progress.txt — strategy was not recorded before execution.")
 
     if declared == "karpathy":
         arts = karpathy_artifacts_present(project)
