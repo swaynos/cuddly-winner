@@ -10,6 +10,9 @@ normal Plan/Build session: evidence-backed planning, durable autonomous
 execution, advisory review, grounded research, or Karpathy-style optimization
 against a frozen scalar evaluator.
 
+Durable requirements and architecture live in `docs/`; root `SPEC.md` is a
+transient per-change implementation brief, not canonical documentation.
+
 ## Native Plan And Build
 
 Use OpenCode's built-in Plan and Build normally. They do not require:
@@ -66,13 +69,14 @@ Immutability currently uses fixed role defaults only:
 - Autonomous may edit normal project files but not trusted control-plane state.
 - Ask, Karpathy, Reviewer, and Grounder are read-only.
 - Descendants inherit the originating managed agent's restrictions.
-- Native Plan, native Build, unknown agents, and third-party agents are bypassed.
+- Native Plan, native Build, unknown agents, and third-party agents are
+  bypassed.
 
 ### Reserved Project Override
 
-`opencode-immutable.json` is an **unused placeholder** for a future project-level
-override format. The current plugin does not read or enforce it. Do not rely on
-that file to protect project files today.
+`opencode-immutable.json` is an **unused placeholder** for a future
+project-level override format. The current plugin does not read or enforce it.
+Do not rely on that file to protect project files today.
 
 The example documents the intended future shape: explicit readonly paths and
 agent-specific refinements. A future implementation may narrow permissions for
