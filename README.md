@@ -13,12 +13,28 @@ against a frozen scalar evaluator.
 Durable requirements and architecture live in `docs/`; root `SPEC.md` is a
 transient per-change implementation brief, not canonical documentation.
 
+## Inspiration
+
+This project is informed by how successful professional software delivery
+actually begins. A feature request, defect report, or bug rarely starts with
+implementation: it starts with triage, a focused spike, and often a discussion
+with product owners or the people affected by the problem.
+
+Meaningful user discourse is therefore a normal part of establishing context,
+scope, and success criteria. The goal is not for agents to agree automatically
+with every request, but to surface material uncertainty, test assumptions, and
+ask focused questions when the answers could change the work.
+
+Native OpenCode Plan and Build already cover the basic workflow and remain
+unchanged. The optional agents add structure only when it is explicitly needed:
+evidence-backed context setting, user interviews, research, and measured spikes
+before committing to an autonomous implementation path.
+
 ## Native Plan And Build
 
 Use OpenCode's built-in Plan and Build normally. They do not require:
 
 - `SPEC.md`
-- `opencode-immutable.json`
 - the trusted `run` tool
 - the Autonomous supervisor
 - Prometheus or any other custom agent
@@ -52,7 +68,7 @@ startup, so restart it after changing an installation profile.
 
 ## Optional Agents
 
-- **Prometheus** creates a rigorous `SPEC.md` and runs contracted spikes.
+- **Prometheus** triages requests and publishes a validated Autonomous scaffold.
 - **Autonomous** executes a canonical SPEC under the optional supervisor.
 - **Karpathy** advises bounded scalar-metric optimization.
 - **Reviewer** provides read-only advisory review.
@@ -65,28 +81,18 @@ These agents are selected explicitly. They are not aliases for Plan or Build.
 
 Immutability currently uses fixed role defaults only:
 
-- Prometheus may mutate only `SPEC.md` and `.spike/**`.
-- Autonomous may edit normal project files but not trusted control-plane state.
+- Prometheus may mutate only its fixed planning and scaffold artifacts.
+- Autonomous may edit normal project files but not trusted run-coordinator state.
 - Ask, Karpathy, Reviewer, and Grounder are read-only.
 - Descendants inherit the originating managed agent's restrictions.
 - Native Plan, native Build, unknown agents, and third-party agents are
   bypassed.
 
-### Reserved Project Override
-
-`opencode-immutable.json` is an **unused placeholder** for a future
-project-level override format. The current plugin does not read or enforce it.
-Do not rely on that file to protect project files today.
-
-The example documents the intended future shape: explicit readonly paths and
-agent-specific refinements. A future implementation may narrow permissions for
-the agents introduced by this project. It will not restrict native Plan or Build
-under the current compatibility contract.
-
 ## Optional Autonomous Profile
 
-The Autonomous profile adds the trusted runner and durable supervisor. Its
-evidence, state, and budgets apply only to explicitly invoked Autonomous runs.
+The Autonomous profile adds a thin run coordinator implemented by the supervisor
+plugin, plus a separate trusted runner for protected command execution. Its
+evidence, state, and limits apply only to explicitly invoked Autonomous runs.
 Native Build continues using its normal Bash and mutation tools.
 
 On supported Linux systems, trusted commands require Bubblewrap. Other operating
@@ -94,8 +100,8 @@ systems can still use native Plan/Build and the non-runner specialist agents.
 
 ## Optional Karpathy Profile
 
-Karpathy requires `program.md`, root `opencode-karpathy.json`, and a frozen
-evaluator. Karpathy is a read-only strategist; Autonomous remains the editor.
+Karpathy requires the complete frozen optimization scaffold published by
+Prometheus. Karpathy is a read-only strategist; Autonomous remains the editor.
 
 ## Validation
 

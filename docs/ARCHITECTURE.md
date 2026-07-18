@@ -2,7 +2,7 @@
 
 ## Boundary
 
-Native OpenCode Plan and Build sit outside this project's control plane. Their
+Native OpenCode Plan and Build sit outside this project's run coordinator. Their
 requests flow directly through OpenCode with their original permissions and
 tools. The plugin returns before inspecting their commands or mutation paths.
 
@@ -14,7 +14,7 @@ Native Plan / Build / third-party agents -> OpenCode unchanged
 Prometheus / Autonomous / Karpathy / Reviewer / Grounder / Ask
     -> managed identity resolution
     -> fixed role defaults
-    -> optional Autonomous runner and supervisor when selected
+    -> optional scaffold, protected execution, and orchestration when selected
 ```
 
 ## Identity Enforcement
@@ -27,37 +27,225 @@ Managed descendants inherit their originating managed identity. This prevents a
 restricted agent from escaping its default through delegation while avoiding
 restrictions on unrelated agents.
 
-Prometheus is confined to planning artifacts. Autonomous can edit source but not
-trusted control-plane code or runtime evidence. Ask, Karpathy, Reviewer, and
-Grounder are read-only.
+Prometheus is confined to the fixed planning and scaffold paths described below.
+It cannot edit production code or `.gitignore` directly. Autonomous can edit
+source but cannot edit the published scaffold, trusted run-coordinator code, or
+runtime evidence. Ask, Karpathy, Reviewer, and Grounder are read-only.
 
-## Policy Placeholder
+## Complexity Boundary
 
-`opencode-immutable.json` is retained solely as documentation of a possible
-future project override. It has no execution path in the current plugin. This is
-intentional: a placeholder must not create a false security claim.
+The safety model is explicitly constrained to a thin run coordinator, not a
+general orchestration platform. The system operates as a deterministic state
+machine with the following non-goals and constraints:
 
-Future overrides may add explicit project paths or narrow managed roles, but
-native Plan and Build remain outside the boundary unless the durable compatibility
-contract is explicitly changed.
+- One active worker per run.
+- One active item per worker.
+- One worktree.
+- One active coordinator instance per run.
+- One active mutating worker per run.
+- One durable run-state document.
+- No distributed execution.
+- No parallel mutation scheduling.
+- No DAG workflow engine.
+- No worker-to-worker messaging.
+- No general checkpoint system.
+- No cross-machine recovery.
+- No dynamic permission-policy language.
+- No general event-sourcing framework.
 
-## Optional Autonomous Flow
+Verification commands may create child processes. Read-only research and review
+delegates may run concurrently, but they cannot mutate project files or update
+run state directly.
+
+## Prometheus Flow
+
+Prometheus moves through three planning states. It first interviews the user
+only when repository and request context leave material unknown unknowns. It
+then records known unknowns and resolves them through repository inspection,
+Grounder, or contracted spikes. It may publish only after every load-bearing
+unknown has been resolved. An unresolved blocker ends planning without
+publishing an Autonomous-ready scaffold.
+
+Prometheus writes a fixed, non-versioned scaffold:
+
+| Path | Purpose |
+| --- | --- |
+| `SPEC.md` | Human-readable task, decisions, acceptance criteria, work items, verification, and handoff contract. |
+| `opencode-autonomous.json` | Machine-readable scaffold manifest and selected strategy. |
+| `.prometheus/evaluator/**` | Generated evaluator code, fixtures, reference data, and supporting assets. |
+| `.spike/**` | Disposable questions, kill criteria, measurements, and validation evidence. |
+
+The immutability hook permits Prometheus to mutate only these paths. The sole
+exception is the `scaffold_gitignore` tool, which owns one constrained block in
+the project-root `.gitignore`. Prometheus cannot supply arbitrary paths to that
+tool and never receives general `.gitignore` mutation permission.
+
+`opencode-autonomous.json` has a versioned schema. Every manifest declares the
+strategy, invariants, `implementation_scope`, material escalation triggers, and
+the complete inventory of evaluator files. `implementation_scope` is an
+execution contract checked against iteration diffs; it does not change tool
+permissions or the immutability hook. A Ralph manifest may have an empty
+evaluator inventory when existing project checks are sufficient. A Karpathy
+manifest must declare a custom scalar evaluator and additionally declares its
+entry point, baseline, score format and direction, noise probe, mutable and
+immutable targets, experiment limits, and stop criteria. Paths must be
+worktree-relative, canonical, free of escaping symlinks, and consistent with
+`SPEC.md`.
+
+Prometheus publishes in this order:
+
+1. Resolve uncertainty and choose the strategy.
+2. Validate the exact verification commands and record their baseline behavior.
+3. If the manifest declares a custom evaluator, create or replace
+   `.prometheus/evaluator/**` and validate it with representative positive,
+   negative, and malformed cases through contracted spike execution.
+4. Invoke `scaffold_gitignore` and retain any tracked-artifact warnings.
+5. Write and validate `opencode-autonomous.json`.
+6. Write `SPEC.md` last as the publication marker.
+
+Publication fails if the manifest is malformed, an inventoried file is missing,
+an unlisted evaluator file remains, a declared custom evaluator lacks validation,
+paths escape their boundary, or the selected strategy is incomplete. An empty
+Ralph evaluator inventory does not require custom evaluator files or custom
+evaluator validation. Karpathy publication fails without a validated custom
+scalar evaluator. Writing `SPEC.md` last prevents a partially replaced scaffold
+from appearing ready.
+
+## Git Exclusion Tool
+
+`tools/scaffold_gitignore.ts` exposes the `scaffold_gitignore` custom tool. It
+accepts no path arguments and manages this exact root-anchored block:
+
+```gitignore
+# BEGIN OpenCode Autonomous artifacts
+/SPEC.md
+/opencode-autonomous.json
+/.prometheus/evaluator/
+/.spike/
+/.opencode/runs/
+/.opencode/supervisor/
+/.opencode/progress/
+/.opencode/quarantine/
+# END OpenCode Autonomous artifacts
+```
+
+The tool creates `.gitignore` when absent, preserves all unrelated content,
+replaces only its unique managed block, and is byte-idempotent on repeated
+calls. It rejects duplicate or malformed markers, non-regular targets,
+symlinks, and worktree escapes. Writes are atomic and preserve existing file
+permissions.
+
+After updating the file, the tool performs a read-only tracked-file query. It
+returns structured fields for whether the file changed, the managed paths,
+already tracked generated artifacts, and warnings. Tracked artifacts produce a
+warning and do not block publication. The tool never stages, unstages, removes,
+or otherwise changes the Git index.
+
+Only Prometheus may invoke `scaffold_gitignore`; other managed agents are denied.
+Prometheus itself remains unable to edit `.gitignore` by any other path.
+
+## Scaffold Handoff
+
+At top-level Autonomous startup, the run coordinator requires a published
+`SPEC.md` and `opencode-autonomous.json`. It validates the manifest and evaluator
+inventory, computes one combined fingerprint over the SPEC, manifest, and every
+inventoried evaluator file, and records that fingerprint in protected run state.
+
+While that run is active, managed-agent enforcement denies Prometheus mutation
+of the published scaffold. The run coordinator rechecks the combined fingerprint
+before every state-changing evaluation and before completion. A mismatch blocks
+the run and requires revalidation and a new run. This lock-and-revalidate model
+freezes the evaluator without a general snapshot store, content-addressing, or
+garbage-collection subsystem.
+
+## Shared Run Coordinator
+
+The run coordinator is the conceptual orchestration role. The Autonomous
+supervisor plugin implements that role. The protected runner is a separate
+execution boundary used by the coordinator; it does not schedule workers or own
+strategy decisions.
+
+Ralph and Karpathy do not use separate coordinators. They share this lifecycle:
+
+1. Load the frozen scaffold and durable run state.
+2. Select one strategy-specific work unit.
+3. Start an iteration with one active mutating worker.
+4. Receive a structured handoff.
+5. Validate scope and evidence.
+6. Apply the strategy-specific transition.
+7. Persist run state.
+8. Stop or repeat.
+
+The lifecycle and state persistence are shared, but preparation, evidence, and
+transition rules differ by strategy. The supervisor implements those differences
+as branches in one deterministic reducer rather than separate orchestrators or a
+general plugin framework.
+
+## Autonomous Flow
 
 When the user explicitly invokes Autonomous, the optional supervisor fingerprints
-`SPEC.md`, tracks durable state, and evaluates exact runner artifacts. The runner
-provides bounded, redacted, atomic evidence for that profile. Checklist marks are
-not completion state and the SPEC is not rewritten during execution.
+the complete scaffold, tracks durable strategy and iteration state, and evaluates
+exact runner artifacts. The runner provides bounded, redacted, atomic evidence
+bound to the scaffold fingerprint. Checklist marks and message text are not
+completion state, and Autonomous cannot rewrite the scaffold.
 
 The supervisor initializes only for a top-level `autonomous` identity. Idle or
 error events from native Plan/Build sessions are ignored. The trusted runner is
 not a replacement for Build's Bash tool.
 
-## Optional Karpathy Flow
+### Fast Path
 
-Karpathy reads a scalar objective, frozen evaluator, and configuration, then
-returns bounded one-change recommendations. Autonomous performs edits. This
-preserves the original metric-driven optimization capability without imposing it
-on normal software-development tasks.
+Simple Autonomous work takes the one-iteration fast path: initialize minimal
+state, run one worker, validate final evidence, and complete. Successful evidence
+must not start a second worker. Repair scheduling and no-progress handling are
+used only when the first iteration does not complete the task.
+
+### Ralph Transition
+
+For each Ralph iteration, the supervisor:
+
+1. Selects the highest-priority pending item.
+2. Starts one fresh worker context with the frozen scaffold, current worktree,
+   previous handoff, and protected item state.
+3. Allows the worker to edit within `implementation_scope` and the fixed
+   managed-agent permissions.
+4. Receives the handoff and validates the resulting diff against the scope.
+5. Runs focused verification for the selected item.
+6. Marks the item passed, starts bounded repair, or records an evidence-backed
+   blocker.
+7. Increments the consecutive no-progress count when no new result was proven.
+8. Runs full verification when all items appear complete, then completes or
+   selects the next item.
+
+The worktree is the durable implementation state. Ralph does not require
+automatic checkpoint restoration.
+
+The manifest's discretion envelope separates local implementation judgment from
+material replanning. Autonomous may repair and choose implementation details
+inside declared invariants and `implementation_scope`. It emits a planning
+blocker only when proceeding would change outcomes, acceptance criteria,
+evaluator integrity, immutable targets, material scope, a trust boundary, or a
+product or policy decision.
+
+## Karpathy Flow
+
+For each Karpathy iteration, the supervisor:
+
+1. Validates the scalar objective, frozen evaluator, baseline, and noise floor.
+2. Delegates experiment selection to the read-only Karpathy strategist.
+3. Accepts exactly one bounded proposed change.
+4. Preserves a bounded copy of the manifest's declared mutable targets.
+5. Starts one Autonomous mutating worker to apply that change.
+6. Revalidates the scaffold fingerprint and measures with the frozen evaluator.
+7. Compares the result with the best score and required noise threshold.
+8. On KEEP, retains the change, updates the best score, and discards the saved
+   targets; on REVERT, restores the saved targets.
+9. Pivots after the declared failure threshold, or stops when the objective or
+   experiment limit is reached.
+
+The coordinator persists the experiment record after each transition. This
+target-scoped mechanism supports metric-driven optimization without introducing
+a general worktree checkpoint engine or imposing it on normal development.
 
 ## Deployment
 
@@ -65,5 +253,6 @@ Default installation copies managed agent definitions and the identity-scoped
 immutability hook into OpenCode's global configuration. It deliberately omits
 repository `AGENTS.md`, the supervisor, runner, and non-core skills.
 
-`--with-autonomous` adds the supervisor and runner. `--with-skills` adds optional
-skills. The installer removes obsolete managed symlinks and reports every target.
+`--with-autonomous` adds the supervisor, protected runner, and
+`scaffold_gitignore` tool. `--with-skills` adds optional skills. The installer
+removes obsolete managed links and reports every target.
