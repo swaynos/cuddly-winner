@@ -13,8 +13,6 @@ binary classification problem via `@autonomous`. No dependencies beyond Python s
 - A `program.md` with explicit stop criteria, constraints, and acceptance criteria.
 - An `opencode-karpathy.json` config that wires the loop: baseline command,
   score file, noise probe seeds, and immutability declarations.
-- An `opencode-immutable.json` placeholder illustrating a future project
-  override. It is not currently enforced; `prepare.py` is frozen by contract.
 
 ## How to run
 

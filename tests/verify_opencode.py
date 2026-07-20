@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import pathlib
 import subprocess
@@ -50,12 +49,6 @@ def main() -> int:
     plugin = (ROOT / "plugins/immutability.ts").read_text()
     require('MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder"])' in plugin, "managed identity boundary missing")
     require("if (!agent || !MANAGED_AGENTS.has(agent)) return" in plugin, "native/unmanaged bypass missing")
-    require("opencode-immutable.json" not in plugin, "placeholder policy is still a runtime input")
-
-    placeholder = json.loads((ROOT / "opencode-immutable.json").read_text())
-    require("placeholder" in placeholder.get("_status", "").lower(), "root placeholder is not clearly labelled")
-    example = json.loads((ROOT / "examples/immutable.json.example").read_text())
-    require("not load or enforce" in example.get("_status", ""), "placeholder example makes a false enforcement claim")
 
     readme = (ROOT / "README.md").read_text()
     requirements = (ROOT / "docs/REQUIREMENTS.md").read_text()

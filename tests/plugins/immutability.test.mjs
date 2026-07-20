@@ -40,13 +40,6 @@ test("unknown and unrelated agents are never intercepted", async () => fixture(a
   await mutate(guard, "missing", path.join(root, "anything"));
 }));
 
-test("placeholder policy is not loaded or enforced", async () => fixture(async root => {
-  await writeFile(path.join(root, "opencode-immutable.json"), "not-json");
-  const guard = await hooks(root, { autonomous: "autonomous", build: "build" });
-  await mutate(guard, "autonomous", path.join(root, "arbitrary-project-file"));
-  await mutate(guard, "build", path.join(root, "tools/run.ts"));
-}));
-
 test("prometheus can write only SPEC.md and spike files", async () => fixture(async root => {
   const guard = await hooks(root, { p: "prometheus" });
   await mutate(guard, "p", path.join(root, "SPEC.md"));
