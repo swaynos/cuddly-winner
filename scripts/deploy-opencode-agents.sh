@@ -514,11 +514,11 @@ printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
 if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
   for obsolete in opencode-autonomous-gate opencode-autonomous-loop opencode-autonomous-gate.js opencode-autonomous-loop.js shared; do
     candidate="${PLUGINS_DIR}/${obsolete}"
-    if [[ -L "$candidate" ]]; then rm -f "$candidate"; printf 'Removed obsolete managed plugin: %s\n' "$candidate"; fi
+    if [[ -e "$candidate" || -L "$candidate" ]]; then rm -rf "$candidate"; printf 'Removed obsolete managed plugin: %s\n' "$candidate"; fi
   done
   for obsolete in builder data-scientist octopus-arm octopus ralph-wiggum; do
     candidate="${AGENTS_DIR}/${obsolete}.md"
-    if [[ -L "$candidate" ]]; then rm -f "$candidate"; printf 'Removed obsolete managed agent: %s\n' "$candidate"; fi
+    if [[ -e "$candidate" || -L "$candidate" ]]; then rm -f "$candidate"; printf 'Removed obsolete managed agent: %s\n' "$candidate"; fi
   done
   candidate="${CONFIG_DIR}/AGENTS.md"
   if [[ -L "$candidate" && "$(readlink "$candidate" || true)" == "${REPO_ROOT}/AGENTS.md" ]]; then
@@ -527,7 +527,7 @@ if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
   fi
   if [[ "$WITH_AUTONOMOUS" == false ]]; then
     for optional in "${PLUGINS_DIR}/opencode-autonomous-supervisor" "${PLUGINS_DIR}/opencode-autonomous-supervisor.js" "${TOOLS_DIR}/run.ts" "${TOOLS_DIR}/scaffold_gitignore.ts"; do
-      if [[ -L "$optional" ]]; then rm -f "$optional"; printf 'Removed optional Autonomous entry: %s\n' "$optional"; fi
+      if [[ -e "$optional" || -L "$optional" ]]; then rm -rf "$optional"; printf 'Removed optional Autonomous entry: %s\n' "$optional"; fi
     done
   fi
 fi

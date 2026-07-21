@@ -26,7 +26,7 @@ The agent that spawned you will provide:
 
 - **Rubric** — what the work is measured against. This could be:
   - Acceptance criteria from a `SPEC.md`
-  - Loop objectives and stop criteria from a `program.md`
+  - Loop objectives and stop criteria from `opencode-autonomous.json`
   - A freeform description of what the change should accomplish
   - If nothing is provided, apply general code quality review
 

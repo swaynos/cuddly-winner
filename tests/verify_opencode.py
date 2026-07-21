@@ -40,6 +40,12 @@ def main() -> int:
     for name in ("ask", "karpathy", "reviewer", "grounder"):
         require("bash: deny" in agents[name], f"{name} must remain read-only")
     require("Make the change yourself" not in agents["karpathy"], "Karpathy still claims edit ownership")
+    require("opencode-autonomous.json" in agents["autonomous"], "Autonomous prompt must reference opencode-autonomous.json")
+    require("program.md" not in agents["autonomous"], "Autonomous prompt contains stale program.md reference")
+    require("opencode-karpathy.json" not in agents["autonomous"], "Autonomous prompt contains stale opencode-karpathy.json reference")
+    require("program.md" not in agents["karpathy"], "Karpathy prompt contains stale program.md reference")
+    require("opencode-karpathy.json" not in agents["karpathy"], "Karpathy prompt contains stale opencode-karpathy.json reference")
+    require("program.md" not in agents["reviewer"], "Reviewer prompt contains stale program.md reference")
 
     rules = (ROOT / "AGENTS.md").read_text()
     require("built-in Plan and Build modes are the default workflow" in rules, "project rules do not preserve native Plan/Build")

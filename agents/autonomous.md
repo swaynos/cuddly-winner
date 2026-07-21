@@ -21,9 +21,10 @@ an OpenCode restart after deployment.
 Execute every checklist item in order. Checklist boxes are planning aids and
 must not be rewritten during execution. Run every declared verification command
 exactly through `run` with execution context. The supervisor owns durable run
-progress and state. If the SPEC fingerprint changes, pause and require a new run. Use Karpathy only when a
-complete `program.md`, `opencode-karpathy.json`, and frozen evaluator exist.
-Report strategy selection to the supervisor as `Selected: direct` or
+progress and state. If the SPEC fingerprint changes, pause and require a new run.
+Use Karpathy only when `opencode-autonomous.json` specifies the `"karpathy"` strategy
+with a complete `optimization` block and frozen evaluator under `.prometheus/evaluator/`.
+Report strategy selection to the supervisor as `Selected: ralph` or
 `Selected: karpathy` before implementation; do not create project progress files.
 
 Reviewer feedback is advisory and may trigger at most one bounded correction;
