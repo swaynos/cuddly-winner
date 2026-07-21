@@ -2,7 +2,7 @@
 
 ## Authority And Use
 
-This document is the regression catalog derived from `README.md`,
+This document is the canonical regression catalog derived from `README.md`,
 `docs/REQUIREMENTS.md` (REQ), and `docs/ARCHITECTURE.md` (ARCH). Those documents
 remain authoritative if this catalog conflicts with them. A use case is complete
 only when its stated evidence is produced by the named test layer; worker prose,
@@ -48,12 +48,6 @@ points to the authoritative section; cases may assert concrete values against it
 Strategy selection: a scaffold that does not declare scalar-optimization intent
 runs Ralph; a scaffold that declares that intent with an incomplete or invalid
 Karpathy contract blocks rather than falling back to Ralph.
-
-One environmental decision is recorded outside the canonical docs because it is a
-host/build fact, not product behavior: the runner SDK `@opencode-ai/plugin` is
-pinned to `1.17.15` (the version vendored in-repo), and deployment consumes the
-vendored copy rather than performing a live registry install. See
-`docs/rebuild/R0-baseline.md`.
 
 ## Native Compatibility
 
@@ -141,9 +135,11 @@ vendored copy rather than performing a live registry install. See
 - **Given:** a valid OpenCode configuration destination.
 - **When:** `install --with-tools` runs.
 - **Then:** install only `run.ts`, `scaffold_gitignore.ts`, and their pinned SDK
-  dependency.
+  dependency. Install `@opencode-ai/plugin` `1.17.15` by copying a vendored
+  closure only when its package version matches; otherwise install the exact pin
+  from npm.
 - **Never:** install `manifest.ts` or the Autonomous supervisor.
-- **Evidence:** F tools-profile inventory.
+- **Evidence:** F tools-profile inventory and vendored-version fallback test.
 - **Source:** REQ § Deployment; ARCH § Deployment.
 
 ### UC-DEP-03: Skills profile installation

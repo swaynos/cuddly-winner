@@ -347,10 +347,11 @@ repository `AGENTS.md`, the supervisor, runner, and non-core skills.
 
 `--with-autonomous` adds the supervisor and the protected `run` and
 `scaffold_gitignore` tools. `--with-tools` installs those two tools without the
-supervisor; either tool profile installs its pinned OpenCode SDK dependency.
-`--with-skills` adds optional skills. Reconciliation removes only managed
-byte-identical copies or links to repository sources, preserving same-named
-user configuration.
+supervisor; either tool profile installs `@opencode-ai/plugin` `1.17.15`. The
+installer copies the vendored dependency closure only after confirming that
+package version, and otherwise installs the exact pin from npm. `--with-skills`
+adds optional skills. Reconciliation removes only managed byte-identical copies
+or links to repository sources, preserving same-named user configuration.
 
 Because the default profile omits the supervisor, runner, and
 `scaffold_gitignore` tool, the Prometheus and Autonomous agent definitions can be
