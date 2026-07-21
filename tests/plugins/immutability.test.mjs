@@ -10,15 +10,15 @@ async function fixture(fn) {
   try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
-function client(agents = {}, parents = {}) {
+function client(agents = {}, parents = {}, sessions = {}) {
   return { session: {
-    get: async ({ path: value }) => ({ data: parents[value.id] ? { parentID: parents[value.id] } : {} }),
+    get: async ({ path: value }) => ({ data: sessions[value.id] ?? (parents[value.id] ? { parentID: parents[value.id] } : {}) }),
     messages: async ({ path: value }) => ({ data: agents[value.id] ? [{ info: { role: "user", agent: agents[value.id] } }] : [] }),
   } };
 }
 
-async function hooks(root, agents = {}, parents = {}) {
-  return ImmutabilityGuard({ directory: root, worktree: root, client: client(agents, parents) });
+async function hooks(root, agents = {}, parents = {}, sessions = {}) {
+  return ImmutabilityGuard({ directory: root, worktree: root, client: client(agents, parents, sessions) });
 }
 
 const mutate = (guard, agent, filePath, tool = "edit") => guard["tool.execute.before"](
@@ -32,6 +32,15 @@ test("native build and plan are never intercepted", async () => fixture(async ro
     await mutate(guard, agent, path.join(root, "tools/run.ts"));
     await guard["tool.execute.before"]({ tool: "bash", sessionID: agent, callID: "shell" }, { args: { command: "true", cwd: root } });
   }
+}));
+
+test("a root session switched from prometheus to build is not intercepted", async () => fixture(async root => {
+  const guard = await hooks(root, { switched: "prometheus" }, {}, { switched: { agent: "build" } });
+  await mutate(guard, "switched", path.join(root, "README.md"));
+  await guard["tool.execute.before"](
+    { tool: "bash", sessionID: "switched", callID: "shell" },
+    { args: { command: "true", cwd: root } },
+  );
 }));
 
 test("unknown and unrelated agents are never intercepted", async () => fixture(async root => {
@@ -84,6 +93,14 @@ test("read-only managed agents cannot mutate or execute", async () => fixture(as
 
 test("managed descendants inherit the parent restriction", async () => fixture(async root => {
   const guard = await hooks(root, { parent: "prometheus", child: "grounder" }, { child: "parent" });
+  await assert.rejects(mutate(guard, "child", path.join(root, "README.md")), /prometheus is restricted/);
+}));
+
+test("a build child of prometheus remains restricted", async () => fixture(async root => {
+  const guard = await hooks(root, {}, {}, {
+    parent: { agent: "prometheus" },
+    child: { agent: "build", parentID: "parent" },
+  });
   await assert.rejects(mutate(guard, "child", path.join(root, "README.md")), /prometheus is restricted/);
 }));
 

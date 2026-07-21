@@ -19,13 +19,16 @@ Prometheus / Autonomous / Karpathy / Reviewer / Grounder / Ask
 
 ## Identity Enforcement
 
-The immutability hook first resolves session ancestry. If the resulting identity
-is not one of the six managed agents, processing stops immediately. No project
-marker is required and no policy file is parsed.
+The immutability hook uses the current selected agent for a top-level session.
+Switching that session from a managed agent to native Build or Plan preserves
+the conversation context but immediately leaves the enforcement boundary; prior
+managed-agent messages do not determine current permissions. If the selected
+top-level identity is not one of the six managed agents, processing stops
+immediately. No project marker is required and no policy file is parsed.
 
 Managed descendants inherit their originating managed identity. This prevents a
-restricted agent from escaping its default through delegation while avoiding
-restrictions on unrelated agents.
+restricted agent from escaping its default through delegation while preserving
+the user's explicit top-level mode switches.
 
 Prometheus is confined to the fixed planning and scaffold paths described below.
 It cannot edit production code or `.gitignore` directly. Autonomous can edit

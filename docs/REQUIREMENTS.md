@@ -130,10 +130,16 @@ guessing. It never presents an uncited external claim as fact.
 
 ### Identity Resolution
 
-A delegated session inherits the identity of its topmost resolvable ancestor,
-so work a managed agent delegates cannot escape the delegating agent's
-boundary. Unresolved or unmanaged identity bypasses managed-agent enforcement
-rather than restricting native functionality.
+A top-level session uses its currently selected OpenCode agent identity. A user
+may switch a top-level session from a managed agent to native Build or Plan and
+continue using that session's discussion context; the native selection bypasses
+managed-agent enforcement immediately. Historical messages from a managed agent
+do not retain its restrictions after that switch.
+
+A delegated session inherits the identity of its topmost resolvable managed
+ancestor, so work a managed agent delegates cannot escape the delegating
+agent's boundary. Unresolved or unmanaged identity bypasses managed-agent
+enforcement rather than restricting native functionality.
 
 ## Prometheus Profile
 

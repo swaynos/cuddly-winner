@@ -90,9 +90,11 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
   async function resolveAgent(sessionID: string, visited = new Set<string>()): Promise<string | undefined> {
     if (visited.has(sessionID)) return undefined;
     visited.add(sessionID);
+    let session: any;
     try {
       const result = await client?.session?.get?.({ path: { id: sessionID } });
-      const parentID = (result?.data ?? result)?.parentID;
+      session = result?.data ?? result;
+      const parentID = session?.parentID;
       if (parentID) {
         const parentAgent = await resolveAgent(parentID, visited);
         if (parentAgent && MANAGED_AGENTS.has(parentAgent)) {
@@ -101,6 +103,10 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
         }
       }
     } catch {}
+    if (typeof session?.agent === "string" && session.agent) {
+      sessionAgents.set(sessionID, session.agent);
+      return session.agent;
+    }
     const cached = sessionAgents.get(sessionID);
     if (cached) return cached;
     try {
