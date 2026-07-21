@@ -149,15 +149,13 @@ Categories are REQ § Validation 1–14. Test layers per `docs/USE-CASES.md`.
 | R3 deployment isolation | done | profiles verified; fixed D2 (copy-mode remove) |
 | R4 scaffold publication (greenfield) | done | `scaffold_gitignore.ts` + `manifest.ts` built, wired, tested; Prometheus prompt now encodes publication order |
 | R5 protected runner | done | reviewed vs threat model; fixed D4 (redaction coverage); added platform-independent redaction test |
-| R6 supervisor/Ralph | done (delta documented) | reviewed; evidence-gating, fingerprint lock, fail-closed, caps all correct; delta below |
-| R7 Karpathy branch | done (delta documented) | reviewed; see delta below |
-| R8 release evidence + docs | done | terminology normalized (protected runner), README + prompt updated, suite green |
+| R6 supervisor/Ralph | incomplete | current coordinator is a subset, not the required full Ralph reducer; pending full reducer implementation and Linux/Bubblewrap evidence |
+| R7 Karpathy branch | incomplete | current coordinator lacks the required target-scoped Karpathy reducer; pending full reducer implementation and Linux/Bubblewrap evidence |
+| R8 release evidence + docs | incomplete | release evidence cannot be complete until R6/R7 are complete and Linux/Bubblewrap evidence is produced |
 
-Test totals after R8: node 43 pass / 0 fail / 8 skip; `verify_opencode` passes
-both profiles; mutation 9 pass; planning + build dry-runs pass. New modules:
-`tools/scaffold_gitignore.ts`, `tools/manifest.ts`,
-`tests/plugins/{manifest,scaffold_gitignore}.test.mjs`,
-`tests/fixtures/manifests/**`.
+Earlier local test totals and deployment checks are baseline observations, not
+evidence that R6-R8 are complete. The skipped Linux/Bubblewrap layer remains
+missing release evidence.
 
 ## Supervisor Delta (R6/R7) — documented, not rewritten
 
@@ -176,12 +174,10 @@ single-run verification/correction reducer plus a mutation-result gate. This is 
 faithful subset for one-shot and correction-driven Ralph runs, not the full
 multi-item/experiment engine described in REQ § Ralph/Karpathy.
 
-Decision: left in place under the evolve-in-place scope. Rewriting it toward the
-full reducer is high-risk against Bubblewrap-dependent behavior that cannot be
-executed on this host (macOS; L-layer skipped), and the current behavior does not
-contradict canon for the paths it does support. A full multi-item/experiment
-reducer is the recommended next work item, gated on a Linux/Bubblewrap CI where
-the L-layer tests actually run.
+Decision: the documented reducer remains the target contract. The current
+subset is an implementation gap, not a documentation conflict or a completed
+delivery. R6/R7 remain incomplete until a full multi-item Ralph and target-scoped
+Karpathy reducer are implemented and validated on Linux/Bubblewrap CI.
 
 ## Unverifiable-On-This-Host Layers
 
@@ -196,7 +192,7 @@ is reported as missing evidence, never as passing.
 | ID | Work item | Defect | Fix |
 | --- | --- | --- | --- |
 | D1 | R2 | `PROMETHEUS_WRITABLE` allowed only `SPEC.md` + `.spike/**`, so Prometheus could not write its own manifest or evaluator (blocks all publication). | Added `opencode-autonomous.json` and `.prometheus/evaluator/**`; test widened. |
-| D2 | R3 | `remove` only deleted symlinks; copy-mode installs (the default) were never uninstalled, leaving stale managed files (violates UC-DEP-04). | `remove` now deletes byte-identical managed copies (`cmp`/`diff -r`), preserves modified/unrelated files. |
+| D2 | R3 | `remove` only deleted symlinks; copy-mode installs (the default) were never uninstalled, leaving stale managed files (violates UC-DEP-04). | Deployment behavior was updated; its conformance remains subject to focused deployment evidence, not a claim that canonical docs conflict with the implementation. |
 | D3 | R1 | SDK three-way version skew + E401 made `--with-autonomous` uninstallable. | Re-pinned to 1.17.15; deploy copies vendored closure instead of registry install. |
 | D4 | R5 | Runner `redact()` covered fewer secret shapes than the documented threat model. | Expanded to AWS keys, JWT, bearer, key=value, PEM blocks; added platform-independent test. |
 | D5 | R4/R6 | Prometheus prompt was stale: named only `SPEC.md`/`## Grounding`, omitted manifest, evaluator, `scaffold_gitignore`, and publication order. | Rewrote prompt to canon publication order + writable paths; planning eval still passes. |

@@ -345,9 +345,12 @@ Default installation copies managed agent definitions and the identity-scoped
 immutability hook into OpenCode's global configuration. It deliberately omits
 repository `AGENTS.md`, the supervisor, runner, and non-core skills.
 
-`--with-autonomous` adds the supervisor, protected runner, and
-`scaffold_gitignore` tool. `--with-skills` adds optional skills. The installer
-removes obsolete managed links and reports every target.
+`--with-autonomous` adds the supervisor and the protected `run` and
+`scaffold_gitignore` tools. `--with-tools` installs those two tools without the
+supervisor; either tool profile installs its pinned OpenCode SDK dependency.
+`--with-skills` adds optional skills. Reconciliation removes only managed
+byte-identical copies or links to repository sources, preserving same-named
+user configuration.
 
 Because the default profile omits the supervisor, runner, and
 `scaffold_gitignore` tool, the Prometheus and Autonomous agent definitions can be

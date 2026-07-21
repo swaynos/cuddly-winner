@@ -1,5 +1,5 @@
-import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 const SHELL_TOOLS = new Set(["bash", "run"]);
@@ -13,6 +13,8 @@ const TRUSTED_PATHS = [
   ".opencode/progress",
   ".opencode/quarantine",
   "tools/run.ts",
+  "tools/manifest.ts",
+  "tools/scaffold_gitignore.ts",
   "plugins/immutability.ts",
   "plugins/opencode-autonomous-supervisor.js",
   "plugins/opencode-autonomous-supervisor/index.js",
@@ -39,19 +41,22 @@ function extractPatchedPaths(patchText: string): string[] {
   return [...paths];
 }
 
-function canonicalTarget(target: string): string {
-  let existing = target;
-  const suffix: string[] = [];
-  while (!existsSync(existing)) {
-    suffix.unshift(basename(existing));
-    const parent = dirname(existing);
-    if (parent === existing) break;
-    existing = parent;
+function safeTarget(lexicalRoot: string, root: string, target: string): string {
+  const resolved = resolve(target);
+  if (!isInside(lexicalRoot, resolved)) throw new Error(`ImmutabilityGuard: target escapes active worktree: ${target}`);
+  const rel = relative(lexicalRoot, resolved);
+  let current = lexicalRoot;
+  for (const part of rel ? rel.split(sep) : []) {
+    current = resolve(current, part);
+    try {
+      if (lstatSync(current).isSymbolicLink()) {
+        throw new Error(`ImmutabilityGuard: target escapes active worktree: ${target}`);
+      }
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
+    }
   }
-  let canonical = realpathSync(existing);
-  for (const part of suffix) canonical = join(canonical, part);
-  if (existsSync(target) && lstatSync(target).isSymbolicLink()) return realpathSync(target);
-  return canonical;
+  return resolve(root, rel);
 }
 
 function isInside(root: string, target: string): boolean {
@@ -63,8 +68,23 @@ function isTrustedPath(relPath: string): boolean {
   return TRUSTED_PATHS.some((trusted) => relPath === trusted || relPath.startsWith(`${trusted}/`));
 }
 
+function isPublishedScaffold(relPath: string): boolean {
+  return relPath === "SPEC.md" || relPath === "opencode-autonomous.json" || relPath.startsWith(".prometheus/evaluator/");
+}
+
+function hasActiveRun(root: string): boolean {
+  try {
+    return readdirSync(resolve(root, ".opencode", "supervisor"))
+      .filter((name) => name.endsWith(".json") && !name.endsWith(".budget.json"))
+      .some((name) => JSON.parse(readFileSync(resolve(root, ".opencode", "supervisor", name), "utf8")).status === "running");
+  } catch {
+    return false;
+  }
+}
+
 export const ImmutabilityGuard = async ({ directory, worktree, client }: { directory: string; worktree: string; client: any }) => {
-  const root = realpathSync(resolve(worktree || directory));
+  const lexicalRoot = resolve(worktree || directory);
+  const root = realpathSync(lexicalRoot);
   const sessionAgents = new Map<string, string>();
 
   async function resolveAgent(sessionID: string, visited = new Set<string>()): Promise<string | undefined> {
@@ -75,7 +95,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       const parentID = (result?.data ?? result)?.parentID;
       if (parentID) {
         const parentAgent = await resolveAgent(parentID, visited);
-        if (parentAgent) {
+        if (parentAgent && MANAGED_AGENTS.has(parentAgent)) {
           sessionAgents.set(sessionID, parentAgent);
           return parentAgent;
         }
@@ -137,9 +157,12 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       if (!paths.length) throw new Error(`ImmutabilityGuard: ${input.tool} did not expose mutation targets.`);
 
       for (const unresolvedPath of paths) {
-        const absolutePath = canonicalTarget(unresolvedPath);
-        if (!isInside(root, absolutePath)) throw new Error(`ImmutabilityGuard: target escapes active worktree: ${unresolvedPath}`);
+        const absolutePath = safeTarget(lexicalRoot, root, unresolvedPath);
         const relPath = relative(root, absolutePath).replace(/\\/g, "/");
+        if (isPublishedScaffold(relPath) && (agent !== "prometheus" || hasActiveRun(root))) {
+          throw new Error(`ImmutabilityGuard: published scaffold is frozen during an active run: "${relPath}".`);
+        }
+        if (agent === "prometheus" && isPublishedScaffold(relPath)) continue;
         if (isTrustedPath(relPath)) throw new Error(`ImmutabilityGuard: "${relPath}" is trusted control-plane state.`);
         if (agent === "prometheus" && !PROMETHEUS_WRITABLE.some((pattern) => matchesPattern(relPath, pattern))) {
           throw new Error(`ImmutabilityGuard: @prometheus is restricted to writing [${PROMETHEUS_WRITABLE.join(", ")}].`);

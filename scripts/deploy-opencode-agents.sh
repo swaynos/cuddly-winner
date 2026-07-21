@@ -23,9 +23,9 @@ Options:
   --skills-dir PATH   OpenCode skills directory (used with --with-skills)
   --tools-dir PATH    OpenCode tools directory
   --mode MODE         Install mode: copy (default) or symlink
-  --with-autonomous   Install the optional Autonomous supervisor and runner
+  --with-autonomous   Install the optional Autonomous supervisor and OpenCode tools
   --with-skills       Install optional non-core skills
-  --with-tools        Install only the trusted runner (advanced)
+  --with-tools        Install the OpenCode run and scaffold_gitignore tools
   -h, --help          Show this help
 
 Override precedence (highest to lowest):
@@ -235,7 +235,15 @@ install_files() {
 
     if [[ "$mode" == "symlink" ]]; then
       if [[ -L "$dst" ]]; then
-        rm -f "$dst"
+        local target
+        target="$(readlink "$dst" || true)"
+        if [[ "$target" == "$src" ]]; then
+          rm -f "$dst"
+        else
+          local backup="${dst}.bak.${timestamp}"
+          mv "$dst" "$backup"
+          printf 'Backed up existing link: %s -> %s\n' "$dst" "$backup"
+        fi
       elif [[ -e "$dst" ]]; then
         local backup="${dst}.bak.${timestamp}"
         mv "$dst" "$backup"
@@ -245,7 +253,15 @@ install_files() {
       printf 'Linked: %s -> %s\n' "$dst" "$src"
     else
       if [[ -L "$dst" ]]; then
-        rm -f "$dst"
+        local target
+        target="$(readlink "$dst" || true)"
+        if [[ "$target" == "$src" ]]; then
+          rm -f "$dst"
+        else
+          local backup="${dst}.bak.${timestamp}"
+          mv "$dst" "$backup"
+          printf 'Backed up existing link: %s -> %s\n' "$dst" "$backup"
+        fi
       elif [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
         printf 'Unchanged: %s\n' "$dst"
         continue
@@ -345,7 +361,15 @@ install_entries() {
 
     if [[ "$mode" == "symlink" ]]; then
       if [[ -L "$dst" ]]; then
-        rm -f "$dst"
+        local target
+        target="$(readlink "$dst" || true)"
+        if [[ "$target" == "$src" ]]; then
+          rm -f "$dst"
+        else
+          local backup="${dst}.bak.${timestamp}"
+          mv "$dst" "$backup"
+          printf 'Backed up existing link: %s -> %s\n' "$dst" "$backup"
+        fi
       elif [[ -e "$dst" ]]; then
         local backup="${dst}.bak.${timestamp}"
         mv "$dst" "$backup"
@@ -355,7 +379,15 @@ install_entries() {
       printf 'Linked: %s -> %s\n' "$dst" "$src"
     else
       if [[ -L "$dst" ]]; then
-        rm -f "$dst"
+        local target
+        target="$(readlink "$dst" || true)"
+        if [[ "$target" == "$src" ]]; then
+          rm -f "$dst"
+        else
+          local backup="${dst}.bak.${timestamp}"
+          mv "$dst" "$backup"
+          printf 'Backed up existing link: %s -> %s\n' "$dst" "$backup"
+        fi
       elif [[ -e "$dst" ]]; then
         local backup="${dst}.bak.${timestamp}"
         mv "$dst" "$backup"
@@ -369,6 +401,48 @@ install_entries() {
       printf 'Copied: %s -> %s\n' "$src" "$dst"
     fi
   done
+}
+
+# Legacy entries have no current source to compare. Only links into this
+# repository can have been created by an earlier deployment.
+remove_legacy_repo_link() {
+  local label="$1"
+  local dst="$2"
+
+  if [[ ! -L "$dst" ]]; then
+    return
+  fi
+
+  local target
+  target="$(readlink "$dst" || true)"
+  if [[ "$target" == "${REPO_ROOT}/"* ]]; then
+    rm -f "$dst"
+    printf 'Removed obsolete managed %s: %s\n' "$label" "$dst"
+  else
+    printf 'Skipped obsolete %s with different target: %s\n' "$label" "$dst"
+  fi
+}
+
+remove_managed_file() {
+  local label="$1"
+  local src="$2"
+  local dst="$3"
+
+  if [[ -L "$dst" ]]; then
+    local target
+    target="$(readlink "$dst" || true)"
+    if [[ "$target" == "$src" ]]; then
+      rm -f "$dst"
+      printf 'Removed %s link: %s\n' "$label" "$dst"
+    else
+      printf 'Skipped %s link with different target: %s\n' "$label" "$dst"
+    fi
+  elif [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
+    rm -f "$dst"
+    printf 'Removed %s copy: %s\n' "$label" "$dst"
+  elif [[ -e "$dst" ]]; then
+    printf 'Skipped modified or unrelated %s: %s\n' "$label" "$dst"
+  fi
 }
 
 ACTION="install"
@@ -514,34 +588,46 @@ printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
 if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
   for obsolete in opencode-autonomous-gate opencode-autonomous-loop opencode-autonomous-gate.js opencode-autonomous-loop.js shared; do
     candidate="${PLUGINS_DIR}/${obsolete}"
-    if [[ -e "$candidate" || -L "$candidate" ]]; then rm -rf "$candidate"; printf 'Removed obsolete managed plugin: %s\n' "$candidate"; fi
+    remove_legacy_repo_link "plugin" "$candidate"
   done
   for obsolete in builder data-scientist octopus-arm octopus ralph-wiggum; do
     candidate="${AGENTS_DIR}/${obsolete}.md"
-    if [[ -e "$candidate" || -L "$candidate" ]]; then rm -f "$candidate"; printf 'Removed obsolete managed agent: %s\n' "$candidate"; fi
+    remove_legacy_repo_link "agent" "$candidate"
   done
   candidate="${CONFIG_DIR}/AGENTS.md"
   if [[ -L "$candidate" && "$(readlink "$candidate" || true)" == "${REPO_ROOT}/AGENTS.md" ]]; then
     rm -f "$candidate"
     printf 'Removed repository-specific global rules: %s\n' "$candidate"
   fi
-  if [[ "$WITH_AUTONOMOUS" == false ]]; then
-    for optional in "${PLUGINS_DIR}/opencode-autonomous-supervisor" "${PLUGINS_DIR}/opencode-autonomous-supervisor.js" "${TOOLS_DIR}/run.ts" "${TOOLS_DIR}/scaffold_gitignore.ts"; do
-      if [[ -e "$optional" || -L "$optional" ]]; then rm -rf "$optional"; printf 'Removed optional Autonomous entry: %s\n' "$optional"; fi
-    done
+  if [[ "$ACTION" == "install" && "$WITH_AUTONOMOUS" == false ]]; then
+    remove_legacy_repo_link "Autonomous plugin" "${PLUGINS_DIR}/opencode-autonomous-supervisor.js"
+    remove_managed_file "Autonomous tool" "${REPO_ROOT}/tools/run.ts" "${TOOLS_DIR}/run.ts"
+    remove_managed_file "Autonomous tool" "${REPO_ROOT}/tools/scaffold_gitignore.ts" "${TOOLS_DIR}/scaffold_gitignore.ts"
+
+    candidate="${PLUGINS_DIR}/opencode-autonomous-supervisor"
+    if [[ -L "$candidate" && "$(readlink "$candidate" || true)" == "${REPO_ROOT}/plugins/opencode-autonomous-supervisor" ]]; then
+      rm -f "$candidate"
+      printf 'Removed Autonomous plugin link: %s\n' "$candidate"
+    elif [[ -d "$candidate" ]] && diff -r -q "${REPO_ROOT}/plugins/opencode-autonomous-supervisor" "$candidate" >/dev/null 2>&1; then
+      rm -rf "$candidate"
+      printf 'Removed Autonomous plugin copy: %s\n' "$candidate"
+    elif [[ -e "$candidate" ]]; then
+      printf 'Skipped modified or unrelated Autonomous plugin: %s\n' "$candidate"
+    fi
   fi
 fi
 
 # --- Agents ---
 install_files "Agents" "$SOURCE_DIR" "$AGENTS_DIR" "$MODE" "$ACTION" "*.md"
 
-# --- Managed-agent immutability (does not affect native Plan/Build) ---
-if [[ "$WITH_PLUGINS" == true && "$WITH_AUTONOMOUS" == false ]]; then
+# --- Managed-agent immutability and optional Autonomous profile ---
+if [[ "$ACTION" == "remove" ]]; then
+  # Removal is profile-independent: preserve user changes while reconciling all
+  # current plugin sources, including Autonomous artifacts from an old profile.
+  install_entries "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION"
+elif [[ "$WITH_PLUGINS" == true && "$WITH_AUTONOMOUS" == false ]]; then
   install_files "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION" "immutability.ts"
-fi
-
-# --- Optional Autonomous profile ---
-if [[ "$WITH_AUTONOMOUS" == true ]]; then
+elif [[ "$WITH_AUTONOMOUS" == true ]]; then
   install_entries "Plugins" "${REPO_ROOT}/plugins" "$PLUGINS_DIR" "$MODE" "$ACTION"
 fi
 
@@ -550,15 +636,22 @@ if [[ "$WITH_SKILLS" == true ]]; then
   install_entries "Skills" "${REPO_ROOT}/skills" "$SKILLS_DIR" "$MODE" "$ACTION"
 fi
 
-# --- Protected runner and scaffold tools ---
-if [[ "$WITH_TOOLS" == true ]]; then
-  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "*.ts"
+# --- OpenCode runner and scaffold tools ---
+if [[ "$ACTION" == "remove" ]]; then
+  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "run.ts"
+  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "scaffold_gitignore.ts"
+elif [[ "$WITH_TOOLS" == true ]]; then
+  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "run.ts"
+  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "scaffold_gitignore.ts"
+  if [[ "$WITH_AUTONOMOUS" == true ]]; then
+    install_files "Manifest validator" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "manifest.ts"
+  fi
 fi
 
 # Custom tools resolve SDK imports from the deployment target, never from this
 # repository. Install the pinned runtime dependency for both copy and symlink
 # modes without requiring a repository node_modules link.
-if [[ "$ACTION" == "install" && "$WITH_AUTONOMOUS" == true ]]; then
+if [[ "$ACTION" == "install" && "$WITH_TOOLS" == true ]]; then
   # Prefer the vendored runtime closure (pinned @opencode-ai/plugin 1.17.15) so
   # installation is self-contained and does not require registry access. Fall
   # back to npm only when no vendored copy is present.

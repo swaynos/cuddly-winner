@@ -15,6 +15,7 @@ export interface RunInput {
   spike_id?: string;
   supervisor_run_id?: string;
   spec_fingerprint?: string;
+  scaffold_fingerprint?: string;
   active_worktree?: string;
   network?: "none" | "verification";
 }
@@ -33,6 +34,7 @@ export interface RunResult {
   spike_id?: string;
   supervisor_run_id?: string;
   spec_fingerprint?: string;
+  scaffold_fingerprint?: string;
   worktree: string;
   output_truncated: boolean;
   network: "none" | "verification";
@@ -212,9 +214,10 @@ export async function run(input: RunInput): Promise<RunResult> {
     if (dest.context === "execution" && (
       !input.supervisor_run_id ||
       !/^[a-zA-Z0-9_-]+$/.test(input.supervisor_run_id) ||
-      !/^[a-f0-9]{64}$/.test(input.spec_fingerprint ?? "")
+      !/^[a-f0-9]{64}$/.test(input.spec_fingerprint ?? "") ||
+      !/^[a-f0-9]{64}$/.test(input.scaffold_fingerprint ?? "")
     )) {
-      throw new Error("Execution context requires valid supervisor run and SPEC provenance");
+      throw new Error("Execution context requires valid supervisor run and combined scaffold provenance");
     }
     await fs.mkdir(dest.dir, { recursive: true });
     if (dest.context === "execution") {
@@ -260,15 +263,15 @@ export async function run(input: RunInput): Promise<RunResult> {
       proc.stdout.on("data", (chunk: Buffer) => {
         outputBytes += chunk.length;
         const remaining = Math.max(0, MAX_OUTPUT_BYTES - storedBytes);
-        if (remaining) { const saved = Buffer.from(redact(chunk.subarray(0, remaining).toString("utf8"))); chunks.push(saved); storedBytes += saved.length; }
-        stdout = tail(redact(`${stdout}${chunk.toString("utf8")}`));
+        if (remaining) { const saved = chunk.subarray(0, remaining); chunks.push(saved); storedBytes += saved.length; }
+        if (remaining) stdout += chunk.subarray(0, remaining).toString("utf8");
         if (outputBytes > MAX_OUTPUT_BYTES) { output_truncated = true; proc.kill("SIGKILL"); }
       });
       proc.stderr.on("data", (chunk: Buffer) => {
         outputBytes += chunk.length;
         const remaining = Math.max(0, MAX_OUTPUT_BYTES - storedBytes);
-        if (remaining) { const saved = Buffer.from(redact(chunk.subarray(0, remaining).toString("utf8"))); chunks.push(saved); storedBytes += saved.length; }
-        stderr = tail(redact(`${stderr}${chunk.toString("utf8")}`));
+        if (remaining) { const saved = chunk.subarray(0, remaining); chunks.push(saved); storedBytes += saved.length; }
+        if (remaining) stderr += chunk.subarray(0, remaining).toString("utf8");
         if (outputBytes > MAX_OUTPUT_BYTES) { output_truncated = true; proc.kill("SIGKILL"); }
       });
       proc.on("error", (error) => settle(() => reject(error)));
@@ -289,21 +292,22 @@ export async function run(input: RunInput): Promise<RunResult> {
       started_at,
       finished_at: new Date(finishMs).toISOString(),
       duration_ms: finishMs - startMs,
-      command: normalizeCommand(input.command),
+      command: redact(normalizeCommand(input.command)),
       exit_code,
-      stdout_tail: tail(stdout),
-      stderr_tail: tail(signal ? `${stderr}\nTerminated by ${signal}` : stderr),
+      stdout_tail: tail(redact(stdout)),
+      stderr_tail: tail(redact(signal ? `${stderr}\nTerminated by ${signal}` : stderr)),
       timed_out,
       context: dest.context,
       ...(input.spike_id ? { spike_id: input.spike_id } : {}),
       ...(input.supervisor_run_id ? { supervisor_run_id: input.supervisor_run_id } : {}),
       ...(input.spec_fingerprint ? { spec_fingerprint: input.spec_fingerprint } : {}),
+      ...(input.scaffold_fingerprint ? { scaffold_fingerprint: input.scaffold_fingerprint } : {}),
       worktree,
       output_truncated,
       network: input.network ?? "none",
     };
 
-    await atomicWrite(path.join(dest.dir, `${run_id}.log`), Buffer.concat(chunks));
+    await atomicWrite(path.join(dest.dir, `${run_id}.log`), redact(Buffer.concat(chunks).toString("utf8")));
     await atomicWrite(
       path.join(dest.dir, `${run_id}.json`),
       `${JSON.stringify(result, null, 2)}\n`,
@@ -320,6 +324,34 @@ export const __testing = {
   },
   redact,
 };
+
+async function scaffoldFingerprint(root: string): Promise<{ spec: string; specFingerprint: string; scaffoldFingerprint: string }> {
+  const spec = await fs.readFile(path.join(root, "SPEC.md"));
+  const manifestBytes = await fs.readFile(path.join(root, "opencode-autonomous.json"));
+  let manifest: { evaluator_inventory?: unknown };
+  try { manifest = JSON.parse(manifestBytes.toString("utf8")); } catch { throw new Error("Invalid opencode-autonomous.json"); }
+  if (!Array.isArray(manifest.evaluator_inventory) || !manifest.evaluator_inventory.every((file) => typeof file === "string")) {
+    throw new Error("Invalid opencode-autonomous.json evaluator inventory");
+  }
+  const hash = crypto.createHash("sha256");
+  const evaluators = [...manifest.evaluator_inventory].sort();
+  for (const [name, bytes] of [["SPEC.md", spec], ["opencode-autonomous.json", manifestBytes], ...await Promise.all(evaluators.map(async (file) => [file, await fs.readFile(path.join(root, file))] as const))]) {
+    hash.update(name).update("\0").update(bytes).update("\0");
+  }
+  return { spec: spec.toString("utf8"), specFingerprint: fingerprint(spec.toString("utf8")), scaffoldFingerprint: hash.digest("hex") };
+}
+
+async function activeSupervisorRun(root: string): Promise<string> {
+  let active: { run_id?: unknown };
+  try { active = JSON.parse(await fs.readFile(path.join(root, ".opencode", "supervisor", "active.json"), "utf8")); }
+  catch { throw new Error("Runner cannot establish an active Autonomous coordinator run"); }
+  if (typeof active.run_id !== "string" || !/^[a-zA-Z0-9_-]+$/.test(active.run_id)) throw new Error("Runner active coordinator state is malformed");
+  let state: { status?: unknown };
+  try { state = JSON.parse(await fs.readFile(path.join(root, ".opencode", "supervisor", `${active.run_id}.json`), "utf8")); }
+  catch { throw new Error("Runner active coordinator state is missing or malformed"); }
+  if (state.status !== "running") throw new Error("Runner active coordinator is not running");
+  return active.run_id;
+}
 
 export default tool({
   description: "Run a verification or contracted spike command in the trusted sandbox and persist durable evidence.",
@@ -339,18 +371,16 @@ export default tool({
       return JSON.stringify(await run({ ...args, cwd, active_worktree }), null, 2);
     }
 
-    const sessionID = (context as { sessionID?: string }).sessionID;
-    if (!sessionID) {
-      throw new Error("Runner cannot establish supervisor run provenance for this session");
-    }
-    const spec = await fs.readFile(path.join(cwd, "SPEC.md"), "utf8");
+    const provenance = await scaffoldFingerprint(cwd);
+    const runID = await activeSupervisorRun(cwd);
     return JSON.stringify(
       await run({
         ...args,
         cwd,
         active_worktree,
-        supervisor_run_id: sessionID,
-        spec_fingerprint: fingerprint(spec),
+        supervisor_run_id: runID,
+        spec_fingerprint: provenance.specFingerprint,
+        scaffold_fingerprint: provenance.scaffoldFingerprint,
       }),
       null,
       2,

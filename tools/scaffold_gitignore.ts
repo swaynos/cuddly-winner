@@ -8,6 +8,7 @@
 import { tool } from "@opencode-ai/plugin";
 import { promises as fs, lstatSync, existsSync } from "node:fs";
 import { execFile } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
 import { promisify } from "node:util";
@@ -48,30 +49,105 @@ function assertSafeTarget(gitignorePath: string): void {
   }
 }
 
-function stripManagedBlock(content: string): string {
-  const lines = content.split(/\r?\n/);
-  const begins = lines.filter((l) => l.trim() === BEGIN).length;
-  const ends = lines.filter((l) => l.trim() === END).length;
-  if (begins === 0 && ends === 0) return content;
-  if (begins !== 1 || ends !== 1) {
+type Marker = { start: number; end: number; newline: Buffer };
+
+function markerRange(content: Buffer): { begin?: Marker; end?: Marker } {
+  const beginBytes = Buffer.from(BEGIN);
+  const endBytes = Buffer.from(END);
+  const begins: Marker[] = [];
+  const ends: Marker[] = [];
+
+  for (let start = 0; start <= content.length;) {
+    let lineEnd = start;
+    while (lineEnd < content.length && content[lineEnd] !== 0x0a && content[lineEnd] !== 0x0d) lineEnd++;
+    let next = lineEnd;
+    if (content[next] === 0x0d && content[next + 1] === 0x0a) next += 2;
+    else if (content[next] === 0x0d || content[next] === 0x0a) next++;
+    const line = content.subarray(start, lineEnd);
+    const newline = content.subarray(lineEnd, next);
+    const isBegin = line.equals(beginBytes);
+    const isEnd = line.equals(endBytes);
+    if (isBegin) begins.push({ start, end: next, newline });
+    if (isEnd) ends.push({ start, end: next, newline });
+    if ((!isBegin && line.includes(beginBytes)) || (!isEnd && line.includes(endBytes))) {
+      throw new Error("scaffold_gitignore: duplicate or malformed managed markers; refusing to guess.");
+    }
+    if (next === content.length) break;
+    start = next;
+  }
+
+  if (begins.length === 0 && ends.length === 0) return {};
+  if (begins.length !== 1 || ends.length !== 1) {
     throw new Error("scaffold_gitignore: duplicate or malformed managed markers; refusing to guess.");
   }
-  const start = lines.findIndex((l) => l.trim() === BEGIN);
-  const stop = lines.findIndex((l) => l.trim() === END);
-  if (stop < start) {
+  if (ends[0].start < begins[0].start) {
     throw new Error("scaffold_gitignore: END marker precedes BEGIN marker.");
   }
-  const before = lines.slice(0, start);
-  const after = lines.slice(stop + 1);
-  // Drop one blank separator we may have inserted before the block.
-  if (before.length && before[before.length - 1] === "") before.pop();
-  return [...before, ...after].join("\n");
+  return { begin: begins[0], end: ends[0] };
 }
 
-function composeContent(unrelated: string): string {
-  const trimmed = unrelated.replace(/\s+$/, "");
-  if (trimmed === "") return `${MANAGED_BLOCK}\n`;
-  return `${trimmed}\n\n${MANAGED_BLOCK}\n`;
+function lineEnding(content: Buffer): Buffer {
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === 0x0a) return Buffer.from("\n");
+    if (content[i] === 0x0d) return Buffer.from(content[i + 1] === 0x0a ? "\r\n" : "\r");
+  }
+  return Buffer.from("\n");
+}
+
+function composeContent(content: Buffer): Buffer {
+  const { begin, end } = markerRange(content);
+  const eol = begin?.newline.length ? begin.newline : lineEnding(content);
+  const block = Buffer.from(MANAGED_BLOCK.replace(/\n/g, eol.toString("utf8")));
+  if (begin && end) {
+    // The marker lines, including the END line terminator, are the only replaced bytes.
+    const replacement = end.newline.length ? Buffer.concat([block, eol]) : block;
+    return Buffer.concat([content.subarray(0, begin.start), replacement, content.subarray(end.end)]);
+  }
+  if (content.length === 0) return Buffer.concat([block, eol]);
+  const endsInNewline = content[content.length - 1] === 0x0a || content[content.length - 1] === 0x0d;
+  return Buffer.concat([content, endsInNewline ? eol : Buffer.concat([eol, eol]), block, eol]);
+}
+
+function stripManagedBlock(content: string): string {
+  const bytes = Buffer.from(content);
+  const { begin, end } = markerRange(bytes);
+  if (!begin || !end) return content;
+  return Buffer.concat([bytes.subarray(0, begin.start), bytes.subarray(end.end)]).toString("utf8");
+}
+
+async function writeAtomically(target: string, content: Buffer, mode: number | undefined): Promise<void> {
+  const directory = path.dirname(target);
+  let tmp: string | undefined;
+  try {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = path.join(directory, `.gitignore.tmp.${randomBytes(16).toString("hex")}`);
+      try {
+        const handle = await fs.open(candidate, "wx", mode ?? 0o644);
+        tmp = candidate;
+        try {
+          await handle.writeFile(content);
+          if (mode !== undefined) await handle.chmod(mode);
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+        break;
+      } catch (error: unknown) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      }
+    }
+    if (!tmp) throw new Error("scaffold_gitignore: could not create a temporary file safely.");
+    await fs.rename(tmp, target);
+    tmp = undefined;
+    const directoryHandle = await fs.open(directory, "r");
+    try {
+      await directoryHandle.sync();
+    } finally {
+      await directoryHandle.close();
+    }
+  } finally {
+    if (tmp) await fs.rm(tmp, { force: true });
+  }
 }
 
 async function queryTrackedArtifacts(root: string): Promise<string[]> {
@@ -95,22 +171,18 @@ export async function applyScaffoldGitignore(root: string): Promise<ScaffoldGiti
   const gitignorePath = path.join(resolvedRoot, ".gitignore");
   assertSafeTarget(gitignorePath);
 
-  let existing = "";
+  let existing = Buffer.alloc(0);
   let mode: number | undefined;
   if (existsSync(gitignorePath)) {
-    existing = await fs.readFile(gitignorePath, "utf8");
+    existing = Buffer.from(await fs.readFile(gitignorePath));
     mode = (await fs.stat(gitignorePath)).mode & 0o777;
   }
 
-  const unrelated = stripManagedBlock(existing);
-  const next = composeContent(unrelated);
-  const changed = next !== existing;
+  const next = composeContent(existing);
+  const changed = !next.equals(existing);
 
   if (changed) {
-    const tmp = path.join(resolvedRoot, `.gitignore.tmp.${process.pid}.${Date.now()}`);
-    await fs.writeFile(tmp, next, { mode: mode ?? 0o644 });
-    if (mode !== undefined) await fs.chmod(tmp, mode);
-    await fs.rename(tmp, gitignorePath);
+    await writeAtomically(gitignorePath, next, mode);
   }
 
   const tracked = await queryTrackedArtifacts(resolvedRoot);
@@ -129,7 +201,7 @@ export async function applyScaffoldGitignore(root: string): Promise<ScaffoldGiti
   };
 }
 
-export const __testing = { stripManagedBlock, composeContent, MANAGED_BLOCK, assertSafeTarget, os };
+export const __testing = { stripManagedBlock, composeContent, markerRange, MANAGED_BLOCK, assertSafeTarget, os };
 
 export default tool({
   description:

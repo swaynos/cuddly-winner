@@ -23,12 +23,12 @@ export function parseVerification(spec) {
   return commands.map(normalizeCommand);
 }
 
-const required = ["run_id","supervisor_run_id","spec_fingerprint","started_at","finished_at","duration_ms","command","exit_code","stdout_tail","stderr_tail","timed_out","context"];
+const required = ["run_id","supervisor_run_id","spec_fingerprint","scaffold_fingerprint","started_at","finished_at","duration_ms","command","exit_code","stdout_tail","stderr_tail","timed_out","context"];
 export function validateRunArtifact(value) {
   if (!value || typeof value !== "object" || required.some((k) => !(k in value))) throw new Error("Malformed run artifact");
   if (!Number.isFinite(value.duration_ms) || !Number.isFinite(value.exit_code)) throw new Error("Invalid run numbers");
   if (typeof value.run_id !== "string" || !/^[a-z0-9]+$/i.test(value.run_id)) throw new Error("Invalid run ID");
-  if (typeof value.supervisor_run_id !== "string" || !value.supervisor_run_id || !/^[a-f0-9]{64}$/.test(value.spec_fingerprint)) throw new Error("Invalid run provenance");
+  if (typeof value.supervisor_run_id !== "string" || !value.supervisor_run_id || !/^[a-f0-9]{64}$/.test(value.spec_fingerprint) || !/^[a-f0-9]{64}$/.test(value.scaffold_fingerprint)) throw new Error("Invalid run provenance");
   if (!Date.parse(value.started_at) || !Date.parse(value.finished_at) || Date.parse(value.finished_at) < Date.parse(value.started_at) || Date.parse(value.finished_at) > Date.now() + 5000 || value.context !== "execution") throw new Error("Invalid run context or timestamps");
   if (typeof value.command !== "string" || typeof value.stdout_tail !== "string" || typeof value.stderr_tail !== "string" || typeof value.timed_out !== "boolean") throw new Error("Invalid run fields");
   return value;
@@ -71,23 +71,10 @@ export async function evaluate(root, specText, expected = {}) {
     catch { return { complete: false, missing: commands, invalid_artifact: name }; }
     if (name !== `${artifact.run_id}.json`) return { complete:false, missing:commands, invalid_artifact:`filename mismatch ${name}` };
     if (seen.has(artifact.run_id)) return { complete: false, missing: commands, invalid_artifact: `duplicate run_id ${artifact.run_id}` }; seen.add(artifact.run_id);
-    if (artifact.exit_code === 0 && Date.parse(artifact.started_at) >= newest && artifact.supervisor_run_id === expected.runID && artifact.spec_fingerprint === expected.specFingerprint) passing.set(normalizeCommand(artifact.command), artifact);
+    if (artifact.exit_code === 0 && Date.parse(artifact.started_at) >= newest && artifact.supervisor_run_id === expected.runID && artifact.spec_fingerprint === expected.specFingerprint && artifact.scaffold_fingerprint === expected.scaffoldFingerprint) passing.set(normalizeCommand(artifact.command), artifact);
   }
   const missing = commands.filter((command) => !passing.has(command));
   return { complete: missing.length === 0, missing, satisfied: commands.filter((c) => passing.has(c)) };
-}
-
-export async function validateMutation(config, result, root, newestMtime) {
-  if (!config?.enabled) return true;
-  if (!result || !Date.parse(result.generated_at) || Date.parse(result.generated_at) > Date.now() + 5000 || !Number.isFinite(result.score) || result.score < config.score_threshold || !Array.isArray(result.files) || !result.files.length) return false;
-  if (Date.parse(result.generated_at) < newestMtime) return false;
-  for (const file of result.files) {
-    if (typeof file !== "string" || path.isAbsolute(file)) return false;
-    const resolved=path.resolve(root,file); if(resolved!==root && !resolved.startsWith(`${root}${path.sep}`)) return false;
-    let stat; try { stat = await fs.stat(resolved); } catch { return false; }
-    if (!stat.isFile() || stat.mtimeMs > Date.parse(result.generated_at)) return false;
-  }
-  return true;
 }
 
 export function applyCorrection(state, failureClass, dedupeKey) {
@@ -137,10 +124,29 @@ async function sessionInfo(client, sessionID) {
   return {agent,parentID};
 }
 
+async function readScaffold(root) {
+  const spec = await fs.readFile(path.join(root, "SPEC.md"));
+  const manifestBytes = await fs.readFile(path.join(root, "opencode-autonomous.json"));
+  let manifest;
+  try { manifest = JSON.parse(manifestBytes.toString("utf8")); }
+  catch { throw new Error("Invalid opencode-autonomous.json"); }
+  const { validateManifest } = await import("../../tools/manifest.ts");
+  const validation = validateManifest(manifest, { root });
+  if (!validation.valid) throw new Error(`Invalid opencode-autonomous.json: ${validation.errors.join("; ")}`);
+  const evaluators = [];
+  for (const file of [...manifest.evaluator_inventory].sort()) evaluators.push([file, await fs.readFile(path.join(root, file))]);
+  const hash = crypto.createHash("sha256");
+  for (const [name, bytes] of [["SPEC.md", spec], ["opencode-autonomous.json", manifestBytes], ...evaluators]) {
+    hash.update(name).update("\0").update(bytes).update("\0");
+  }
+  return { spec: spec.toString("utf8"), scaffoldFingerprint: hash.digest("hex") };
+}
+
 export default async function Supervisor({ directory, worktree, client }) {
   const root = worktree || directory;
   const stateDir=path.join(root,".opencode","supervisor");
   const stateFile=(runID)=>path.join(stateDir,`${runID}.json`);
+  const activeFile=path.join(stateDir,"active.json");
   const runBySession=new Map();
 
   async function existingRun(sessionID) {
@@ -159,10 +165,21 @@ export default async function Supervisor({ directory, worktree, client }) {
     if(agent!=="autonomous") return;
     const info=await sessionInfo(client,sessionID);
     if(info.parentID) return;
-    const spec=await fs.readFile(path.join(root,"SPEC.md"),"utf8");
+    const { spec, scaffoldFingerprint }=await readScaffold(root);
+    await serializedStateUpdate(activeFile, async (active) => {
+      if (active.run_id && active.run_id !== sessionID) {
+        try {
+          const current = JSON.parse(await fs.readFile(stateFile(active.run_id), "utf8"));
+          if (current.status === "running") throw new Error(`Autonomous coordinator already active for this worktree: ${active.run_id}`);
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+      }
+      return { run_id: sessionID };
+    });
     await serializedStateUpdate(stateFile(sessionID),(state)=>{
       if(state.run_id) return state;
-      return {run_id:sessionID,spec_fingerprint:fingerprint(spec),satisfied:[],corrective_counts:{},global_count:0,history:[],status:"running",blocker_reason:null};
+      return {run_id:sessionID,spec_fingerprint:fingerprint(spec),scaffold_fingerprint:scaffoldFingerprint,satisfied:[],corrective_counts:{},global_count:0,history:[],status:"running",blocker_reason:null};
     });
     runBySession.set(sessionID,sessionID);
   }
@@ -182,24 +199,28 @@ export default async function Supervisor({ directory, worktree, client }) {
     }
     if (event?.type !== "session.idle" || !event?.properties?.sessionID) return;
     const runID=await existingRun(event.properties.sessionID); if(!runID) return;
-    const spec = await fs.readFile(path.join(root, "SPEC.md"), "utf8");
+    let scaffold;
+    try { scaffold = await readScaffold(root); }
+    catch (error) {
+      await serializedStateUpdate(stateFile(runID), (state) => state.status === "blocked" ? state : { ...state, status:"blocked", blocker_reason:error.message });
+      return;
+    }
+    const { spec, scaffoldFingerprint } = scaffold;
     const file = stateFile(runID);
     const specFingerprint = fingerprint(spec);
-    const verdict = await evaluate(root, spec, {runID, specFingerprint});
+    const verdict = await evaluate(root, spec, {runID, specFingerprint, scaffoldFingerprint});
     let shouldPrompt=false;
     const updated=await serializedStateUpdate(file, async (state) => {
       if(state.status==="blocked") return state;
-      if (!state.run_id || !state.spec_fingerprint) return {...state,status:"blocked",blocker_reason:"Invalid uninitialized run state"};
-      if (state.spec_fingerprint !== specFingerprint) return { ...state, status:"blocked", blocker_reason:"SPEC changed; start a new run" };
-      let mutation_ok = true;
-      try {
-        const config=JSON.parse(await fs.readFile(path.join(root,"opencode-mutation.json"),"utf8"));
-        if(config.enabled){const result=JSON.parse(await fs.readFile(path.join(root,config.result_path),"utf8")); mutation_ok=await validateMutation(config,result,root,await newestRelevantMtime(root));}
-      } catch (error) { if ((await fs.access(path.join(root,"opencode-mutation.json")).then(()=>true).catch(()=>false))) mutation_ok=false; }
-      if(verdict.complete && mutation_ok) return { ...state, ...verdict, mutation_ok, status:"complete" };
-      const key=JSON.stringify({missing:verdict.missing,invalid:verdict.invalid_artifact,mutation_ok});
+      if (!state.run_id || !state.spec_fingerprint || !state.scaffold_fingerprint) return {...state,status:"blocked",blocker_reason:"Invalid uninitialized run state"};
+      let current;
+      try { current = await readScaffold(root); }
+      catch (error) { return { ...state, status:"blocked", blocker_reason:error.message }; }
+      if (state.scaffold_fingerprint !== current.scaffoldFingerprint) return { ...state, status:"blocked", blocker_reason:"Scaffold changed; start a new run" };
+      if(verdict.complete) return { ...state, ...verdict, status:"complete" };
+      const key=JSON.stringify({missing:verdict.missing,invalid:verdict.invalid_artifact});
       if(!state.history?.some(h=>h.dedupeKey===key)) shouldPrompt=true;
-      const corrected=applyCorrection({...state,...verdict,mutation_ok,status:"running",blocker_reason:null},"verification",key);
+      const corrected=applyCorrection({...state,...verdict,status:"running",blocker_reason:null},"verification",key);
       return corrected;
     });
     if(shouldPrompt && updated.status!=="blocked" && updated.status!=="complete" && client?.session?.promptAsync) await client.session.promptAsync({path:{id:runID},body:{parts:[{type:"text",text:"Supervisor: deterministic verification is incomplete. Run the exact missing commands and retry."}]}}).catch(()=>undefined);

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import runTool, { run, __testing } from "../../tools/run.ts";
 
-const execution = (command, cwd, extra={}) => ({command,cwd,supervisor_run_id:"run-a",spec_fingerprint:"a".repeat(64),...extra});
+const execution = (command, cwd, extra={}) => ({command,cwd,supervisor_run_id:"run-a",spec_fingerprint:"a".repeat(64),scaffold_fingerprint:"b".repeat(64),...extra});
 const sandboxTest = process.platform === "linux" ? test : test.skip;
 
 test("runner exports an OpenCode custom tool definition", () => {
@@ -23,6 +23,11 @@ test("redaction covers documented secret shapes (platform-independent)", () => {
   assert.match(r("ghp_abcdefghijklmnopqrstuvwxyz0123"), /\[REDACTED\]/);
   assert.match(r("-----BEGIN PRIVATE KEY-----\nMIIBVg==\n-----END PRIVATE KEY-----"), /\[REDACTED\]/);
   assert.equal(r("nothing secret here"), "nothing secret here");
+});
+
+test("runner requires combined scaffold provenance for execution", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-scaffold-"));
+  await assert.rejects(run({ command: "true", cwd: root, supervisor_run_id: "run-a", spec_fingerprint: "a".repeat(64) }), /scaffold provenance/i);
 });
 
 sandboxTest("runner persists complete execution evidence before resolving", async()=>{

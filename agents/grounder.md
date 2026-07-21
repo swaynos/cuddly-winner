@@ -55,6 +55,12 @@ The caller provides a question, feature idea, bug report, or implementation risk
 4. Separate facts from inferences. If evidence is weak, say so.
 5. Stop once you have enough context to answer the caller's specific question.
 
+Never send credentials, secrets, private repository code, or other confidential
+project content to third-party services, including web and NotebookLM queries.
+If external access is unavailable, inappropriate for the material, or cannot be
+used without disclosure, return local-only evidence and explicitly state that
+external corroboration was not performed.
+
 # NotebookLM evidence
 
 Use NotebookLM only when both are true:

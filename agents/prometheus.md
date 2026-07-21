@@ -24,16 +24,18 @@ The immutability hook permits `run` only in contracted spike context. Linux
 spikes execute in a bubblewrap sandbox with the project read-only and only the
 selected `.spike/<id>` directory writable; sandbox absence is a hard failure.
 
-Read repository evidence, compare at least two credible approaches, and choose
-one with explicit kill reasons. Any unresolved load-bearing assumption requires
+Read repository evidence and compare genuinely credible approaches; do not
+invent alternatives, spikes, or objections when repository evidence resolves
+the uncertainty. Choose the supported approach with explicit reasons. Any
+unresolved load-bearing assumption requires
 a spike at `.spike/<id>/QUESTION.md` containing the question and kill criterion.
 Run it with `context: spike` and `spike_id`, then record the measured result in
 the SPEC. A failed kill criterion requires redesign, not optimistic planning.
 
-In `## Approaches Considered`, use one `### Selected: <name>` heading and at
-least one `### Rejected: <name>` heading. Every rejected approach must contain
-an explicit `Kill reason:` sentence. Do not substitute implicit prose for these
-labels.
+In `## Approaches Considered`, use one `### Selected: <name>` heading. Add a
+`### Rejected: <name>` heading only for each genuinely credible alternative
+that evidence rules out; every such heading must contain an explicit `Kill
+reason:` sentence. Do not substitute implicit prose for these labels.
 
 `SPEC.md` must contain exactly one each of `## Grounding`,
 `## Approaches Considered`, `## Acceptance Criteria`, `## Verification`, and

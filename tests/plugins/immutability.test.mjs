@@ -70,6 +70,8 @@ test("autonomous edits source but not trusted control-plane paths", async () => 
   await mutate(guard, "a", path.join(root, "src", "app.ts"));
   await assert.rejects(mutate(guard, "a", path.join(root, ".opencode", "runs", "forged.json")), /trusted control-plane/);
   await assert.rejects(mutate(guard, "a", path.join(root, "plugins", "immutability.ts")), /trusted control-plane/);
+  await assert.rejects(mutate(guard, "a", path.join(root, "tools", "manifest.ts")), /trusted control-plane/);
+  await assert.rejects(mutate(guard, "a", path.join(root, "tools", "scaffold_gitignore.ts")), /trusted control-plane/);
 }));
 
 test("read-only managed agents cannot mutate or execute", async () => fixture(async root => {
@@ -85,6 +87,27 @@ test("managed descendants inherit the parent restriction", async () => fixture(a
   await assert.rejects(mutate(guard, "child", path.join(root, "README.md")), /prometheus is restricted/);
 }));
 
+test("managed children remain restricted below unmanaged parents", async () => fixture(async root => {
+  const guard = await hooks(root, { parent: "third-party", child: "grounder" }, { child: "parent" });
+  await assert.rejects(mutate(guard, "child", path.join(root, "README.md")), /read-only/);
+}));
+
+test("published scaffold is frozen while an autonomous run is active", async () => fixture(async root => {
+  await mkdir(path.join(root, ".opencode", "supervisor"), { recursive: true });
+  await writeFile(path.join(root, ".opencode", "supervisor", "run.json"), JSON.stringify({ status: "running" }));
+  const guard = await hooks(root, { p: "prometheus" });
+  for (const target of ["SPEC.md", "opencode-autonomous.json", ".prometheus/evaluator/score.py"]) {
+    await assert.rejects(mutate(guard, "p", path.join(root, target)), /published scaffold/);
+  }
+}));
+
+test("autonomous cannot rewrite a published scaffold", async () => fixture(async root => {
+  const guard = await hooks(root, { a: "autonomous" });
+  for (const target of ["SPEC.md", "opencode-autonomous.json", ".prometheus/evaluator/score.py"]) {
+    await assert.rejects(mutate(guard, "a", path.join(root, target)), /published scaffold/);
+  }
+}));
+
 test("managed mutation paths reject aliases and cross-worktree targets", async () => fixture(async outer => {
   const root = path.join(outer, "root"), outside = path.join(outer, "outside");
   await mkdir(root); await mkdir(outside); await writeFile(path.join(outside, "target"), "x");
@@ -93,4 +116,14 @@ test("managed mutation paths reject aliases and cross-worktree targets", async (
   for (const tool of ["write", "edit", "patch"]) await assert.rejects(mutate(guard, "a", path.join(root, "alias"), tool), /escapes active worktree/);
   const patch = `*** Begin Patch\n*** Update File: ${path.join(root, "alias")}\n+x\n*** End Patch`;
   await assert.rejects(guard["tool.execute.before"]({ tool: "apply_patch", sessionID: "a", callID: "patch" }, { args: { patchText: patch, cwd: root } }), /escapes active worktree/);
+}));
+
+test("managed mutation paths reject dangling and ancestor symlinks", async () => fixture(async outer => {
+  const root = path.join(outer, "root"), outside = path.join(outer, "outside");
+  await mkdir(root); await mkdir(outside);
+  await symlink(path.join(outside, "new-target"), path.join(root, "dangling"));
+  await symlink(outside, path.join(root, "linked-dir"));
+  const guard = await hooks(root, { a: "autonomous" });
+  await assert.rejects(mutate(guard, "a", path.join(root, "dangling")), /escapes active worktree/);
+  await assert.rejects(mutate(guard, "a", path.join(root, "linked-dir", "new-target")), /escapes active worktree/);
 }));

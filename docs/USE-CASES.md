@@ -136,6 +136,16 @@ vendored copy rather than performing a live registry install. See
 - **Source:** README § Install Specialist Agents, § Optional Autonomous Profile;
   REQ § Deployment; ARCH § Deployment.
 
+### UC-DEP-02a: Tools-only installation
+
+- **Given:** a valid OpenCode configuration destination.
+- **When:** `install --with-tools` runs.
+- **Then:** install only `run.ts`, `scaffold_gitignore.ts`, and their pinned SDK
+  dependency.
+- **Never:** install `manifest.ts` or the Autonomous supervisor.
+- **Evidence:** F tools-profile inventory.
+- **Source:** REQ § Deployment; ARCH § Deployment.
+
 ### UC-DEP-03: Skills profile installation
 
 - **Given:** optional skills are available.
@@ -151,7 +161,9 @@ vendored copy rather than performing a live registry install. See
 - **Given:** old managed entries plus unrelated user-owned configuration.
 - **When:** any install, downgrade, uninstall, or status reconciliation runs.
 - **Then:** remove obsolete managed entries, report all managed targets, and
-  preserve unrelated files and links.
+  preserve unrelated files and links. Remove only links to repository sources
+  or current byte-identical managed copies, including Autonomous artifacts on
+  `remove` regardless of selected profile flags.
 - **Never:** leave stale managed copies active or delete user configuration.
 - **Evidence:** F upgrade/downgrade/idempotence matrix.
 - **Source:** README § Install Specialist Agents; REQ § Deployment, § Validation;

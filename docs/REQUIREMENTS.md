@@ -437,8 +437,10 @@ managed-agent immutability hook, and leaves native Plan/Build unchanged.
 
 Autonomous orchestration and protected execution require `--with-autonomous`.
 That profile also supplies the constrained scaffold-publication operation used
-by Prometheus. Non-core skills require `--with-skills`. Deployment tracks
-managed entries, removes obsolete managed links, and never installs this
+by Prometheus. `--with-tools` installs only the protected `run` and
+`scaffold_gitignore` OpenCode tools and their pinned SDK dependency. Non-core
+skills require `--with-skills`. Deployment removes only links to repository
+sources and current byte-identical managed copies, and never installs this
 repository's `AGENTS.md` globally.
 
 The specialist agent definitions install under every profile, but Prometheus

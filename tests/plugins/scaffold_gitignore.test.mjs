@@ -40,6 +40,22 @@ test("preserves unrelated content and replaces only the managed block", async ()
   assert.equal(again.match(/BEGIN OpenCode Autonomous artifacts/g).length, 1);
 }));
 
+test("preserves CRLF and trailing whitespace outside the managed block", async () => fixture(async (root) => {
+  const prefix = "node_modules/  \r\nkeep\t\r\n\r\n";
+  const suffix = "\r\n*.log  \r\n";
+  await writeFile(gi(root), `${prefix}${MANAGED_BLOCK.replace(/\n/g, "\r\n")}\r\n${suffix}`);
+  await applyScaffoldGitignore(root);
+  const content = await readFile(gi(root), "utf8");
+  assert.equal(content, `${prefix}${MANAGED_BLOCK.replace(/\n/g, "\r\n")}\r\n${suffix}`);
+}));
+
+test("does not normalize trailing whitespace when appending the block", async () => fixture(async (root) => {
+  const existing = "keep\t  ";
+  await writeFile(gi(root), existing);
+  await applyScaffoldGitignore(root);
+  assert.equal(await readFile(gi(root), "utf8"), `${existing}\n\n${MANAGED_BLOCK}\n`);
+}));
+
 test("preserves file permissions", async () => fixture(async (root) => {
   await writeFile(gi(root), "keep\n");
   await chmod(gi(root), 0o640);
@@ -57,6 +73,20 @@ test("rejects duplicate managed markers without writing", async () => fixture(as
   await writeFile(gi(root), `${MANAGED_BLOCK}\n${MANAGED_BLOCK}\n`);
   await assert.rejects(applyScaffoldGitignore(root), /duplicate or malformed/);
 }));
+
+for (const [name, content, error] of [
+  ["an indented marker", ` # BEGIN OpenCode Autonomous artifacts\n${MANAGED_BLOCK}\n`, /malformed/],
+  ["a marker with trailing whitespace", `${MANAGED_BLOCK}\n# END OpenCode Autonomous artifacts \n`, /malformed/],
+  ["reversed markers", `${__testing.MANAGED_BLOCK.split("\n").at(-1)}\n${__testing.MANAGED_BLOCK.split("\n")[0]}\n`, /precedes/],
+  ["an unpaired begin marker", "# BEGIN OpenCode Autonomous artifacts\n", /malformed/],
+  ["an unpaired end marker", "# END OpenCode Autonomous artifacts\n", /malformed/],
+]) {
+  test(`rejects ${name} without writing`, async () => fixture(async (root) => {
+    await writeFile(gi(root), content);
+    await assert.rejects(applyScaffoldGitignore(root), error);
+    assert.equal(await readFile(gi(root), "utf8"), content);
+  }));
+}
 
 test("stripManagedBlock leaves content without markers untouched", () => {
   const input = "a\nb\nc\n";
