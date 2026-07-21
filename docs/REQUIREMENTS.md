@@ -51,6 +51,16 @@ in two layers: each installed agent definition sets tool availability and
 delegation allowlists, and the immutability hook applies fixed mutation and
 execution defaults to these identities and their descendants.
 
+Two named execution strategies appear throughout this document. **Ralph** is the
+general iterative implementation strategy: a bounded loop of one or more
+verified increments, used for ordinary feature and defect work. **Karpathy** is
+the scalar-metric optimization strategy: a bounded loop of single-change
+experiments measured against a frozen evaluator. "Karpathy" also names the
+read-only strategist agent that the Karpathy strategy delegates to; the agent
+proposes experiments and the Autonomous identity applies them. Where the
+distinction matters, this document says "the Karpathy strategy" or "the Karpathy
+agent" explicitly.
+
 ### Ask
 
 Answers focused questions, preferring session context over repository
@@ -80,7 +90,7 @@ agent permitted to edit ordinary project files. Selecting Autonomous does not
 imply that execution must be long-running: a Ralph run may complete after one
 iteration. Autonomous does not hand simple or linear plans to native Build;
 Ralph is the default implementation strategy, while Karpathy is available only
-for explicitly metric-optimization work with its complete scaffold. It reports
+for explicit metric-optimization work with its complete scaffold. It reports
 status, evidence, and implementation blockers but does not renegotiate product
 intent or invent missing requirements. Mutations must stay inside the active
 worktree and must not touch trusted run-coordinator implementation or protected
@@ -205,6 +215,7 @@ Ralph may use existing project tests, builds, linters, browser checks, or other
 deterministic verification without a generated custom evaluator. Prometheus
 creates a custom evaluator only when existing checks cannot prove the acceptance
 criteria.
+
 When the task is genuinely scalar optimization, Prometheus may instead publish
 a Karpathy scaffold, meaning scalar-metric optimization that additionally
 defines a metric and direction, baseline, evaluator and score extraction, noise
@@ -253,13 +264,21 @@ Autonomous sessions.
 Native Plan and Build sessions never initialize Autonomous run-coordinator state
 and never need protected execution evidence. The published scaffold defines the
 task, constraints, selected strategy, implementation work, and exact
-verification. Ralph is the default when Prometheus does not publish a complete
-Karpathy scaffold. Karpathy is selected only for explicit or unmistakable
-scalar-optimization intent with a validated complete scaffold; scaffold files
-that merely happen to be present do not select it. Autonomous records the
-selected strategy in protected run state through a validated machine-readable
-transition before the first mutation. It never delegates implementation to
-native Build or fills in a missing scaffold itself.
+verification. Ralph is the default strategy for any scaffold that does not
+declare scalar-optimization intent. Karpathy is selected only for explicit or
+unmistakable scalar-optimization intent with a validated complete scaffold;
+scaffold files that merely happen to be present do not select it. When a
+scaffold declares scalar-optimization intent but its Karpathy contract is
+incomplete or invalid, Autonomous records a blocker rather than silently falling
+back to Ralph. Autonomous records the selected strategy in protected run state
+through a validated machine-readable transition before the first mutation. It
+never delegates implementation to native Build or fills in a missing scaffold
+itself. That transition requires an end-to-end-tested producer; free-form
+message text is never run-coordinator input, and Reviewer output remains
+advisory.
+
+Unsupported platforms may make the optional Autonomous execution boundary
+unavailable, but must not reduce native Plan/Build functionality.
 
 ### Implementation Discretion
 
@@ -367,13 +386,6 @@ improvising the harness or changing strategies. The run coordinator persists the
 selected strategy and durable loop state; agents are not asked to mutate
 protected progress files.
 
-Unsupported platforms may make the optional Autonomous execution boundary
-unavailable, but must not reduce native Plan/Build functionality.
-
-Reviewer output remains advisory. Strategy selection reaches protected state
-only through a validated machine-readable transition with an end-to-end-tested
-producer; free-form message text is not run-coordinator input.
-
 ## Karpathy Strategy Agent
 
 Karpathy is the read-only optimization strategist used by Autonomous's Karpathy
@@ -399,6 +411,17 @@ by Prometheus. Non-core skills require `--with-skills`. Deployment tracks
 managed entries, removes obsolete managed links, and never installs this
 repository's `AGENTS.md` globally.
 
+The specialist agent definitions install under every profile, but Prometheus
+publication and Autonomous execution depend on infrastructure that only
+`--with-autonomous` supplies. When that infrastructure is absent, both agents
+fail closed with a concrete reason rather than degrading silently. Prometheus
+may still triage, interview, research, and draft a plan, but cannot validate an
+evaluator, invoke the scaffold-exclusion operation, or publish a readiness
+marker. Autonomous refuses to initialize run-coordinator state and reports that
+the profile is required instead of editing files without protected evidence.
+This is a profile-availability failure, not a planning or product failure, and
+it never reduces native Plan/Build behavior.
+
 ## Validation
 
 Release validation must separately prove:
@@ -419,7 +442,8 @@ Release validation must separately prove:
 7. Autonomous reports operational blockers without renegotiating settled
    product intent or inventing requirements.
 8. Ralph default selection and successful one-iteration completion for simple
-   Autonomous work.
+   Autonomous work, and a blocker rather than Ralph fallback when declared
+   optimization intent has an incomplete or invalid Karpathy contract.
 9. Autonomous local discretion resolves minor implementation blockers while
    material outcome, evaluator, scope, and trust-boundary changes return to
    Prometheus.
@@ -430,7 +454,8 @@ Release validation must separately prove:
 12. Karpathy selection only with optimization intent and a complete scaffold,
     plus target-scoped one-change experiments, keep/revert behavior, and
     evaluator behavior.
-13. Deployment isolation and stale-entry cleanup.
+13. Deployment isolation, stale-entry cleanup, and fail-closed Prometheus
+    publication and Autonomous execution when `--with-autonomous` is absent.
 14. Documentation consistency with this product goal.
 
 Core validation must not require a six-agent workflow, a literal handoff footer,

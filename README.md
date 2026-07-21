@@ -35,7 +35,7 @@ before committing to an autonomous implementation path.
 Use OpenCode's built-in Plan and Build normally. They do not require:
 
 - `SPEC.md`
-- the trusted `run` tool
+- the protected `run` tool
 - the Autonomous supervisor
 - Prometheus or any other custom agent
 
@@ -56,7 +56,7 @@ managed-agent immutability defaults. It does not install this repository's
 Optional profiles:
 
 ```bash
-# Add the Autonomous supervisor and trusted runner.
+# Add the Autonomous supervisor and protected runner.
 bash scripts/deploy-opencode-agents.sh install --with-autonomous
 
 # Also install non-core skills.
@@ -91,17 +91,34 @@ Immutability currently uses fixed role defaults only:
 ## Optional Autonomous Profile
 
 The Autonomous profile adds a thin run coordinator implemented by the supervisor
-plugin, plus a separate trusted runner for protected command execution. Its
+plugin, plus a separate protected runner for sandboxed command execution. Its
 evidence, state, and limits apply only to explicitly invoked Autonomous runs.
 Native Build continues using its normal Bash and mutation tools.
 
-On supported Linux systems, trusted commands require Bubblewrap. Other operating
-systems can still use native Plan/Build and the non-runner specialist agents.
+On supported Linux systems, protected commands require Bubblewrap. Other
+operating systems can still use native Plan/Build and the non-runner specialist
+agents.
 
-## Optional Karpathy Profile
+Autonomous runs one of two strategies, both driven by the same coordinator:
 
-Karpathy requires the complete frozen optimization scaffold published by
-Prometheus. Karpathy is a read-only strategist; Autonomous remains the editor.
+- **Ralph** is the default: general iterative implementation for feature and
+  defect work, verified by existing project checks or a generated evaluator. A
+  simple task can finish in a single iteration.
+- **Karpathy** is used only for explicit scalar-metric optimization against a
+  frozen evaluator, and only when Prometheus publishes a complete Karpathy
+  scaffold.
+
+The Prometheus and Autonomous agents are installed under every profile, but
+publication and execution require `--with-autonomous`. Without it, both agents
+report that the profile is required rather than degrading silently; native
+Plan/Build are unaffected.
+
+## Optional Karpathy Strategy
+
+Karpathy is an Autonomous strategy, not a separate install profile. It requires
+the complete frozen optimization scaffold published by Prometheus. The Karpathy
+agent is a read-only strategist that proposes one bounded change at a time;
+Autonomous remains the sole editor.
 
 ## Validation
 

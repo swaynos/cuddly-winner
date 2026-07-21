@@ -38,11 +38,10 @@ The safety model is explicitly constrained to a thin run coordinator, not a
 general orchestration platform. The system operates as a deterministic state
 machine with the following non-goals and constraints:
 
-- One active worker per run.
-- One active item per worker.
+- One active mutating worker per run.
+- One active item per mutating worker.
 - One worktree.
 - One active coordinator instance per run.
-- One active mutating worker per run.
 - One durable run-state document.
 - No distributed execution.
 - No parallel mutation scheduling.
@@ -53,9 +52,9 @@ machine with the following non-goals and constraints:
 - No dynamic permission-policy language.
 - No general event-sourcing framework.
 
-Verification commands may create child processes. Read-only research and review
-delegates may run concurrently, but they cannot mutate project files or update
-run state directly.
+These constraints bound mutation and coordination only. Verification commands
+may create child processes, and read-only research and review delegates may run
+concurrently, but they cannot mutate project files or update run state directly.
 
 ## Prometheus Flow
 
@@ -66,7 +65,8 @@ Grounder, or contracted spikes. It may publish only after every load-bearing
 unknown has been resolved. An unresolved blocker ends planning without
 publishing an Autonomous-ready scaffold.
 
-Prometheus writes a fixed, non-versioned scaffold:
+Prometheus writes a fixed scaffold that is excluded from version control (see
+Git Exclusion Tool below):
 
 | Path | Purpose |
 | --- | --- |
@@ -165,6 +165,14 @@ supervisor plugin implements that role. The protected runner is a separate
 execution boundary used by the coordinator; it does not schedule workers or own
 strategy decisions.
 
+This document uses one canonical name per component. The **immutability hook**
+is the identity-scoped plugin that applies managed-agent defaults (README refers
+to it as the immutability plugin; they are the same component). The **protected
+runner** is the sandboxed command-execution boundary (also called the protected
+execution boundary; "trusted runner" is deprecated). The **supervisor** is the
+plugin that realizes the run coordinator. The **run coordinator** is the
+orchestration role those components serve.
+
 Ralph and Karpathy do not use separate coordinators. They share this lifecycle:
 
 1. Load the frozen scaffold and durable run state.
@@ -190,7 +198,7 @@ bound to the scaffold fingerprint. Checklist marks and message text are not
 completion state, and Autonomous cannot rewrite the scaffold.
 
 The supervisor initializes only for a top-level `autonomous` identity. Idle or
-error events from native Plan/Build sessions are ignored. The trusted runner is
+error events from native Plan/Build sessions are ignored. The protected runner is
 not a replacement for Build's Bash tool.
 
 ### Fast Path
@@ -256,3 +264,13 @@ repository `AGENTS.md`, the supervisor, runner, and non-core skills.
 `--with-autonomous` adds the supervisor, protected runner, and
 `scaffold_gitignore` tool. `--with-skills` adds optional skills. The installer
 removes obsolete managed links and reports every target.
+
+Because the default profile omits the supervisor, runner, and
+`scaffold_gitignore` tool, the Prometheus and Autonomous agent definitions can be
+present without their supporting infrastructure. Both fail closed in that state.
+Prometheus lacks the `scaffold_gitignore` tool and protected spike execution, so
+it can triage and draft but cannot validate an evaluator or write the publication
+marker; it reports that `--with-autonomous` is required. Autonomous finds no
+supervisor to initialize run-coordinator state and no protected runner for
+evidence, so it reports the same prerequisite instead of editing files
+unsupervised. Neither degradation touches native Plan/Build.
