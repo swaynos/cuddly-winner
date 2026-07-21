@@ -603,6 +603,7 @@ if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
     remove_legacy_repo_link "Autonomous plugin" "${PLUGINS_DIR}/opencode-autonomous-supervisor.js"
     remove_managed_file "Autonomous tool" "${REPO_ROOT}/tools/run.ts" "${TOOLS_DIR}/run.ts"
     remove_managed_file "Autonomous tool" "${REPO_ROOT}/tools/scaffold_gitignore.ts" "${TOOLS_DIR}/scaffold_gitignore.ts"
+    remove_managed_file "Autonomous validator" "${REPO_ROOT}/tools/manifest.ts" "${TOOLS_DIR}/manifest.ts"
 
     candidate="${PLUGINS_DIR}/opencode-autonomous-supervisor"
     if [[ -L "$candidate" && "$(readlink "$candidate" || true)" == "${REPO_ROOT}/plugins/opencode-autonomous-supervisor" ]]; then
@@ -640,6 +641,7 @@ fi
 if [[ "$ACTION" == "remove" ]]; then
   install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "run.ts"
   install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "scaffold_gitignore.ts"
+  install_files "Manifest validator" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "manifest.ts"
 elif [[ "$WITH_TOOLS" == true ]]; then
   install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "run.ts"
   install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "scaffold_gitignore.ts"
@@ -652,11 +654,15 @@ fi
 # repository. Install the pinned runtime dependency for both copy and symlink
 # modes without requiring a repository node_modules link.
 if [[ "$ACTION" == "install" && "$WITH_TOOLS" == true ]]; then
-  # Prefer the vendored runtime closure (pinned @opencode-ai/plugin 1.17.15) so
-  # installation is self-contained and does not require registry access. Fall
-  # back to npm only when no vendored copy is present.
+  # Use the vendored closure only when it matches the declared SDK pin. A stale
+  # cache must never silently override the tested runtime dependency.
   VENDORED_MODULES="${REPO_ROOT}/.opencode/node_modules"
-  if [[ -d "${VENDORED_MODULES}/@opencode-ai/plugin" ]]; then
+  VENDORED_PACKAGE="${VENDORED_MODULES}/@opencode-ai/plugin/package.json"
+  VENDORED_VERSION=""
+  if [[ -f "$VENDORED_PACKAGE" ]]; then
+    VENDORED_VERSION="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$VENDORED_PACKAGE")"
+  fi
+  if [[ "$VENDORED_VERSION" == "1.17.15" ]]; then
     mkdir -p "${CONFIG_DIR}/node_modules"
     cp -R "${VENDORED_MODULES}/." "${CONFIG_DIR}/node_modules/"
   else

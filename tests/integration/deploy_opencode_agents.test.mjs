@@ -46,11 +46,17 @@ test("tools profile installs only supported tools and its SDK dependency", async
   await stat(path.join(config, "tools", "run.ts"));
   await stat(path.join(config, "tools", "scaffold_gitignore.ts"));
   await assert.rejects(stat(path.join(config, "tools", "manifest.ts")));
+  let npmInvoked = false;
   try {
     assert.match(await readFile(log, "utf8"), /@opencode-ai\/plugin@1\.17\.15/);
+    npmInvoked = true;
   } catch (error) {
     if (error?.code !== "ENOENT") throw error;
     await stat(path.join(config, "node_modules", "@opencode-ai", "plugin"));
+  }
+  if (!npmInvoked) {
+    const installed = JSON.parse(await readFile(path.join(config, "node_modules", "@opencode-ai", "plugin", "package.json"), "utf8"));
+    assert.equal(installed.version, "1.17.15");
   }
 }));
 
@@ -76,6 +82,7 @@ test("remove preserves unrelated names and reconciles Autonomous artifacts", asy
   await cp(path.join(repo, "plugins", "opencode-autonomous-supervisor"), path.join(plugins, "opencode-autonomous-supervisor"), { recursive: true });
   await cp(path.join(repo, "tools", "run.ts"), path.join(tools, "run.ts"));
   await cp(path.join(repo, "tools", "scaffold_gitignore.ts"), path.join(tools, "scaffold_gitignore.ts"));
+  await cp(path.join(repo, "tools", "manifest.ts"), path.join(tools, "manifest.ts"));
 
   await deployFixture(root, "remove");
 
@@ -84,4 +91,5 @@ test("remove preserves unrelated names and reconciles Autonomous artifacts", asy
   await assert.rejects(stat(path.join(plugins, "opencode-autonomous-supervisor")));
   await assert.rejects(stat(path.join(tools, "run.ts")));
   await assert.rejects(stat(path.join(tools, "scaffold_gitignore.ts")));
+  await assert.rejects(stat(path.join(tools, "manifest.ts")));
 }));
