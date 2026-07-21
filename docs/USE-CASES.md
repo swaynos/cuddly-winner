@@ -29,25 +29,31 @@ Test layers:
 - **B**: behavioral agent evaluation with a frozen repository and rubric
 - **O**: authenticated live OpenCode release smoke test
 
-## Contract Gaps
+## Resolved Contract Decisions
 
-The following cases are mandatory but cannot assert numeric values or detailed
-formats until their durable contract is defined in `docs/`:
+The contract details these cases depend on are now durable in `docs/`. Each row
+points to the authoritative section; cases may assert concrete values against it.
 
-| Gap | Affected cases | Required durable decision |
+| Contract | Affected cases | Durable location |
 | --- | --- | --- |
-| Manifest schema | UC-PUB-01 to UC-PUB-05, UC-AUT-02, UC-KAR-01 | version, fields, enums, errors, migration |
-| Resource limits | UC-RUN-03, UC-RAL-08, UC-KAR-05 | defaults, units, owner, and override rules |
-| Evidence threat model | UC-RUN-02 to UC-RUN-04 | protected paths, tampering guarantees, redaction policy |
-| Platform support | UC-DEP-06, UC-RUN-01 | supported Linux/Bubblewrap contract and unavailable behavior |
-| Restart/recovery | UC-RAL-07, UC-KAR-05 | same-machine restart and stale-run rules |
-| External research policy | UC-ID-09 | citation, privacy, credential, and offline behavior |
-| Release evidence | UC-DOC-02 | fixtures, platforms, and pass thresholds |
+| Manifest schema (v1) | UC-PUB-01 to UC-PUB-05, UC-AUT-02, UC-KAR-01 | ARCH § Manifest Schema (v1) |
+| Execution limits | UC-RUN-03, UC-RAL-08, UC-KAR-05 | REQ § Autonomous Profile > Execution Limits |
+| Evidence threat model | UC-RUN-02 to UC-RUN-04 | ARCH § Protected Execution Threat Model |
+| Platform support | UC-DEP-06, UC-RUN-01 | ARCH § Platform and Recovery |
+| Restart/recovery | UC-RAL-07, UC-KAR-05 | ARCH § Platform and Recovery |
+| External research policy | UC-ID-09 | REQ § Managed Agents > Grounder |
+| Release evidence | UC-DOC-02 | § Automation Rules (below) and REQ § Validation |
+| Strategy selection | UC-AUT-04, UC-KAR-01 | REQ § Autonomous Profile |
 
-Ralph-versus-Karpathy strategy selection is no longer an open gap: REQ resolves
-it. A scaffold that does not declare scalar-optimization intent runs Ralph; a
-scaffold that declares that intent with an incomplete or invalid Karpathy
-contract blocks rather than falling back to Ralph (see UC-AUT-04, UC-KAR-01).
+Strategy selection: a scaffold that does not declare scalar-optimization intent
+runs Ralph; a scaffold that declares that intent with an incomplete or invalid
+Karpathy contract blocks rather than falling back to Ralph.
+
+One environmental decision is recorded outside the canonical docs because it is a
+host/build fact, not product behavior: the runner SDK `@opencode-ai/plugin` is
+pinned to `1.17.15` (the version vendored in-repo), and deployment consumes the
+vendored copy rather than performing a live registry install. See
+`docs/rebuild/R0-baseline.md`.
 
 ## Native Compatibility
 

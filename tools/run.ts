@@ -85,8 +85,21 @@ function safeEnvironment(): NodeJS.ProcessEnv {
   return env;
 }
 
+// Pattern-based redaction over common secret shapes. Best-effort per the
+// documented threat model (docs/ARCHITECTURE.md § Protected Execution Threat
+// Model): reduces accidental leakage, not a guarantee against exfiltration.
+const REDACTION_PATTERNS: RegExp[] = [
+  /\b(?:sk|ghp|github_pat)[-_][A-Za-z0-9_-]{12,}\b/g, // provider token prefixes
+  /\bAKIA[0-9A-Z]{16}\b/g, // AWS access key id
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, // JWT
+  /\bBearer\s+[A-Za-z0-9._-]{12,}\b/gi, // bearer tokens
+  /\b(?:password|passwd|token|secret|api[_-]?key)\s*[=:]\s*\S+/gi, // key=value assignments
+  /-----BEGIN (?:[A-Z ]+)?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]+)?PRIVATE KEY-----/g, // PEM blocks
+];
+
 function redact(value: string): string {
-  let result = value.replace(/\b(?:sk|ghp|github_pat)[-_][A-Za-z0-9_-]{12,}\b/g, "[REDACTED]");
+  let result = value;
+  for (const pattern of REDACTION_PATTERNS) result = result.replace(pattern, "[REDACTED]");
   for (const [key, secret] of Object.entries(process.env)) {
     if (SECRET_NAME.test(key) && secret && secret.length >= 4) result = result.split(secret).join("[REDACTED]");
   }
@@ -305,6 +318,7 @@ export const __testing = {
   get running() {
     return running;
   },
+  redact,
 };
 
 export default tool({

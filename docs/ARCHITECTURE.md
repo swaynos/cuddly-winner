@@ -92,6 +92,44 @@ immutable targets, experiment limits, and stop criteria. Paths must be
 worktree-relative, canonical, free of escaping symlinks, and consistent with
 `SPEC.md`.
 
+### Manifest Schema (v1)
+
+`opencode-autonomous.json` is validated against this fixed v1 schema. The parser
+fails closed: an unknown `schema_version`, a missing required field, an unknown
+enum value, or an unknown top-level key is a hard validation error. There is no
+migration path before 1.0; a mismatched version blocks rather than upgrades.
+
+Common required fields (both strategies):
+
+| Field | Type | Rule |
+| --- | --- | --- |
+| `schema_version` | integer | Must equal `1`. |
+| `strategy` | enum | `"ralph"` or `"karpathy"`. |
+| `invariants` | string[] | May be empty; each is a human-checkable constraint. |
+| `implementation_scope` | string[] | Non-empty; canonical worktree-relative path globs checked against iteration diffs. |
+| `escalation_triggers` | string[] | May be empty; conditions that force replanning. |
+| `evaluator_inventory` | string[] | Every declared evaluator file under `.prometheus/evaluator/`. Empty allowed only for Ralph. |
+| `verification` | object | `{commands: string[], baseline: string}`; the exact deterministic checks and their recorded baseline behavior. |
+
+Karpathy adds a required `optimization` object; it is rejected if `strategy` is
+`"ralph"`, and a `"karpathy"` strategy is rejected without it:
+
+| Field | Type | Rule |
+| --- | --- | --- |
+| `optimization.objective` | string | Scalar metric name. |
+| `optimization.direction` | enum | `"minimize"` or `"maximize"`. |
+| `optimization.baseline` | number | Starting score from the frozen evaluator. |
+| `optimization.score_extraction` | string | How the scalar is parsed from evaluator output. |
+| `optimization.noise_probe` | object | `{runs: integer>=2, threshold: number>=0}`. |
+| `optimization.mutable_targets` | string[] | Non-empty; the only paths an experiment may change. |
+| `optimization.immutable_targets` | string[] | Paths that must never change; must include the evaluator. |
+| `optimization.limits` | object | `{experiments: integer>0, failure_pivot: integer>0}`. |
+| `optimization.stop` | object | `{target?: number, exhaustion: "experiments"}`. |
+
+An optional `limits` object may override the coordinator defaults documented in
+`docs/REQUIREMENTS.md`; any omitted key takes the default. Unknown keys inside
+`limits` are rejected.
+
 Prometheus publishes in this order:
 
 1. Resolve uncertainty and choose the strategy.
@@ -157,6 +195,52 @@ before every state-changing evaluation and before completion. A mismatch blocks
 the run and requires revalidation and a new run. This lock-and-revalidate model
 freezes the evaluator without a general snapshot store, content-addressing, or
 garbage-collection subsystem.
+
+## Protected Execution Threat Model
+
+The threat model is an **honest-but-confused worker**, not a malicious host or a
+worker attempting kernel escape. The worker may hallucinate results, replay
+stale evidence, edit a checklist to claim success, or emit prose asserting
+completion. It may not fabricate protected evidence or mutate run state, because
+those live outside its reach and only the runner and coordinator write them.
+
+Protected paths (worker-denied; coordinator/runner-owned):
+
+| Path | Owner | Contents |
+| --- | --- | --- |
+| `.opencode/runs/` | coordinator | durable run-state documents |
+| `.opencode/supervisor/` | coordinator | supervisor bookkeeping |
+| `.opencode/progress/` | coordinator | item state and handoff records |
+| `.opencode/quarantine/` | coordinator | stale/failed run remnants |
+| published scaffold (`SPEC.md`, `opencode-autonomous.json`, `.prometheus/evaluator/`) | Prometheus, then frozen | task and evaluator definition |
+
+The runner enforces four guarantees within this model: execution is confined to
+the active worktree; every artifact is bound to the run identifier and combined
+scaffold fingerprint (foreign or stale provenance is rejected); captured output
+is bounded and written atomically so a crash cannot leave partial evidence; and
+likely credentials are redacted before persistence. Redaction is pattern-based
+over common secret shapes — `AWS`-style keys, bearer/JWT tokens,
+`password=`/`token=` assignments, and PEM private-key blocks — and is
+best-effort: it reduces accidental leakage, it is not a guarantee against a
+determined exfiltrator (outside the threat model).
+
+## Platform and Recovery
+
+Protected execution is supported on **Linux with Bubblewrap (`bwrap`) only**. On
+macOS, Windows, or Linux without Bubblewrap, the specialist agents and native
+Plan/Build remain fully available; only top-level Autonomous execution is
+unavailable, and the supervisor reports a concrete unmet prerequisite rather
+than degrading silently. `scripts/ci.sh` already hard-guards Node version and
+Bubblewrap presence on Linux.
+
+Recovery is same-machine only. The durable run-state document under
+`.opencode/runs/` is the sole source of truth for resuming an interrupted run;
+the worktree carries implementation state. A run whose last heartbeat exceeds
+the wall-clock bound is considered stale: the coordinator moves it to
+`.opencode/quarantine/` and does not auto-resume it, so a crashed or abandoned
+run can never silently continue mutating. There is no cross-machine recovery,
+distributed lock, or shared-state service; a run is bound to the host that
+started it.
 
 ## Shared Run Coordinator
 

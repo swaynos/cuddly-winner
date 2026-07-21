@@ -14,6 +14,17 @@ test("runner exports an OpenCode custom tool definition", () => {
   assert.equal(typeof runTool?.execute, "function");
 });
 
+test("redaction covers documented secret shapes (platform-independent)", () => {
+  const r = __testing.redact;
+  assert.match(r("key AKIA1234567890ABCDEF here"), /\[REDACTED\]/);
+  assert.match(r("tok eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w"), /\[REDACTED\]/);
+  assert.match(r("Authorization: Bearer abcdef1234567890xyz"), /\[REDACTED\]/);
+  assert.match(r("password=hunter2secret"), /\[REDACTED\]/);
+  assert.match(r("ghp_abcdefghijklmnopqrstuvwxyz0123"), /\[REDACTED\]/);
+  assert.match(r("-----BEGIN PRIVATE KEY-----\nMIIBVg==\n-----END PRIVATE KEY-----"), /\[REDACTED\]/);
+  assert.equal(r("nothing secret here"), "nothing secret here");
+});
+
 sandboxTest("runner persists complete execution evidence before resolving", async()=>{
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"runner-")); const result=await run(execution("printf ok",root));
   assert.equal(result.exit_code,0); assert.equal(result.context,"execution"); assert.ok(result.started_at && result.finished_at);

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "strategy": "ralph",
+  "invariants": [],
+  "implementation_scope": ["src/**"],
+  "escalation_triggers": [],
+  "evaluator_inventory": [".prometheus/evaluator/check.py"],
+  "verification": {
+    "commands": ["true"],
+    "baseline": "n/a"
+  },
+  "_note": "Declares an evaluator file that does not exist on disk; inventory-presence validation must fail this."
+}

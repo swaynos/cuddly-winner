@@ -40,13 +40,29 @@ test("unknown and unrelated agents are never intercepted", async () => fixture(a
   await mutate(guard, "missing", path.join(root, "anything"));
 }));
 
-test("prometheus can write only SPEC.md and spike files", async () => fixture(async root => {
+test("prometheus can write scaffold artifacts only", async () => fixture(async root => {
   const guard = await hooks(root, { p: "prometheus" });
   await mutate(guard, "p", path.join(root, "SPEC.md"));
+  await mutate(guard, "p", path.join(root, "opencode-autonomous.json"));
+  await mutate(guard, "p", path.join(root, ".prometheus", "evaluator", "score.py"));
   await mutate(guard, "p", path.join(root, ".spike", "probe", "result.txt"));
   await assert.rejects(mutate(guard, "p", path.join(root, "src", "app.ts")), /restricted/);
   await assert.rejects(guard["tool.execute.before"]({ tool: "bash", sessionID: "p", callID: "shell" }, { args: { command: "true", cwd: root } }), /directly/);
   await guard["tool.execute.before"]({ tool: "run", sessionID: "p", callID: "spike" }, { args: { context: "spike", spike_id: "probe", cwd: root } });
+}));
+
+test("only prometheus may invoke scaffold_gitignore", async () => fixture(async root => {
+  const invoke = (guard, agent) => guard["tool.execute.before"](
+    { tool: "scaffold_gitignore", sessionID: agent, callID: "c" }, { args: {} });
+  const pg = await hooks(root, { p: "prometheus" });
+  await invoke(pg, "p");
+  for (const agent of ["autonomous", "ask", "karpathy", "reviewer", "grounder"]) {
+    const guard = await hooks(root, { [agent]: agent });
+    await assert.rejects(invoke(guard, agent), /only @prometheus may invoke/);
+  }
+  // Unmanaged identities are still bypassed entirely.
+  const ug = await hooks(root, { x: "third-party" });
+  await invoke(ug, "x");
 }));
 
 test("autonomous edits source but not trusted control-plane paths", async () => fixture(async root => {

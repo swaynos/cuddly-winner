@@ -81,8 +81,10 @@ These agents are selected explicitly. They are not aliases for Plan or Build.
 
 Immutability currently uses fixed role defaults only:
 
-- Prometheus may mutate only its fixed planning and scaffold artifacts.
-- Autonomous may edit normal project files but not trusted run-coordinator state.
+- Prometheus may mutate only its scaffold artifacts (`SPEC.md`,
+  `opencode-autonomous.json`, `.prometheus/evaluator/**`, `.spike/**`) and is the
+  only agent permitted to invoke the `scaffold_gitignore` tool.
+- Autonomous may edit normal project files but not protected run-coordinator state.
 - Ask, Karpathy, Reviewer, and Grounder are read-only.
 - Descendants inherit the originating managed agent's restrictions.
 - Native Plan, native Build, unknown agents, and third-party agents are

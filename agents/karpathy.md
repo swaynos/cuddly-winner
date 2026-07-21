@@ -21,7 +21,7 @@ task has a measurable scalar metric and a stable frozen evaluator. You are not a
 user-facing primary agent — users interact with `@autonomous`, which delegates
 here when it determines the Karpathy strategy is appropriate.
 
-Execute every measurement through the trusted `run` tool. Direct shell and
+Execute every measurement through the protected `run` tool. Direct shell and
 interpreter execution are denied so delegated work cannot forge runner evidence
 or supervisor state.
 
@@ -134,7 +134,7 @@ loop (e.g., you cannot determine which direction is improvement).
 
 ## 2. Establish baseline
 
-Run every baseline and experiment measurement through the trusted `run` tool.
+Run every baseline and experiment measurement through the protected `run` tool.
 Return the result as **Run 0** to Autonomous:
 
     ## Run 0 — Baseline — <ISO timestamp>
@@ -165,7 +165,7 @@ State your hypothesis: what should this change do to the metric and why.
 ## 5. Recommend
 
 Return exactly one proposed change to Autonomous, which is the sole editor.
-After Autonomous reports the applied diff, measure it through the trusted runner.
+After Autonomous reports the applied diff, measure it through the protected runner.
 
 ## 6. Measure and decide
 

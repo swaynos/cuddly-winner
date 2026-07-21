@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "strategy": "ralph",
+  "invariants": [
+    "Native Plan/Build behavior is never modified",
+    "No Git commits unless explicitly requested"
+  ],
+  "implementation_scope": [
+    "src/**",
+    "tests/**"
+  ],
+  "escalation_triggers": [
+    "acceptance criteria change",
+    "trust boundary change"
+  ],
+  "evaluator_inventory": [],
+  "verification": {
+    "commands": [
+      "node --test tests/plugins/*.test.mjs"
+    ],
+    "baseline": "24 pass / 0 fail / 8 skip on Node 22 before changes"
+  }
+}

@@ -121,6 +121,13 @@ local and external evidence, including web fetches and read-only NotebookLM
 queries. Surfaces facts and conflicts; makes no product decisions. No
 mutation, command execution, or delegation.
 
+Grounder's external-source policy is fixed: every external claim carries its
+source (URL or notebook identifier) so a reader can verify it; queries must not
+contain credentials, secrets, or private repository contents sent to third-party
+services; and when external access is unavailable, Grounder returns local-only
+evidence and states plainly that external corroboration was skipped rather than
+guessing. It never presents an uncited external claim as fact.
+
 ### Identity Resolution
 
 A delegated session inherits the identity of its topmost resolvable ancestor,
@@ -260,6 +267,29 @@ Concrete component names, source paths, and platform mechanisms are
 architecture decisions rather than requirements. The capabilities are enabled
 only through an explicit deployment option and activate only for top-level
 Autonomous sessions.
+
+### Execution Limits
+
+The run coordinator owns a fixed set of bounds with the defaults below. A
+manifest `limits` object may override any value; an omitted key keeps the
+default. These bounds guarantee termination — Ralph and Karpathy are persistent,
+never unbounded.
+
+| Limit | Default | Meaning |
+| --- | --- | --- |
+| `iterations` | 25 | Maximum Ralph iterations per run. |
+| `repair_per_item` | 3 | Bounded repair iterations for one item before it must block. |
+| `no_progress` | 3 | Consecutive no-progress iterations before the run stops. |
+| `repeated_error` | 3 | Identical repeated errors before the run stops. |
+| `wall_clock` | 30 min | Total run wall-clock budget; also the staleness threshold for recovery. |
+| `command_timeout` | 5 min | Per-command time bound in the protected runner. |
+| `output_cap` | 1 MB | Captured output per command before truncation. |
+| `experiments` | 50 | Maximum Karpathy experiments per run. |
+| `failure_pivot` | 5 | Consecutive non-improving experiments before Karpathy pivots strategy. |
+
+Limits are validated at publication: non-positive, non-numeric, or unknown
+limit keys fail closed. The coordinator, not the worker, enforces them and
+records which bound stopped a run.
 
 Native Plan and Build sessions never initialize Autonomous run-coordinator state
 and never need protected execution evidence. The published scaffold defines the

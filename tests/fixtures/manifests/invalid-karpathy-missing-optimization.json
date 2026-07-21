@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "strategy": "karpathy",
+  "invariants": [],
+  "implementation_scope": ["model/**"],
+  "escalation_triggers": [],
+  "evaluator_inventory": [".prometheus/evaluator/score.py"],
+  "verification": {
+    "commands": ["python .prometheus/evaluator/score.py"],
+    "baseline": "score=0.412"
+  }
+}

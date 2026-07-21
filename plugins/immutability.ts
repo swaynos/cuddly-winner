@@ -3,9 +3,10 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 const SHELL_TOOLS = new Set(["bash", "run"]);
+const PROMETHEUS_ONLY_TOOLS = new Set(["scaffold_gitignore"]);
 const MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder"]);
 const READ_ONLY_AGENTS = new Set(["ask", "karpathy", "reviewer", "grounder"]);
-const PROMETHEUS_WRITABLE = ["SPEC.md", ".spike/**"];
+const PROMETHEUS_WRITABLE = ["SPEC.md", "opencode-autonomous.json", ".prometheus/evaluator/**", ".spike/**"];
 const TRUSTED_PATHS = [
   ".opencode/runs",
   ".opencode/supervisor",
@@ -104,9 +105,14 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       input: { tool: string; sessionID: string; callID: string },
       output: { args?: Record<string, unknown> },
     ) => {
-      if (!MUTATING_TOOLS.has(input.tool) && !SHELL_TOOLS.has(input.tool)) return;
+      if (!MUTATING_TOOLS.has(input.tool) && !SHELL_TOOLS.has(input.tool) && !PROMETHEUS_ONLY_TOOLS.has(input.tool)) return;
       const agent = await resolveAgent(input.sessionID);
       if (!agent || !MANAGED_AGENTS.has(agent)) return;
+
+      if (PROMETHEUS_ONLY_TOOLS.has(input.tool)) {
+        if (agent !== "prometheus") throw new Error(`ImmutabilityGuard: only @prometheus may invoke ${input.tool}.`);
+        return;
+      }
 
       const args = output.args ?? {};
       if (SHELL_TOOLS.has(input.tool)) {

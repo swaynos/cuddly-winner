@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "strategy": "ralph",
+  "invariants": [],
+  "implementation_scope": ["src/**"],
+  "escalation_triggers": [],
+  "evaluator_inventory": [],
+  "verification": {
+    "commands": ["true"],
+    "baseline": "n/a"
+  },
+  "limits": {
+    "iterations": 10,
+    "made_up_limit": 999
+  },
+  "_note": "Unknown key inside limits must fail closed per REQ Execution Limits."
+}

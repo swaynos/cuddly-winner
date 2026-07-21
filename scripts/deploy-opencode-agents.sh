@@ -213,8 +213,13 @@ install_files() {
         else
           printf 'Skipped link with different target: %s\n' "$dst"
         fi
-      else
-        printf 'Skipped non-link: %s\n' "$dst"
+      elif [[ -f "$dst" ]] && cmp -s "$src" "$dst"; then
+        # Managed copy: byte-identical to the source, so it is safe to remove.
+        # A user-modified file will not match and is preserved.
+        rm -f "$dst"
+        printf 'Removed copy: %s\n' "$dst"
+      elif [[ -e "$dst" ]]; then
+        printf 'Skipped modified or unrelated file: %s\n' "$dst"
       fi
     done
     return
@@ -318,8 +323,14 @@ install_entries() {
         else
           printf 'Skipped link with different target: %s\n' "$dst"
         fi
-      else
-        printf 'Skipped non-link: %s\n' "$dst"
+      elif [[ -d "$dst" && -d "$src" ]] && diff -r -q "$src" "$dst" >/dev/null 2>&1; then
+        rm -rf "$dst"
+        printf 'Removed copy: %s\n' "$dst"
+      elif [[ -f "$dst" && -f "$src" ]] && cmp -s "$src" "$dst"; then
+        rm -f "$dst"
+        printf 'Removed copy: %s\n' "$dst"
+      elif [[ -e "$dst" ]]; then
+        printf 'Skipped modified or unrelated entry: %s\n' "$dst"
       fi
     done
     return
@@ -515,7 +526,7 @@ if [[ "$ACTION" == "install" || "$ACTION" == "remove" ]]; then
     printf 'Removed repository-specific global rules: %s\n' "$candidate"
   fi
   if [[ "$WITH_AUTONOMOUS" == false ]]; then
-    for optional in "${PLUGINS_DIR}/opencode-autonomous-supervisor" "${PLUGINS_DIR}/opencode-autonomous-supervisor.js" "${TOOLS_DIR}/run.ts"; do
+    for optional in "${PLUGINS_DIR}/opencode-autonomous-supervisor" "${PLUGINS_DIR}/opencode-autonomous-supervisor.js" "${TOOLS_DIR}/run.ts" "${TOOLS_DIR}/scaffold_gitignore.ts"; do
       if [[ -L "$optional" ]]; then rm -f "$optional"; printf 'Removed optional Autonomous entry: %s\n' "$optional"; fi
     done
   fi
@@ -539,17 +550,26 @@ if [[ "$WITH_SKILLS" == true ]]; then
   install_entries "Skills" "${REPO_ROOT}/skills" "$SKILLS_DIR" "$MODE" "$ACTION"
 fi
 
-# --- Trusted runner ---
+# --- Protected runner and scaffold tools ---
 if [[ "$WITH_TOOLS" == true ]]; then
-  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "run.ts"
+  install_files "Tools" "${REPO_ROOT}/tools" "$TOOLS_DIR" "$MODE" "$ACTION" "*.ts"
 fi
 
 # Custom tools resolve SDK imports from the deployment target, never from this
 # repository. Install the pinned runtime dependency for both copy and symlink
 # modes without requiring a repository node_modules link.
 if [[ "$ACTION" == "install" && "$WITH_AUTONOMOUS" == true ]]; then
-  command -v npm >/dev/null 2>&1 || die "npm is required to install the OpenCode tool runtime"
-  npm install --prefix "$CONFIG_DIR" --no-save --no-audit --no-fund @opencode-ai/plugin@1.15.10 >/dev/null
+  # Prefer the vendored runtime closure (pinned @opencode-ai/plugin 1.17.15) so
+  # installation is self-contained and does not require registry access. Fall
+  # back to npm only when no vendored copy is present.
+  VENDORED_MODULES="${REPO_ROOT}/.opencode/node_modules"
+  if [[ -d "${VENDORED_MODULES}/@opencode-ai/plugin" ]]; then
+    mkdir -p "${CONFIG_DIR}/node_modules"
+    cp -R "${VENDORED_MODULES}/." "${CONFIG_DIR}/node_modules/"
+  else
+    command -v npm >/dev/null 2>&1 || die "npm is required to install the OpenCode tool runtime"
+    npm install --prefix "$CONFIG_DIR" --no-save --no-audit --no-fund @opencode-ai/plugin@1.17.15 >/dev/null
+  fi
 fi
 
 if [[ "$ACTION" == "status" ]]; then

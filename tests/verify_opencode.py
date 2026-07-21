@@ -72,15 +72,23 @@ def main() -> int:
         require(not (config / "plugins/opencode-autonomous-supervisor.js").exists(), "supervisor installed in default profile")
         require(not (config / "tools/run.ts").exists(), "runner installed in default profile")
         require(not (config / "skills").exists(), "optional skills installed by default")
+        # UC-DEP-07: prometheus and autonomous install under the default profile but
+        # their supporting infrastructure (supervisor, runner, SDK) does not, so both
+        # must fail closed at runtime rather than acting without protected execution.
+        installed = {p.stem for p in (config / "agents").glob("*.md")}
+        require({"prometheus", "autonomous"} <= installed, "managed agents missing from default profile")
+        require(not (config / "node_modules/@opencode-ai/plugin").exists(), "runner SDK present without --with-autonomous")
 
     with tempfile.TemporaryDirectory(prefix="opencode-autonomous-") as tmp:
         config = pathlib.Path(tmp) / "config"
         deploy(config, "--with-autonomous")
         require((config / "plugins/opencode-autonomous-supervisor.js").is_file(), "Autonomous supervisor not deployed")
         require((config / "tools/run.ts").is_file(), "Autonomous runner not deployed")
+        require((config / "tools/scaffold_gitignore.ts").is_file(), "scaffold_gitignore tool not deployed")
         require((config / "node_modules/@opencode-ai/plugin").is_dir(), "runner SDK dependency is not self-contained")
-        code = f'import tool from {str(config / "tools/run.ts")!r}; if(typeof tool?.execute!=="function")process.exit(2)'
-        subprocess.run(["node", "--input-type=module", "-e", code], check=True, capture_output=True, text=True)
+        for tool_file in ("tools/run.ts", "tools/scaffold_gitignore.ts"):
+            code = f'import tool from {str(config / tool_file)!r}; if(typeof tool?.execute!=="function")process.exit(2)'
+            subprocess.run(["node", "--input-type=module", "-e", code], check=True, capture_output=True, text=True)
 
     print("Native Plan/Build compatibility and optional profiles validated.")
     return 0

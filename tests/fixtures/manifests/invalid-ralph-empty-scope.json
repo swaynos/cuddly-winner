@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "strategy": "ralph",
+  "invariants": [],
+  "implementation_scope": [],
+  "escalation_triggers": [],
+  "evaluator_inventory": [],
+  "verification": {
+    "commands": ["node --test tests/plugins/*.test.mjs"],
+    "baseline": "green"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "strategy": "ralph",
+  "invariants": [],
+  "implementation_scope": ["../outside-worktree/**"],
+  "escalation_triggers": [],
+  "evaluator_inventory": [],
+  "verification": {
+    "commands": ["true"],
+    "baseline": "n/a"
+  },
+  "_note": "implementation_scope escapes the worktree; canonical-path validation must reject it."
+}
