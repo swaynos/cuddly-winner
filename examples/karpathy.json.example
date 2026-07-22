@@ -1,27 +1,24 @@
 {
-  "_comment": "Copy to opencode-karpathy.json in your project root. Replace commands and paths with your project's specifics.",
-
-  "strategy_doc": "program.md",
-  "log_file": "experiments.md",
-
-  "baseline_command": "<your measurement command here>",
-
-  "score_source": {
-    "type": "file",
-    "path": "<path/to/score.txt>",
-    "format": "float",
-    "direction": "minimize"
+  "_comment": "Copy to opencode-autonomous.json and replace placeholders.",
+  "schema_version": 1,
+  "strategy": "karpathy",
+  "invariants": ["The evaluator remains unchanged"],
+  "implementation_scope": ["<mutable/path>"],
+  "escalation_triggers": ["objective changes"],
+  "evaluator_inventory": [".prometheus/evaluator/<evaluator>"],
+  "verification": {
+    "commands": ["<final verification command>"],
+    "baseline": "<observed baseline summary>"
   },
-
-  "noise_probe": {
-    "command": "<your measurement command here>",
-    "env_overrides": [
-      "SEED=1",
-      "SEED=2",
-      "SEED=3"
-    ]
-  },
-
-  "immutable_targets": ["<your frozen evaluator>"],
-  "mutable_targets": ["<your target file(s)>"]
+  "optimization": {
+    "objective": "<metric>",
+    "direction": "maximize",
+    "baseline": 0.0,
+    "score_extraction": "<how Autonomous reads one finite score>",
+    "noise_probe": {"runs": 3, "threshold": 0.0},
+    "mutable_targets": ["<mutable/path>"],
+    "immutable_targets": [".prometheus/evaluator/<evaluator>"],
+    "limits": {"experiments": 20, "failure_pivot": 5},
+    "stop": {"target": 1.0, "exhaustion": "experiments"}
+  }
 }

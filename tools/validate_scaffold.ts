@@ -1,10 +1,10 @@
 /**
- * Validator for opencode-autonomous.json (schema v1).
- * Authoritative schema: docs/ARCHITECTURE.md § Manifest Schema (v1);
- * limits: docs/REQUIREMENTS.md § Autonomous Profile > Execution Limits.
+ * Static validator for the Prometheus scaffold (schema v1).
+ * Authoritative schema: docs/ARCHITECTURE.md § Manifest Schema (v1).
  * Fails closed: unknown version/field/enum/limit key is a hard error.
  */
-import { existsSync, lstatSync } from "node:fs";
+import { tool } from "@opencode-ai/plugin";
+import { existsSync, lstatSync, promises as fs } from "node:fs";
 import path from "node:path";
 
 export interface ValidationResult {
@@ -193,6 +193,55 @@ export function validateManifest(raw: unknown, opts: { root?: string } = {}): Va
   return { valid: errors.length === 0, strategy: strategy as ValidationResult["strategy"], errors };
 }
 
+const REQUIRED_SPEC_SECTIONS = [
+  "Grounding",
+  "Approaches Considered",
+  "Acceptance Criteria",
+  "Verification",
+  "Implementation Checklist",
+];
+
+export function parseVerification(spec: string): string[] {
+  const headings = [...spec.matchAll(/^## Verification\s*$/gm)];
+  if (headings.length !== 1) throw new Error("SPEC must contain exactly one ## Verification section");
+  const start = headings[0].index + headings[0][0].length;
+  const following = spec.slice(start).search(/^##\s/m);
+  const body = following < 0 ? spec.slice(start) : spec.slice(start, start + following);
+  const commands = [...body.matchAll(/^- `([^`\n]+)`\s*$/gm)].map((match) => match[1]);
+  const listItems = body.split(/\r?\n/).filter((line) => /^-\s/.test(line));
+  if (!commands.length || commands.length !== listItems.length || new Set(commands).size !== commands.length) {
+    throw new Error("SPEC verification commands must be non-empty, unique `- `<command>`` items");
+  }
+  return commands;
+}
+
+export async function validateScaffold(root: string): Promise<{ valid: true; strategy: string; verification_commands: string[]; evaluator_inventory: string[] }> {
+  const resolvedRoot = await fs.realpath(path.resolve(root));
+  const [spec, manifestText] = await Promise.all([
+    fs.readFile(path.join(resolvedRoot, "SPEC.md"), "utf8"),
+    fs.readFile(path.join(resolvedRoot, "opencode-autonomous.json"), "utf8"),
+  ]);
+  let manifest: Record<string, unknown>;
+  try { manifest = JSON.parse(manifestText); } catch { throw new Error("opencode-autonomous.json must be valid JSON"); }
+  const result = validateManifest(manifest, { root: resolvedRoot });
+  if (!result.valid) throw new Error(`Invalid opencode-autonomous.json: ${result.errors.join("; ")}`);
+  for (const section of REQUIRED_SPEC_SECTIONS) {
+    const count = [...spec.matchAll(new RegExp(`^## ${section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "gm"))].length;
+    if (count !== 1) throw new Error(`SPEC must contain exactly one ## ${section} section`);
+  }
+  const commands = parseVerification(spec);
+  const manifestCommands = (manifest.verification as { commands: string[] }).commands;
+  if (JSON.stringify(commands) !== JSON.stringify(manifestCommands)) {
+    throw new Error("SPEC and manifest verification commands must match exactly and in order");
+  }
+  return {
+    valid: true,
+    strategy: result.strategy!,
+    verification_commands: commands,
+    evaluator_inventory: manifest.evaluator_inventory as string[],
+  };
+}
+
 function validateOptimization(opt: unknown, push: (m: string) => void): void {
   if (!isRecord(opt)) {
     push("karpathy strategy requires an optimization object");
@@ -243,3 +292,12 @@ function validateOptimization(opt: unknown, push: (m: string) => void): void {
     if (stop.exhaustion !== "experiments") push('optimization.stop.exhaustion must be "experiments"');
   }
 }
+
+export default tool({
+  description: "Validate SPEC.md and opencode-autonomous.json structurally without executing project commands.",
+  args: {},
+  async execute(_args, context) {
+    const root = path.resolve(context.worktree ?? context.directory ?? process.cwd());
+    return JSON.stringify(await validateScaffold(root), null, 2);
+  },
+});

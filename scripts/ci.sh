@@ -10,11 +10,6 @@ if (( NODE_MAJOR < 22 || NODE_MAJOR >= 25 )); then
   exit 1
 fi
 
-if [[ "$(uname -s)" == "Linux" ]] && ! command -v bwrap >/dev/null 2>&1; then
-  printf 'Bubblewrap is required on Linux.\n' >&2
-  exit 1
-fi
-
 PYTHON="$(bash scripts/ensure-venv.sh)"
 "$PYTHON" tests/verify_opencode.py --skip-llm
 node --test tests/plugins/*.test.mjs tests/integration/*.test.mjs

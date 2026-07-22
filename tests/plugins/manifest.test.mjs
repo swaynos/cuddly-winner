@@ -4,11 +4,28 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateManifest } from "../../tools/manifest.ts";
+import validateTool, { validateManifest, validateScaffold } from "../../tools/validate_scaffold.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.join(here, "..", "fixtures", "manifests");
 const load = (name) => JSON.parse(readFileSync(path.join(fixtures, name), "utf8"));
+const spec = (command = "node --test tests/unit.test.mjs") => `# Task
+
+## Grounding
+Grounded.
+
+## Approaches Considered
+### Selected: Small change
+
+## Acceptance Criteria
+1. Works.
+
+## Verification
+- \`${command}\`
+
+## Implementation Checklist
+- [ ] Implement.
+`;
 
 // Expected verdicts mirror tests/fixtures/manifests/README.md.
 const EXPECT = {
@@ -145,6 +162,22 @@ test("root checks require inventoried regular files and reject ancestor symlinks
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("validate_scaffold tool performs static SPEC and manifest consistency checks", async () => {
+  assert.match(validateTool.description, /without executing/i);
+  const root = mkdtempSync(path.join(os.tmpdir(), "scaffold-validator-"));
+  try {
+    const manifest = load("valid-ralph.json");
+    const command = manifest.verification.commands[0];
+    writeFileSync(path.join(root, "SPEC.md"), spec(command));
+    writeFileSync(path.join(root, "opencode-autonomous.json"), JSON.stringify(manifest));
+    assert.equal((await validateScaffold(root)).valid, true);
+    writeFileSync(path.join(root, "SPEC.md"), spec("different command"));
+    await assert.rejects(validateScaffold(root), /must match exactly/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

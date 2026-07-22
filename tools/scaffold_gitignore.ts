@@ -23,10 +23,6 @@ export const MANAGED_PATHS = [
   "/opencode-autonomous.json",
   "/.prometheus/evaluator/",
   "/.spike/",
-  "/.opencode/runs/",
-  "/.opencode/supervisor/",
-  "/.opencode/progress/",
-  "/.opencode/quarantine/",
 ];
 
 export const MANAGED_BLOCK = [BEGIN, ...MANAGED_PATHS, END].join("\n");

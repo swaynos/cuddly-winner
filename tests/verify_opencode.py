@@ -20,7 +20,7 @@ def require(condition: bool, message: str) -> None:
 def deploy(config: pathlib.Path, *args: str) -> None:
     env = os.environ | {"OPENCODE_DEPLOY_CONFIG_DIR": str(config)}
     subprocess.run(
-        ["bash", str(ROOT / "scripts/deploy-opencode-agents.sh"), "install", "--mode", "copy", *args],
+        ["bash", str(ROOT / "scripts/deploy-opencode-agents.sh"), "install", *args],
         cwd=ROOT,
         env=env,
         check=True,
@@ -36,7 +36,8 @@ def main() -> int:
 
     agents = {p.stem: p.read_text() for p in (ROOT / "agents").glob("*.md")}
     require(set(agents) == MANAGED_AGENTS, "optional managed-agent roster mismatch")
-    require("bash: deny" in agents["prometheus"] and "run: allow" in agents["prometheus"], "Prometheus defaults missing")
+    require("bash: deny" in agents["prometheus"] and "spike: ask" in agents["prometheus"], "Prometheus defaults missing")
+    require("bash: ask" in agents["autonomous"] and "run: allow" not in agents["autonomous"], "Autonomous must use approval-gated native Bash")
     for name in ("ask", "karpathy", "reviewer", "grounder"):
         require("bash: deny" in agents[name], f"{name} must remain read-only")
     require("Make the change yourself" not in agents["karpathy"], "Karpathy still claims edit ownership")
@@ -75,24 +76,23 @@ def main() -> int:
         require(not (config / "AGENTS.md").exists(), "repository rules were installed globally")
         require({p.stem for p in (config / "agents").glob("*.md")} == MANAGED_AGENTS, "specialist agents not deployed")
         require((config / "plugins/immutability.ts").is_file(), "managed-agent immutability plugin missing")
-        require(not (config / "plugins/opencode-autonomous-supervisor.js").exists(), "supervisor installed in default profile")
-        require(not (config / "tools/run.ts").exists(), "runner installed in default profile")
+        require(not (config / "plugins/opencode-autonomous-supervisor.js").exists(), "obsolete supervisor installed in default profile")
+        require(not (config / "tools/spike.ts").exists(), "workflow tools installed in default profile")
         require(not (config / "skills").exists(), "optional skills installed by default")
-        # UC-DEP-07: prometheus and autonomous install under the default profile but
-        # their supporting infrastructure (supervisor, runner, SDK) does not, so both
-        # must fail closed at runtime rather than acting without protected execution.
         installed = {p.stem for p in (config / "agents").glob("*.md")}
         require({"prometheus", "autonomous"} <= installed, "managed agents missing from default profile")
-        require(not (config / "node_modules/@opencode-ai/plugin").exists(), "runner SDK present without --with-autonomous")
+        require(not (config / "node_modules/@opencode-ai/plugin").exists(), "tool SDK present without --with-workflow-tools")
 
-    with tempfile.TemporaryDirectory(prefix="opencode-autonomous-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="opencode-workflow-tools-") as tmp:
         config = pathlib.Path(tmp) / "config"
-        deploy(config, "--with-autonomous")
-        require((config / "plugins/opencode-autonomous-supervisor.js").is_file(), "Autonomous supervisor not deployed")
-        require((config / "tools/run.ts").is_file(), "Autonomous runner not deployed")
+        deploy(config, "--with-workflow-tools")
+        require(not (config / "plugins/opencode-autonomous-supervisor.js").exists(), "obsolete supervisor deployed")
+        require(not (config / "tools/run.ts").exists(), "obsolete protected runner deployed")
+        require((config / "tools/spike.ts").is_file(), "spike tool not deployed")
         require((config / "tools/scaffold_gitignore.ts").is_file(), "scaffold_gitignore tool not deployed")
-        require((config / "node_modules/@opencode-ai/plugin").is_dir(), "runner SDK dependency is not self-contained")
-        for tool_file in ("tools/run.ts", "tools/scaffold_gitignore.ts"):
+        require((config / "tools/validate_scaffold.ts").is_file(), "validate_scaffold tool not deployed")
+        require((config / "node_modules/@opencode-ai/plugin").is_dir(), "tool SDK dependency is not self-contained")
+        for tool_file in ("tools/spike.ts", "tools/scaffold_gitignore.ts", "tools/validate_scaffold.ts"):
             code = f'import tool from {str(config / tool_file)!r}; if(typeof tool?.execute!=="function")process.exit(2)'
             subprocess.run(["node", "--input-type=module", "-e", code], check=True, capture_output=True, text=True)
 

@@ -16,7 +16,7 @@ test("creates .gitignore with the exact canonical block when absent", async () =
   assert.equal(result.changed, true);
   const content = await readFile(gi(root), "utf8");
   assert.ok(content.includes(MANAGED_BLOCK));
-  assert.equal(result.managed_paths.length, 8);
+  assert.equal(result.managed_paths.length, 4);
 }));
 
 test("is byte-idempotent on repeated calls", async () => fixture(async (root) => {

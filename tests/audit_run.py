@@ -36,7 +36,7 @@ from typing import Optional
 
 DEFAULT_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
 
-KARPATHY_ARTIFACTS = ["program.md", "experiments.md", "opencode-karpathy.json"]
+KARPATHY_ARTIFACTS = ["SPEC.md", "opencode-autonomous.json"]
 
 # Agent names that indicate strategy subagent execution.
 STRATEGY_SUBAGENTS = {"karpathy"}
@@ -209,13 +209,6 @@ def karpathy_artifacts_present(project: str) -> dict[str, bool]:
     return {a: (Path(project) / a).exists() for a in KARPATHY_ARTIFACTS}
 
 
-def experiments_has_baseline(project: str) -> bool:
-    p = Path(project) / "experiments.md"
-    if not p.exists():
-        return False
-    return "Run 0" in p.read_text(encoding="utf-8", errors="replace")
-
-
 # ---------------------------------------------------------------------------
 # Verdict builders
 # ---------------------------------------------------------------------------
@@ -275,21 +268,19 @@ def verdict_autonomous_strategy(
 
     if declared == "karpathy":
         arts = karpathy_artifacts_present(project)
-        has_baseline = experiments_has_baseline(project)
         has_delegation = "karpathy" in delegated_to
-        evidence += [f"Karpathy artifacts: {arts}", f"experiments.md has baseline: {has_baseline}",
-                     f"@karpathy child session: {has_delegation}"]
-        if has_delegation and has_baseline:
+        evidence += [f"Karpathy artifacts: {arts}", f"@karpathy child session: {has_delegation}"]
+        if has_delegation and all(arts.values()):
             return Verdict("PASS", evidence=evidence,
-                           interpretation="@karpathy delegated and experiments.md has baseline run.")
+                           interpretation="Canonical Karpathy scaffold and advisory delegation observed.")
         if has_delegation:
             return Verdict("PARTIAL", evidence=evidence,
-                           interpretation="@karpathy child session exists but experiments.md missing or no baseline.")
-        if all(arts.values()) and has_baseline:
+                           interpretation="@karpathy child session exists but canonical scaffold is incomplete.")
+        if all(arts.values()):
             return Verdict("PARTIAL", evidence=evidence,
-                           interpretation="Karpathy artifacts present but no @karpathy child session — delegation may not have occurred.")
+                           interpretation="Karpathy scaffold exists but advisory delegation was not observed.")
         return Verdict("FAIL", evidence=evidence,
-                       interpretation="Selected: karpathy but neither @karpathy delegation nor Karpathy artifacts found.")
+                       interpretation="Selected: karpathy but neither delegation nor canonical scaffold was found.")
 
     # direct / instrumentation / other
     if delegated_to:
@@ -309,30 +300,17 @@ def verdict_karpathy(
         return Verdict("NOT_SELECTED", evidence=["No @karpathy child session found"])
 
     arts = karpathy_artifacts_present(project)
-    has_baseline = experiments_has_baseline(project)
-    has_noise = False
-    has_keep_revert = False
-    exp_path = Path(project) / "experiments.md"
-    if exp_path.exists():
-        exp_text = exp_path.read_text(encoding="utf-8", errors="replace")
-        has_noise = "noise" in exp_text.lower() or "stddev" in exp_text.lower()
-        has_keep_revert = "KEEP" in exp_text or "REVERT" in exp_text
-
     evidence = [
         f"@karpathy child sessions: {len(karpathy_children)}",
-        f"program.md: {arts.get('program.md')}",
-        f"opencode-karpathy.json: {arts.get('opencode-karpathy.json')}",
-        f"experiments.md: {arts.get('experiments.md')} (baseline: {has_baseline}, noise: {has_noise}, KEEP/REVERT: {has_keep_revert})",
+        f"SPEC.md: {arts.get('SPEC.md')}",
+        f"opencode-autonomous.json: {arts.get('opencode-autonomous.json')}",
     ]
 
-    if has_baseline and has_noise and has_keep_revert:
+    if all(arts.values()):
         return Verdict("PASS", evidence=evidence,
-                       interpretation="Karpathy executed: baseline, noise floor, and KEEP/REVERT decisions recorded.")
-    if has_baseline:
-        return Verdict("PARTIAL", evidence=evidence,
-                       interpretation="Karpathy started (baseline recorded) but noise floor or KEEP/REVERT decisions missing.")
+                       interpretation="Karpathy advisory session used the canonical scaffold.")
     return Verdict("FAIL", evidence=evidence,
-                   interpretation="@karpathy child session exists but experiments.md lacks baseline run.")
+                   interpretation="@karpathy child session exists but the canonical scaffold is incomplete.")
 
 
 # ---------------------------------------------------------------------------

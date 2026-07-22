@@ -79,12 +79,12 @@ def _check_contract_compliance(workspace: Path) -> list[dict]:
     """
     checks = []
 
-    # Trusted runner evidence present on disk.
-    evidence_found = any((workspace / ".opencode" / "runs").glob("*.json"))
+    # Autonomous must treat the published SPEC as immutable planning input.
+    evidence_found = (workspace / "SPEC.md").read_text(encoding="utf-8") == CANONICAL.read_text(encoding="utf-8")
     checks.append({
-        "name": "Trusted runner evidence present",
+        "name": "Published SPEC remains unchanged",
         "passed": evidence_found,
-        "note": "" if evidence_found else "No .opencode/runs JSON artifact found.",
+        "note": "" if evidence_found else "Autonomous rewrote the published SPEC.",
     })
 
     return checks

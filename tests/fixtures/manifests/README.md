@@ -1,8 +1,7 @@
 # Manifest Fixtures (schema v1)
 
-Acceptance fixtures for the `opencode-autonomous.json` validator built in R4.
-Authoritative schema: `docs/ARCHITECTURE.md` § Manifest Schema (v1); limits:
-`docs/REQUIREMENTS.md` § Autonomous Profile > Execution Limits.
+Acceptance fixtures for the static `opencode-autonomous.json` validator.
+Authoritative schema: `docs/ARCHITECTURE.md` § Manifest Schema (v1).
 
 Each fixture has one expected verdict. The validator test asserts exactly these.
 
@@ -20,8 +19,7 @@ Each fixture has one expected verdict. The validator test asserts exactly these.
 Fixtures carrying a `_note` field also verify that unknown top-level keys are
 tolerated only where the schema says so; `_note`/`_comment` are reserved
 documentation keys the validator ignores. Every other unknown top-level key is a
-hard rejection (add a fixture when R4 implements that check).
-
-Not yet covered (add in R4 as the validator gains the checks): symlink-escape
-evaluator path, duplicate inventory entry, SPEC/manifest strategy mismatch,
-non-numeric limit value, Karpathy `immutable_targets` omitting the evaluator.
+hard rejection. Table-driven tests additionally cover symlinked evaluator paths,
+duplicate inventory, nested unknown keys, non-numeric limits, overlapping
+targets, and Karpathy immutable-target requirements. Scaffold tests separately
+cover SPEC section and verification-command consistency.

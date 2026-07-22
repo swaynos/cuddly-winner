@@ -241,10 +241,5 @@ def dry_run_autonomous(workspace: Path) -> tuple[int, str, str]:
     (workspace / "rules_engine.py").write_text(
         ref_engine.read_text(encoding="utf-8"), encoding="utf-8"
     )
-    # Write clearly synthetic dry-run evidence. Dry runs exercise evaluator
-    # plumbing only and never qualify as release evidence.
-    runs = workspace / ".opencode" / "runs"
-    runs.mkdir(parents=True, exist_ok=True)
-    (runs / "dry-run.json").write_text('{"context":"dry-run","synthetic":true}\n', encoding="utf-8")
-    stub_stdout = "Stub @autonomous response for dry-run; synthetic evaluator evidence is on disk.\n"
+    stub_stdout = "Stub @autonomous response for dry-run; native verification is simulated.\n"
     return 0, stub_stdout, ""

@@ -29,7 +29,7 @@ const mutate = (guard, agent, filePath, tool = "edit") => guard["tool.execute.be
 test("native build and plan are never intercepted", async () => fixture(async root => {
   const guard = await hooks(root, { build: "build", plan: "plan" });
   for (const agent of ["build", "plan"]) {
-    await mutate(guard, agent, path.join(root, "tools/run.ts"));
+    await mutate(guard, agent, path.join(root, "tools/spike.ts"));
     await guard["tool.execute.before"]({ tool: "bash", sessionID: agent, callID: "shell" }, { args: { command: "true", cwd: root } });
   }
 }));
@@ -57,29 +57,37 @@ test("prometheus can write scaffold artifacts only", async () => fixture(async r
   await mutate(guard, "p", path.join(root, ".spike", "probe", "result.txt"));
   await assert.rejects(mutate(guard, "p", path.join(root, "src", "app.ts")), /restricted/);
   await assert.rejects(guard["tool.execute.before"]({ tool: "bash", sessionID: "p", callID: "shell" }, { args: { command: "true", cwd: root } }), /directly/);
-  await guard["tool.execute.before"]({ tool: "run", sessionID: "p", callID: "spike" }, { args: { context: "spike", spike_id: "probe", cwd: root } });
+  await guard["tool.execute.before"]({ tool: "spike", sessionID: "p", callID: "spike" }, { args: { spike_id: "probe" } });
 }));
 
-test("only prometheus may invoke scaffold_gitignore", async () => fixture(async root => {
-  const invoke = (guard, agent) => guard["tool.execute.before"](
-    { tool: "scaffold_gitignore", sessionID: agent, callID: "c" }, { args: {} });
+test("only prometheus may invoke workflow tools", async () => fixture(async root => {
+  const invoke = (guard, agent, tool) => guard["tool.execute.before"](
+    { tool, sessionID: agent, callID: "c" }, { args: tool === "spike" ? { spike_id: "probe" } : {} });
   const pg = await hooks(root, { p: "prometheus" });
-  await invoke(pg, "p");
-  for (const agent of ["autonomous", "ask", "karpathy", "reviewer", "grounder"]) {
-    const guard = await hooks(root, { [agent]: agent });
-    await assert.rejects(invoke(guard, agent), /only @prometheus may invoke/);
+  for (const tool of ["spike", "scaffold_gitignore", "validate_scaffold"]) {
+    await invoke(pg, "p", tool);
+    for (const agent of ["autonomous", "ask", "karpathy", "reviewer", "grounder"]) {
+      const guard = await hooks(root, { [agent]: agent });
+      await assert.rejects(invoke(guard, agent, tool), /only @prometheus may invoke/);
+    }
   }
   // Unmanaged identities are still bypassed entirely.
   const ug = await hooks(root, { x: "third-party" });
-  await invoke(ug, "x");
+  await invoke(ug, "x", "spike");
 }));
 
-test("autonomous edits source but not trusted control-plane paths", async () => fixture(async root => {
+test("autonomous may use native Bash while prometheus may not", async () => fixture(async root => {
+  const guard = await hooks(root, { a: "autonomous", p: "prometheus" });
+  await guard["tool.execute.before"]({ tool: "bash", sessionID: "a", callID: "shell" }, { args: { command: "node --test", cwd: root } });
+  await assert.rejects(guard["tool.execute.before"]({ tool: "bash", sessionID: "p", callID: "shell" }, { args: { command: "true", cwd: root } }), /directly/);
+}));
+
+test("autonomous edits source but not trusted extension paths", async () => fixture(async root => {
   const guard = await hooks(root, { a: "autonomous" });
   await mutate(guard, "a", path.join(root, "src", "app.ts"));
-  await assert.rejects(mutate(guard, "a", path.join(root, ".opencode", "runs", "forged.json")), /trusted control-plane/);
   await assert.rejects(mutate(guard, "a", path.join(root, "plugins", "immutability.ts")), /trusted control-plane/);
-  await assert.rejects(mutate(guard, "a", path.join(root, "tools", "manifest.ts")), /trusted control-plane/);
+  await assert.rejects(mutate(guard, "a", path.join(root, "tools", "spike.ts")), /trusted control-plane/);
+  await assert.rejects(mutate(guard, "a", path.join(root, "tools", "validate_scaffold.ts")), /trusted control-plane/);
   await assert.rejects(mutate(guard, "a", path.join(root, "tools", "scaffold_gitignore.ts")), /trusted control-plane/);
 }));
 
@@ -107,15 +115,6 @@ test("a build child of prometheus remains restricted", async () => fixture(async
 test("managed children remain restricted below unmanaged parents", async () => fixture(async root => {
   const guard = await hooks(root, { parent: "third-party", child: "grounder" }, { child: "parent" });
   await assert.rejects(mutate(guard, "child", path.join(root, "README.md")), /read-only/);
-}));
-
-test("published scaffold is frozen while an autonomous run is active", async () => fixture(async root => {
-  await mkdir(path.join(root, ".opencode", "supervisor"), { recursive: true });
-  await writeFile(path.join(root, ".opencode", "supervisor", "run.json"), JSON.stringify({ status: "running" }));
-  const guard = await hooks(root, { p: "prometheus" });
-  for (const target of ["SPEC.md", "opencode-autonomous.json", ".prometheus/evaluator/score.py"]) {
-    await assert.rejects(mutate(guard, "p", path.join(root, target)), /published scaffold/);
-  }
 }));
 
 test("autonomous cannot rewrite a published scaffold", async () => fixture(async root => {

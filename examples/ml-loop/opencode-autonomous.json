@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "strategy": "karpathy",
+  "invariants": [
+    "prepare.py and the evaluator remain unchanged",
+    "Only one experiment lever changes at a time"
+  ],
+  "implementation_scope": ["train.py"],
+  "escalation_triggers": ["objective or dataset changes"],
+  "evaluator_inventory": [".prometheus/evaluator/score.py"],
+  "verification": {
+    "commands": [
+      "python3 train.py",
+      "python3 .prometheus/evaluator/score.py",
+      "TRAIN_SEED=1 python3 train.py",
+      "TRAIN_SEED=2 python3 train.py",
+      "TRAIN_SEED=3 python3 train.py",
+      "git diff --exit-code prepare.py .prometheus/evaluator/score.py"
+    ],
+    "baseline": "Default-seed accuracy is approximately 0.72"
+  },
+  "optimization": {
+    "objective": "validation_accuracy",
+    "direction": "maximize",
+    "baseline": 0.72,
+    "score_extraction": "single float emitted by .prometheus/evaluator/score.py",
+    "noise_probe": {"runs": 3, "threshold": 0.03},
+    "mutable_targets": ["train.py"],
+    "immutable_targets": ["prepare.py", ".prometheus/evaluator/score.py"],
+    "limits": {"experiments": 25, "failure_pivot": 5},
+    "stop": {"target": 0.85, "exhaustion": "experiments"}
+  }
+}

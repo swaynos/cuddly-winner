@@ -1,24 +1,17 @@
-import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
-const SHELL_TOOLS = new Set(["bash", "run"]);
-const PROMETHEUS_ONLY_TOOLS = new Set(["scaffold_gitignore"]);
+const SHELL_TOOLS = new Set(["bash"]);
+const PROMETHEUS_ONLY_TOOLS = new Set(["spike", "scaffold_gitignore", "validate_scaffold"]);
 const MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder"]);
 const READ_ONLY_AGENTS = new Set(["ask", "karpathy", "reviewer", "grounder"]);
 const PROMETHEUS_WRITABLE = ["SPEC.md", "opencode-autonomous.json", ".prometheus/evaluator/**", ".spike/**"];
 const TRUSTED_PATHS = [
-  ".opencode/runs",
-  ".opencode/supervisor",
-  ".opencode/progress",
-  ".opencode/quarantine",
-  "tools/run.ts",
-  "tools/manifest.ts",
+  "tools/spike.ts",
+  "tools/validate_scaffold.ts",
   "tools/scaffold_gitignore.ts",
   "plugins/immutability.ts",
-  "plugins/opencode-autonomous-supervisor.js",
-  "plugins/opencode-autonomous-supervisor/index.js",
-  "plugins/opencode-autonomous-supervisor/package.json",
 ];
 
 function matchesPattern(relPath: string, pattern: string): boolean {
@@ -70,16 +63,6 @@ function isTrustedPath(relPath: string): boolean {
 
 function isPublishedScaffold(relPath: string): boolean {
   return relPath === "SPEC.md" || relPath === "opencode-autonomous.json" || relPath.startsWith(".prometheus/evaluator/");
-}
-
-function hasActiveRun(root: string): boolean {
-  try {
-    return readdirSync(resolve(root, ".opencode", "supervisor"))
-      .filter((name) => name.endsWith(".json") && !name.endsWith(".budget.json"))
-      .some((name) => JSON.parse(readFileSync(resolve(root, ".opencode", "supervisor", name), "utf8")).status === "running");
-  } catch {
-    return false;
-  }
 }
 
 export const ImmutabilityGuard = async ({ directory, worktree, client }: { directory: string; worktree: string; client: any }) => {
@@ -143,12 +126,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       const args = output.args ?? {};
       if (SHELL_TOOLS.has(input.tool)) {
         if (READ_ONLY_AGENTS.has(agent)) throw new Error(`ImmutabilityGuard: @${agent} is read-only.`);
-        if (agent === "prometheus") {
-          if (input.tool === "bash") throw new Error("ImmutabilityGuard: @prometheus may not execute shell commands directly.");
-          if (args.context !== "spike" || typeof args.spike_id !== "string") {
-            throw new Error("ImmutabilityGuard: @prometheus may invoke run only with contracted spike context.");
-          }
-        }
+        if (agent === "prometheus") throw new Error("ImmutabilityGuard: @prometheus may not execute shell commands directly.");
         return;
       }
 
@@ -165,9 +143,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       for (const unresolvedPath of paths) {
         const absolutePath = safeTarget(lexicalRoot, root, unresolvedPath);
         const relPath = relative(root, absolutePath).replace(/\\/g, "/");
-        if (isPublishedScaffold(relPath) && (agent !== "prometheus" || hasActiveRun(root))) {
-          throw new Error(`ImmutabilityGuard: published scaffold is frozen during an active run: "${relPath}".`);
-        }
+        if (isPublishedScaffold(relPath) && agent !== "prometheus") throw new Error(`ImmutabilityGuard: @${agent} cannot rewrite published scaffold: "${relPath}".`);
         if (agent === "prometheus" && isPublishedScaffold(relPath)) continue;
         if (isTrustedPath(relPath)) throw new Error(`ImmutabilityGuard: "${relPath}" is trusted control-plane state.`);
         if (agent === "prometheus" && !PROMETHEUS_WRITABLE.some((pattern) => matchesPattern(relPath, pattern))) {

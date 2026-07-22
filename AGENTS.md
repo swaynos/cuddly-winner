@@ -42,7 +42,7 @@ Never auto-commit as part of any workflow.
 ## Agent compatibility
 
 OpenCode's built-in Plan and Build modes are the default workflow and must work
-without custom routing, a `SPEC.md`, the trusted runner, or the supervisor. Do
+without custom routing, a `SPEC.md`, specialist agents, or workflow tools. Do
 not redirect ordinary planning to Prometheus or ordinary implementation to
 Autonomous.
 
@@ -68,5 +68,5 @@ incomplete.
 
 The following default applies only after the user explicitly invokes
 `@autonomous`; it does not govern built-in Plan or Build.
-strategy: karpathy
-rationale: Default — prefer forcing nondeterminism into a deterministic check wherever a scalar metric and frozen evaluator exist or can be constructed; reach for exotic strategies only when instrumentation is genuinely impossible.
+strategy: ralph
+rationale: Default — use bounded ordinary implementation unless the task explicitly requires scalar-metric optimization against a frozen evaluator.

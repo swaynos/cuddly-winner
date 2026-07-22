@@ -27,7 +27,6 @@ ENV/
 # Environment files
 .env
 .envrc
-.opencode-deploy.local.env
 
 # Testing / coverage / static analysis caches
 .pytest_cache/
@@ -57,8 +56,3 @@ evals/seed_build/reports/
 
 # Spike workspaces are disposable and never committed
 .spike/
-.opencode/runs/
-.opencode/supervisor/
-.opencode/progress/
-.opencode/quarantine/
-progress.txt

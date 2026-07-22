@@ -94,8 +94,6 @@ def test_default_install_no_skills() -> list[TestFailure]:
                 [
                     "bash", str(DEPLOY_SCRIPT), "install",
                     "--config-dir", str(config_dir),
-                    "--agents-dir", str(config_dir / "agents"),
-                    "--plugins-dir", str(config_dir / "plugins"),
                     "--mode", "copy",
                     # Notably: NO --with-skills flag
                 ],
@@ -357,9 +355,6 @@ def test_symlink_deploy() -> list[TestFailure]:
                 [
                     "bash", str(DEPLOY_SCRIPT), "install",
                     "--config-dir", str(config_dir),
-                    "--agents-dir", str(config_dir / "agents"),
-                    "--plugins-dir", str(config_dir / "plugins"),
-                    "--skills-dir", str(skills_dir),
                     "--mode", "symlink",
                     "--with-skills",
                 ],
@@ -398,9 +393,7 @@ def test_symlink_deploy() -> list[TestFailure]:
                 [
                     "bash", str(DEPLOY_SCRIPT), "remove",
                     "--config-dir", str(config_dir),
-                    "--skills-dir", str(skills_dir),
                     "--mode", "symlink",
-                    "--with-skills",
                 ],
                 capture_output=True,
                 text=True,

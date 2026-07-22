@@ -1,4 +1,4 @@
-# ml-loop — Karpathy Loop Example
+# ml-loop - Karpathy Loop Example
 
 A complete, runnable example of the Karpathy loop strategy applied to a small
 binary classification problem via `@autonomous`. No dependencies beyond Python stdlib.
@@ -10,9 +10,9 @@ binary classification problem via `@autonomous`. No dependencies beyond Python s
 - A mutable training target (`train.py`) with deliberate room for improvement:
   the baseline logistic regression scores ~70-75%; a well-tuned nonlinear
   model can reach ~85-90%.
-- A `program.md` with explicit stop criteria, constraints, and acceptance criteria.
-- An `opencode-karpathy.json` config that wires the loop: baseline command,
-  score file, noise probe seeds, and immutability declarations.
+- A canonical `SPEC.md` with explicit stop criteria, constraints, and acceptance criteria.
+- An `opencode-autonomous.json` manifest that defines the metric, baseline,
+  noise policy, targets, limits, and final verification.
 
 ## How to run
 
@@ -21,17 +21,18 @@ cd examples/ml-loop
 opencode
 ```
 
-Then invoke `@autonomous`. It reads the `AGENTS.md` strategy directive
-(`strategy: karpathy`) and delegates to the `@karpathy` strategy subagent, which:
+Then invoke `@autonomous`. It reads the explicit Karpathy manifest and delegates
+strategy proposals and analysis to `@karpathy`, while Autonomous:
 
-1. Reads `program.md` and restates the objective.
+1. Reads `SPEC.md` and restates the objective.
 2. Establishes a baseline score (~0.745 with default seed).
 3. Probes the noise floor across three seeds.
 4. Proposes one change for Autonomous to implement, then measures and decides
    KEEP or REVERT.
 5. Repeats until accuracy >= 0.85 or 10 consecutive non-improvements.
 
-Autonomous owns any project edits and experiment log persistence.
+Autonomous owns project edits and runs every measurement through native Bash.
+Normal sessions ask before commands; `opencode --auto` approves those requests.
 
 ## Running manually
 

@@ -66,7 +66,7 @@ reason: it weakens validation, determinism, and security boundaries.
 - [ ] Centralize supported condition evaluation in one helper.
 - [ ] Validate and resolve action specifications.
 - [ ] Implement the pure `evaluate` composition.
-- [ ] Run every exact verification command through the trusted runner.
-- [ ] Report the selected direct strategy and results; durable state belongs to the supervisor.
+- [ ] Run every exact verification command through approval-gated native Bash.
+- [ ] Report the selected strategy, commands, and observed results honestly.
 
 Invoke @autonomous to execute SPEC.md.

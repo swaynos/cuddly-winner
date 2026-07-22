@@ -1,16 +1,22 @@
 # ml-loop: Binary Classification
 
-## Problem
+## Grounding
 
 Improve the validation accuracy of a binary classifier trained on a
 synthetic dataset. The evaluator (`prepare.py`) is frozen. Only the
 training implementation (`train.py`) may change.
 
-## Goals
+## Approaches Considered
 
-- Push validation accuracy from the ~70% linear baseline toward 85%+.
-- Demonstrate the Karpathy loop's measure-one-change-at-a-time discipline
-  on a real (if small) learning problem.
+### Selected: One-change Karpathy optimization
+
+Improve the mutable training implementation through one measured change per
+iteration while keeping the dataset and scoring behavior frozen.
+
+### Rejected: Unbounded multi-change tuning
+
+Kill reason: changing several levers at once prevents attribution and violates
+the experiment contract.
 
 ## Non-goals
 
@@ -39,14 +45,12 @@ training implementation (`train.py`) may change.
 
 ## Verification
 
-```bash
-python3 train.py
-cat logs/latest_score.txt
-TRAIN_SEED=1 python3 train.py
-TRAIN_SEED=2 python3 train.py
-TRAIN_SEED=3 python3 train.py
-git diff prepare.py
-```
+- `python3 train.py`
+- `python3 .prometheus/evaluator/score.py`
+- `TRAIN_SEED=1 python3 train.py`
+- `TRAIN_SEED=2 python3 train.py`
+- `TRAIN_SEED=3 python3 train.py`
+- `git diff --exit-code prepare.py .prometheus/evaluator/score.py`
 
 ## Stop Criteria
 
@@ -62,3 +66,12 @@ Stop when **either** condition is met:
 ## Immutable Targets
 
 - `prepare.py` — frozen evaluator. Do not touch.
+- `.prometheus/evaluator/score.py` — frozen score reader. Do not touch.
+
+## Implementation Checklist
+
+- [ ] Establish the default-seed baseline and three-seed noise floor.
+- [ ] Propose and apply exactly one bounded change to `train.py`.
+- [ ] Measure and record the score, delta, and KEEP/REVERT decision.
+- [ ] Continue until target or experiment limits are reached.
+- [ ] Run every exact final verification command through native Bash.

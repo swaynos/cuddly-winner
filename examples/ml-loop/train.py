@@ -6,7 +6,7 @@ THE AGENT HAS FULL CONTROL OVER THIS FILE.
 Starting baseline: a logistic regression trained with mini-batch SGD.
 This intentionally uses a linear model so there is room to improve.
 Expected baseline accuracy: ~68-72%.
-Target: >= 0.85 accuracy (see program.md stop criteria).
+Target: >= 0.85 accuracy (see SPEC.md stop criteria).
 
 Levers the agent may try (one per iteration):
   - Architecture: add hidden layer(s), change width, change activation
