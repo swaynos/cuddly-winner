@@ -29,56 +29,6 @@ Evidence classes:
 - **Never:** route automatically to Prometheus or Autonomous.
 - **Evidence:** S agent/project instructions; B direct native scenarios.
 
-## Deployment
-
-### UC-DEP-01: Default profile is lightweight
-
-- **Given:** a clean OpenCode configuration.
-- **When:** default installation runs.
-- **Then:** install six agents and `immutability.ts` only.
-- **Never:** install tools, SDK dependencies, repository `AGENTS.md`, a runner, or a supervisor.
-- **Evidence:** F deployment fixture.
-
-### UC-DEP-02: Workflow tools are opt-in
-
-- **Given:** `install --with-workflow-tools`.
-- **When:** installation completes.
-- **Then:** install `spike`, `validate_scaffold`, `scaffold_gitignore`, and the pinned tool SDK.
-- **Never:** install Bubblewrap, Lima, a VM, a runner, or a supervisor.
-- **Evidence:** F deployment fixture and import smoke test.
-
-### UC-DEP-03: Installation is additive from one config root
-
-- **Given:** a config root and any optional install flags.
-- **When:** installation runs in copy or symlink mode.
-- **Then:** derive all destinations beneath the root and add requested groups without removing omitted optional groups.
-- **Never:** accept per-category/source overrides or treat omitted flags as uninstall requests.
-- **Evidence:** F copy/symlink/additive fixture.
-
-### UC-DEP-04: Status and removal cover current managed entries safely
-
-- **Given:** current managed copies, repository symlinks, modifications, and unrelated entries.
-- **When:** status or remove runs without profile flags.
-- **Then:** inspect every group and remove only current matching copies or links.
-- **Never:** remove modified or unrelated entries or promise migration of retired artifacts.
-- **Evidence:** F status/removal fixture.
-
-### UC-DEP-05: Retired and granular options fail
-
-- **Given:** a retired profile flag, source override, or per-category destination override.
-- **When:** argument parsing runs.
-- **Then:** reject it as unknown and identify the supported single-root interface in help.
-- **Never:** retain hidden precedence or local deployment-env behavior.
-- **Evidence:** F argument matrix; S help contract.
-
-### UC-DEP-06: Restart loads profile changes
-
-- **Given:** OpenCode is already running.
-- **When:** agents, plugins, or tools change.
-- **Then:** documentation instructs the user to restart.
-- **Never:** claim hot reload.
-- **Evidence:** S documentation check.
-
 ## Identity And Permissions
 
 ### UC-ID-01: Managed ancestry is inherited
@@ -89,13 +39,13 @@ Evidence classes:
 - **Never:** widen permissions through delegation or identity spoofing.
 - **Evidence:** U ancestry and cycle matrix.
 
-### UC-ID-02: Prometheus is scaffold-only
+### UC-ID-02: Prometheus is scaffold-scoped
 
 - **Given:** Prometheus requests mutation or command execution.
-- **When:** permissions and the plugin evaluate it.
-- **Then:** permit scaffold edits and Prometheus-only workflow tools; set `spike` to ask.
-- **Never:** permit direct Bash or ordinary production edits.
-- **Evidence:** U permission/path/tool matrix; S frontmatter check.
+- **When:** permissions evaluate it.
+- **Then:** permit scaffold edits and `bash: ask` for research commands; set governance tools to ask when installed.
+- **Never:** permit ordinary production file edits.
+- **Evidence:** U permission/path matrix; S frontmatter check.
 
 ### UC-ID-03: Autonomous owns implementation
 
@@ -116,9 +66,9 @@ Evidence classes:
 ### UC-ID-05: Auto mode approves asks, not denies
 
 - **Given:** OpenCode starts with `--auto`.
-- **When:** Autonomous requests Bash or Prometheus requests a spike.
+- **When:** Autonomous or Prometheus requests Bash.
 - **Then:** OpenCode may approve without prompting.
-- **Never:** bypass explicit Bash denial for Prometheus or read-only roles.
+- **Never:** bypass explicit denies for read-only roles.
 - **Evidence:** S permission contract against OpenCode documentation; O smoke test.
 
 ## Prometheus Triage
@@ -155,49 +105,31 @@ Evidence classes:
 - **Never:** convert user insistence into a valid scaffold.
 - **Evidence:** B veto matrix.
 
-## Measured Spikes
+### UC-PRO-05: Self-resolution through deliberation
 
-### UC-SPIKE-01: A spike requires a contract and approval
+- **Given:** a request containing uncertainties or ambiguities.
+- **When:** Prometheus begins deliberation.
+- **Then:** investigate using available tools — bash, web search, connected MCPs, Grounder — and resolve uncertainties internally before asking the human.
+- **Never:** ask the human a question that available tools could have answered.
+- **Evidence:** B deliberation scenario with resolvable and unresolvable uncertainties.
 
-- **Given:** a load-bearing technical uncertainty.
-- **When:** Prometheus invokes `spike`.
-- **Then:** require `.spike/<id>/QUESTION.md`, a safe ID, and normal OpenCode approval.
-- **Never:** expose direct Bash or execute an uncontracted spike.
-- **Evidence:** U contract/permission tests.
+### UC-PRO-06: Creative liberty with thin context
 
-### UC-SPIKE-02: Native execution is bounded and honest
+- **Given:** a request too thin to constrain key decisions (e.g. "create a world class recipe").
+- **When:** Prometheus finds no evidence to narrow the decision.
+- **Then:** apply creative liberty and proceed without asking.
+- **Never:** stall or issue a generic discovery questionnaire when context is intentionally open-ended.
+- **Evidence:** B thin-context scenario.
 
-- **Given:** an approved spike command.
-- **When:** it runs on macOS or Linux.
-- **Then:** use the spike directory, reduced environment, finite timeout/output, redaction, and atomic result files containing `sandboxed: false`.
-- **Never:** claim filesystem confinement, host isolation, or protected evidence.
-- **Evidence:** U cross-platform process/error/output tests.
+### UC-PRO-07: Prometheus recommends Karpathy for measurable outcomes
 
-### UC-SPIKE-03: Failed kill criteria change the plan
-
-- **Given:** measured output violates the declared kill criterion.
-- **When:** Prometheus evaluates the result.
-- **Then:** redesign or block and record the evidence.
-- **Never:** publish optimistic assumptions as facts.
-- **Evidence:** B failed-spike scenario.
+- **Given:** Prometheus identifies a clear metric, direction, and evaluator during deliberation.
+- **When:** it selects a strategy.
+- **Then:** recommend Karpathy mode in the scaffold; Autonomous follows without further user invocation.
+- **Never:** require the user to explicitly invoke Karpathy when Prometheus has identified measurable outcomes.
+- **Evidence:** B measurable-outcome scenario; S prompt/schema check.
 
 ## Scaffold Publication
-
-### UC-PUB-01: Scaffold shape is exact
-
-- **Given:** SPEC, manifest, and optional evaluators.
-- **When:** `validate_scaffold` runs.
-- **Then:** validate schema, canonical paths, inventory, required sections, and exact command-list agreement.
-- **Never:** execute project commands or certify passing behavior.
-- **Evidence:** U positive/negative fixtures.
-
-### UC-PUB-02: Git exclusion is constrained
-
-- **Given:** Prometheus invokes `scaffold_gitignore` without arguments.
-- **When:** `.gitignore` is absent or valid.
-- **Then:** atomically manage only the canonical four-path block and preserve unrelated bytes/modes.
-- **Never:** follow symlinks, accept malformed markers, or alter the Git index.
-- **Evidence:** F target/marker/idempotence/index fixtures.
 
 ### UC-PUB-03: Publication hands off final verification
 
@@ -284,3 +216,104 @@ Evidence classes:
 - **Then:** README, requirements, architecture, use cases, agents, scripts, and tests agree.
 - **Never:** retain claims about retired runners, supervisors, Bubblewrap, Lima, or old profile flags.
 - **Evidence:** S repository text checks; full CI.
+
+
+## Deferred Infrastructure
+
+The following use cases cover the optional governance layer (deployment lifecycle,
+spike tool, and scaffold validation tools). They are deferred pending validation
+of core agent behavior; see `docs/REQUIREMENTS.md` for context.
+
+## Deployment
+
+### UC-DEP-01: Default profile is lightweight
+
+- **Given:** a clean OpenCode configuration.
+- **When:** default installation runs.
+- **Then:** install six agents and `immutability.ts` only.
+- **Never:** install tools, SDK dependencies, repository `AGENTS.md`, a runner, or a supervisor.
+- **Evidence:** F deployment fixture.
+
+### UC-DEP-02: Workflow tools are opt-in
+
+- **Given:** `install --with-workflow-tools`.
+- **When:** installation completes.
+- **Then:** install `spike`, `validate_scaffold`, `scaffold_gitignore`, and the pinned tool SDK.
+- **Never:** install Bubblewrap, Lima, a VM, a runner, or a supervisor.
+- **Evidence:** F deployment fixture and import smoke test.
+
+### UC-DEP-03: Installation is additive from one config root
+
+- **Given:** a config root and any optional install flags.
+- **When:** installation runs in copy or symlink mode.
+- **Then:** derive all destinations beneath the root and add requested groups without removing omitted optional groups.
+- **Never:** accept per-category/source overrides or treat omitted flags as uninstall requests.
+- **Evidence:** F copy/symlink/additive fixture.
+
+### UC-DEP-04: Status and removal cover current managed entries safely
+
+- **Given:** current managed copies, repository symlinks, modifications, and unrelated entries.
+- **When:** status or remove runs without profile flags.
+- **Then:** inspect every group and remove only current matching copies or links.
+- **Never:** remove modified or unrelated entries or promise migration of retired artifacts.
+- **Evidence:** F status/removal fixture.
+
+### UC-DEP-05: Retired and granular options fail
+
+- **Given:** a retired profile flag, source override, or per-category destination override.
+- **When:** argument parsing runs.
+- **Then:** reject it as unknown and identify the supported single-root interface in help.
+- **Never:** retain hidden precedence or local deployment-env behavior.
+- **Evidence:** F argument matrix; S help contract.
+
+### UC-DEP-06: Restart loads profile changes
+
+- **Given:** OpenCode is already running.
+- **When:** agents, plugins, or tools change.
+- **Then:** documentation instructs the user to restart.
+- **Never:** claim hot reload.
+- **Evidence:** S documentation check.
+
+## Measured Spikes
+
+### UC-SPIKE-01: A spike requires a contract and approval
+
+- **Given:** a load-bearing technical uncertainty.
+- **When:** Prometheus invokes `spike`.
+- **Then:** require `.spike/<id>/QUESTION.md`, a safe ID, and normal OpenCode approval.
+- **Never:** expose direct Bash or execute an uncontracted spike.
+- **Evidence:** U contract/permission tests.
+
+### UC-SPIKE-02: Native execution is bounded and honest
+
+- **Given:** an approved spike command.
+- **When:** it runs on macOS or Linux.
+- **Then:** use the spike directory, reduced environment, finite timeout/output, redaction, and atomic result files containing `sandboxed: false`.
+- **Never:** claim filesystem confinement, host isolation, or protected evidence.
+- **Evidence:** U cross-platform process/error/output tests.
+
+### UC-SPIKE-03: Failed kill criteria change the plan
+
+- **Given:** measured output violates the declared kill criterion.
+- **When:** Prometheus evaluates the result.
+- **Then:** redesign or block and record the evidence.
+- **Never:** publish optimistic assumptions as facts.
+- **Evidence:** B failed-spike scenario.
+
+## Scaffold Publication Tools
+
+### UC-PUB-01: Scaffold shape is exact
+
+- **Given:** SPEC, manifest, and optional evaluators.
+- **When:** `validate_scaffold` runs.
+- **Then:** validate schema, canonical paths, inventory, required sections, and exact command-list agreement.
+- **Never:** execute project commands or certify passing behavior.
+- **Evidence:** U positive/negative fixtures.
+
+### UC-PUB-02: Git exclusion is constrained
+
+- **Given:** Prometheus invokes `scaffold_gitignore` without arguments.
+- **When:** `.gitignore` is absent or valid.
+- **Then:** atomically manage only the canonical four-path block and preserve unrelated bytes/modes.
+- **Never:** follow symlinks, accept malformed markers, or alter the Git index.
+- **Evidence:** F target/marker/idempotence/index fixtures.

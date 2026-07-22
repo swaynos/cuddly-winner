@@ -16,11 +16,11 @@ runner, custom completion engine, or autonomous supervisor.
 
 Command security belongs to OpenCode's native permission model:
 
-- Prometheus cannot use Bash directly. Its optional `spike` tool is `ask`.
+- Prometheus uses `bash: ask` permission for research during deliberation; commands require user approval, or are auto-approved with `--auto`.
 - Autonomous uses native Bash with `ask` permission.
 - `opencode --auto` automatically approves `ask` requests.
 - Explicit `deny` permissions remain denied in auto mode.
-- Spike and Bash results are engineering evidence, not tamper-resistant proof.
+- Bash results are engineering evidence, not tamper-resistant proof.
 
 ## Installation
 
@@ -64,8 +64,9 @@ changes.
   publication of `SPEC.md` plus `opencode-autonomous.json`.
 - **Autonomous** owns implementation and final verification against the
   published scaffold.
-- **Karpathy** advises one-change-at-a-time scalar optimization; Autonomous
-  remains the editor and measurement runner.
+- **Karpathy** advises one-change-at-a-time scalar optimization; Prometheus
+  recommends it when outcomes are measurable, and Autonomous remains the editor
+  and measurement runner.
 - **Reviewer** provides read-only rubric-based review.
 - **Grounder** gathers cited local and external evidence.
 - **Ask** answers focused questions without starting a workflow.
@@ -74,15 +75,19 @@ These agents are entered explicitly. They are not aliases for Plan or Build.
 
 ## Prometheus Workflow
 
-Prometheus separates the desired outcome from the requested implementation,
-investigates current behavior, challenges unsupported assumptions, compares
-credible alternatives, and asks only decision-changing questions.
+Prometheus runs a deliberation loop before asking the human anything. It
+receives a request at any level of context — from a thin idea to a formal
+requirements document — and investigates using whatever tools are available in
+the session: bash commands, web search, connected MCPs, and Grounder research.
+When a question can be answered through available tools or evidence, Prometheus
+resolves it internally. When context is too thin to constrain a decision,
+creative liberty is implied and Prometheus proceeds without asking. It escalates
+to the human only when it has genuinely exhausted available research paths and
+the answer is required to proceed.
 
-When a load-bearing technical uncertainty requires measurement, Prometheus may
-create `.spike/<id>/QUESTION.md` with a question and kill criterion, then invoke
-`spike`. Every invocation normally prompts the user. The command runs natively
-from the spike directory with finite timeout and output limits. It is not
-sandboxed and may access anything the host process can access.
+When Prometheus identifies that outcomes are measurable — a clear metric,
+direction, and evaluator exist — it recommends Karpathy mode in the scaffold.
+Autonomous follows that recommendation.
 
 Publication is structurally validated, not an execution attestation.
 Prometheus defines exact final verification commands; Autonomous runs them.

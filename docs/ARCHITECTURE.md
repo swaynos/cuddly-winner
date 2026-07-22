@@ -27,10 +27,13 @@ Prometheus can edit only the four scaffold path families. Autonomous can edit
 ordinary files but cannot edit the published scaffold or this extension's tool
 and plugin sources. Ask, Karpathy, Reviewer, and Grounder are read-only.
 
-The plugin intercepts OpenCode mutation tools and direct Bash selection. It is
-not a filesystem sandbox. Native subprocess effects are outside path
-interception, which is why Prometheus has no direct Bash and why spike and
-Autonomous Bash are approval-gated.
+The plugin intercepts OpenCode mutation tools. It is not a filesystem sandbox.
+Native subprocess effects are outside path interception. Prometheus and Autonomous
+both use `bash: ask`, so each command requires user approval and auto mode may
+approve it. Explicit command denies for read-only roles remain enforced.
+
+The immutability plugin is deferred pending agent behavior validation; see
+`docs/REQUIREMENTS.md` for details.
 
 ## Workflow Tools
 
@@ -101,18 +104,24 @@ artifacts without changing the Git index.
 
 ## Prometheus Flow
 
-Prometheus moves through triage, uncertainty resolution, approach selection, and
-publication. Repository inspection and Grounder are preferred when they answer a
-question. A contracted spike is used only when measurement can change the plan.
+Prometheus runs a deliberation loop before asking the human anything. It uses
+whatever tools are available in the session — bash, web search, connected MCPs,
+Grounder research, measured spikes — to resolve uncertainties internally. It
+escalates to the human only when available research paths are exhausted and the
+answer is required to proceed. When context is too thin to constrain a decision,
+creative liberty is implied.
+
+When Prometheus identifies that outcomes are measurable — a clear metric,
+direction, and evaluator exist — it recommends Karpathy mode in the scaffold.
 
 Publication order is:
 
-1. Resolve material product ambiguity and select Ralph or Karpathy.
-2. Define acceptance criteria, implementation scope, escalation triggers, limits, and exact final verification.
-3. Create optional evaluator and spike assets.
-4. Invoke `scaffold_gitignore` and report warnings.
+1. Run the deliberation loop: investigate, resolve, apply creative liberty, or escalate with a focused question.
+2. Identify whether outcomes are measurable and select Ralph or Karpathy.
+3. Define acceptance criteria, implementation scope, escalation triggers, limits, and exact final verification.
+4. Create optional evaluator and spike assets.
 5. Write `opencode-autonomous.json` and `SPEC.md`.
-6. Invoke `validate_scaffold` and correct structural failures.
+6. Optionally invoke governance tools (`scaffold_gitignore`, `validate_scaffold`) if installed.
 7. Hand off to Autonomous.
 
 Static publication means “complete enough to implement without inventing
@@ -132,10 +141,10 @@ include commands, observed results, remaining blockers, and any unverified work.
 
 ## Permission Semantics
 
-Agent frontmatter sets `spike: ask` for Prometheus and `bash: ask` for
-Autonomous. Normal OpenCode sessions ask the user. `opencode --auto` converts
-those asks to approvals. Explicit denies, including Prometheus Bash and all
-command access for read-only roles, remain denied.
+Agent frontmatter sets `bash: ask` for both Prometheus and Autonomous. Normal
+OpenCode sessions ask the user before each command. `opencode --auto` converts
+those asks to approvals. Explicit denies, including all command access for
+read-only roles, remain denied.
 
 ## Deployment
 

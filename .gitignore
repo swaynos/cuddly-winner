@@ -56,3 +56,10 @@ evals/seed_build/reports/
 
 # Spike workspaces are disposable and never committed
 .spike/
+
+# BEGIN OpenCode Autonomous artifacts
+/SPEC.md
+/opencode-autonomous.json
+/.prometheus/evaluator/
+/.spike/
+# END OpenCode Autonomous artifacts

@@ -35,15 +35,19 @@ planning or implementation workflows.
 
 ### Prometheus
 
-Prometheus owns planning readiness. It triages requests, separates outcomes from
-proposed solutions, establishes current behavior, challenges unsupported
-assumptions, compares credible alternatives, resolves material ambiguity, and
-publishes a complete implementation scaffold.
+Prometheus owns planning readiness. It runs a deliberation loop before asking
+the human anything: it investigates using whatever tools are available in the
+session — bash commands, web search, connected MCPs, Grounder research — and
+resolves uncertainties internally. It escalates to the human only when available
+research paths are exhausted and the answer is required to proceed. When context
+is too thin to constrain a decision, creative liberty is implied and Prometheus
+proceeds without asking.
 
 Prometheus may edit only `SPEC.md`, `opencode-autonomous.json`,
-`.prometheus/evaluator/**`, and `.spike/**`. Direct Bash is denied. It may use
-only the constrained workflow tools `spike`, `validate_scaffold`, and
-`scaffold_gitignore`; only Prometheus may invoke them.
+`.prometheus/evaluator/**`, and `.spike/**`. It has `bash: ask` permission for
+research during deliberation; commands require user approval or are auto-approved
+with `--auto`. Governance tools (`spike`, `validate_scaffold`,
+`scaffold_gitignore`) remain available when installed.
 
 ### Autonomous
 
@@ -60,7 +64,10 @@ unless the user explicitly requests it.
 
 ### Karpathy
 
-Karpathy is a hidden, read-only strategist for explicit scalar optimization. It
+Karpathy is a read-only strategist for scalar optimization. When Prometheus
+identifies during deliberation that outcomes are measurable — a clear metric,
+direction, and evaluator exist — it recommends Karpathy mode in the scaffold.
+Autonomous follows that recommendation without further user invocation. Karpathy
 proposes and analyzes one bounded change at a time. Autonomous applies changes,
 runs measurements, and owns KEEP/REVERT decisions. Karpathy cannot edit or
 execute commands.
@@ -100,8 +107,8 @@ Before publication, Prometheus:
 2. Classifies the request and establishes current behavior from evidence.
 3. Distinguishes reported symptoms from demonstrated causes.
 4. Tests whether no change, documentation, configuration, reuse, or a narrower correction is sufficient.
-5. Asks focused questions only when answers can change scope, safety, policy, architecture, or acceptance.
-6. Resolves technical facts through repository evidence, Grounder, or a measured spike.
+5. Resolves uncertainties through available tools — bash, web search, connected MCPs, Grounder research, or measured spikes — before asking the human.
+6. Escalates to the human only when available research paths are exhausted and the answer is required to proceed; applies creative liberty when context is too thin to constrain a decision.
 7. Compares genuinely credible approaches without manufacturing alternatives.
 8. Recommends one approach with evidence, consequences, and tradeoffs.
 9. Records informed non-safety overrides without reopening settled debate.
@@ -183,11 +190,21 @@ source overrides, and local deployment environment file are unsupported. The
 installer performs no automatic migration of retired runner or supervisor
 artifacts.
 
+## Governance Tools
+
+The optional governance tools — `spike` (contracted investigation helper),
+`validate_scaffold` (static scaffold checker), and `scaffold_gitignore`
+(generated-artifact exclusion helper) — and the managed-agent immutability
+plugin are deferred pending validation of core agent behavior. They remain
+available for installation with `--with-workflow-tools` and described in
+`docs/ARCHITECTURE.md` for reference, but are not required for the core
+Prometheus → Autonomous workflow.
+
 ## Validation
 
 Release validation separately proves native compatibility, identity inheritance,
-role permissions, Prometheus triage behavior, contracted native spikes, static
-scaffold validation, constrained Git exclusion, Autonomous approval-gated Bash,
-Ralph/Karpathy prompt contracts, additive deployment and safe removal, and documentation
-consistency, following the evidence requirements defined in `docs/TEST-PLAN.md`.
-No release check may require Bubblewrap, Lima, a protected runner, or a custom supervisor.
+role permissions, Prometheus triage and deliberation behavior, Autonomous
+approval-gated Bash, Ralph/Karpathy prompt contracts, additive deployment and
+safe removal, and documentation consistency, following the evidence requirements
+defined in `docs/TEST-PLAN.md`. No release check may require Bubblewrap, Lima, a
+protected runner, or a custom supervisor.
