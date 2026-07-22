@@ -189,5 +189,5 @@ Release validation separately proves native compatibility, identity inheritance,
 role permissions, Prometheus triage behavior, contracted native spikes, static
 scaffold validation, constrained Git exclusion, Autonomous approval-gated Bash,
 Ralph/Karpathy prompt contracts, additive deployment and safe removal, and documentation
-consistency. No release check may require Bubblewrap, Lima, a protected runner,
-or a custom supervisor.
+consistency, following the evidence requirements defined in `docs/TEST-PLAN.md`.
+No release check may require Bubblewrap, Lima, a protected runner, or a custom supervisor.

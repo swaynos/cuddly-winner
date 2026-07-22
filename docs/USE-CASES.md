@@ -1,5 +1,8 @@
 # Use Cases
 
+[`docs/TEST-PLAN.md`](TEST-PLAN.md) defines the test scenarios, observable evidence, and pass
+conditions for each use case below.
+
 Evidence classes:
 
 - **U**: unit test
