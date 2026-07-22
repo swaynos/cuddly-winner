@@ -167,6 +167,30 @@ test("root checks require inventoried regular files and reject ancestor symlinks
   }
 });
 
+test("rejects unsupported score_extraction enum values", () => {
+  const unsupported = load("valid-karpathy.json");
+  unsupported.optimization.score_extraction = "last line";
+  assert.equal(validateManifest(unsupported).valid, false);
+
+  const first = load("valid-karpathy.json");
+  first.optimization.score_extraction = "first float on stdout";
+  assert.equal(validateManifest(first).valid, true);
+
+  const last = load("valid-karpathy.json");
+  last.optimization.score_extraction = "last float on stdout";
+  assert.equal(validateManifest(last).valid, true);
+});
+
+test("rejects wildcard segments in mutable and immutable targets", () => {
+  const mutable = load("valid-karpathy.json");
+  mutable.optimization.mutable_targets = ["model/*"];
+  assert.equal(validateManifest(mutable).valid, false);
+
+  const immutable = load("valid-karpathy.json");
+  immutable.optimization.immutable_targets = ["model/[abc].json"];
+  assert.equal(validateManifest(immutable).valid, false);
+});
+
 test("validate_scaffold tool performs static SPEC and manifest consistency checks", async () => {
   assert.match(validateTool.description, /without executing/i);
   const root = mkdtempSync(path.join(os.tmpdir(), "scaffold-validator-"));

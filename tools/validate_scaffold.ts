@@ -252,7 +252,9 @@ function validateOptimization(opt: unknown, push: (m: string) => void): void {
   if (typeof o.objective !== "string") push("optimization.objective must be a string");
   if (o.direction !== "minimize" && o.direction !== "maximize") push('optimization.direction must be "minimize" or "maximize"');
   if (!isFiniteNumber(o.baseline)) push("optimization.baseline must be a finite number");
-  if (typeof o.score_extraction !== "string") push("optimization.score_extraction must be a string");
+  if (o.score_extraction !== "last float on stdout" && o.score_extraction !== "first float on stdout") {
+    push('optimization.score_extraction must be "last float on stdout" or "first float on stdout"');
+  }
 
   const np = o.noise_probe;
   if (!isRecord(np)) push("optimization.noise_probe must be an object");
@@ -264,10 +266,20 @@ function validateOptimization(opt: unknown, push: (m: string) => void): void {
 
   if (!isStringArray(o.mutable_targets) || (o.mutable_targets as string[]).length === 0) {
     push("optimization.mutable_targets must be a non-empty string[]");
-  } else validatePaths(o.mutable_targets, "optimization.mutable_targets", push);
+  } else {
+    validatePaths(o.mutable_targets, "optimization.mutable_targets", push);
+    for (const t of o.mutable_targets) {
+      if (/[*?[\]]/.test(t)) push(`optimization.mutable_targets path must not contain glob characters: ${t}`);
+    }
+  }
   if (!isStringArray(o.immutable_targets) || (o.immutable_targets as string[]).length === 0) {
     push("optimization.immutable_targets must be a non-empty string[] including the evaluator");
-  } else validatePaths(o.immutable_targets, "optimization.immutable_targets", push);
+  } else {
+    validatePaths(o.immutable_targets, "optimization.immutable_targets", push);
+    for (const t of o.immutable_targets) {
+      if (/[*?[\]]/.test(t)) push(`optimization.immutable_targets path must not contain glob characters: ${t}`);
+    }
+  }
 
   if (isStringArray(o.mutable_targets) && isStringArray(o.immutable_targets)) {
     const immutable = new Set(o.immutable_targets);
