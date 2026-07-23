@@ -66,10 +66,6 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 | TP-PRO-06 | UC-PRO-06 | B | Give Prometheus a minimal request that leaves key decisions open-ended with no specified constraints. | Response approach, questions asked, and resulting scaffold. | Prometheus applies creative liberty and produces a scaffold without stalling or issuing a generic discovery questionnaire. |
 | TP-PRO-07 | UC-PRO-07 | B, S | Give Prometheus a request with clearly measurable outcomes and one without. | Recommended strategy, resulting scaffold, and manifest strategy field. | The measurable case recommends Karpathy mode without requiring user invocation. The non-measurable case selects Ralph. |
 
-## Scaffold Publication
-
-| TP-PUB-03 | UC-PUB-03 | S, B | Complete successful Prometheus publication from a frozen planning fixture. | Published scaffold, static validation result, and final response. | Prometheus explicitly hands off to Autonomous and does not describe static validation as proof that final verification passes. |
-
 ## Autonomous Execution
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
@@ -100,20 +96,20 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
-| TP-SKILL-01 | UC-SKILL-01 | U | Execute `tests/test_skill_coverage.py` across all packaged skill directories under `skills/`. | Validation report, frontmatter parsing, section inventory. | Every skill satisfies frontmatter YAML schema and required instructions. |
-| TP-SKILL-02 | UC-SKILL-02 | S | Execute `tests/test_skill_pressure.py` evaluating prompt boundary retention under skill instructions. | Boundary check results, permission retention trace. | Skill loading does not alter role edit boundaries or permission restrictions. |
+| TP-SKILL-01 | UC-SKILL-01 | U | Reconcile the skill test source path with packaged `skills/`, then validate every deployed skill's frontmatter and required content. | Validation report, frontmatter parsing, section inventory, and the tested source path. | Every packaged skill is tested from its deployed source path; invalid or unparseable skills fail. |
+| TP-SKILL-02 | UC-SKILL-02 | B, O | Load skills through managed OpenCode agents and attempt permission and identity-boundary violations. | Effective identity, tool decisions, and filesystem state. | Skill text does not widen plugin-enforced role boundaries or command permissions. Direct-model prompt tests alone are insufficient. |
 
 ## Mutation Testing
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
-| TP-MUTATION-01 | UC-MUTATION-01 | U | Run `evals/mutation/run_mutation.py` using configuration in `opencode-mutation.json`. | Mutation score output, killed mutant count. | Mutated target lines trigger unit test failures; unkilled mutants report correctly. |
+| TP-MUTATION-01 | UC-MUTATION-01 | U | Invoke `evals/mutation/run_mutation.py` with explicit `--files`, `--result`, `--threshold`, and `--test-cmd` arguments. Treat `opencode-mutation.json` as policy/example input unless runner support is added. | Mutation score output, killed mutant count, command arguments, and result artifact. | Mutated target lines trigger unit test failures; unkilled mutants report correctly. |
 
 ## Session Auditing
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
-| TP-AUDIT-01 | UC-AUDIT-01 | S, U | Run `tests/audit_run.py` against a set of recorded session databases (`opencode.db`). | Runtime Validation Report, DB query logs, verdict output. | Auditor accurately verifies session ancestry, tool calls, and verification execution, emitting verdicts matching `docs/TESTING-METHODOLOGY.md`. |
+| TP-AUDIT-01 | UC-AUDIT-01 | U | Run `tests/audit_run.py` against recorded session databases (`opencode.db`) that cover its documented report signals and verdicts. | Runtime Validation Report, fixture database, and verdict output. | Auditor reports only its documented root-session and direct-child observations, including `NOT_SELECTED` and missing-data error handling. It is not evidence of policy enforcement or fresh verification execution. |
 
 ## Documentation Consistency
 

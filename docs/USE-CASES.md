@@ -290,41 +290,41 @@ Evidence classes:
 
 ## Skills Ecosystem
 
-### UC-SKILL-01: Skill frontmatter and content structure are verified
+### UC-SKILL-01: Skill frontmatter and content structure are release-validated
 
 - **Given:** packaged skill assets under `skills/`.
-- **When:** `tests/test_skill_coverage.py` evaluates them.
+- **When:** a validation suite targets the packaged and deployed skill source.
 - **Then:** verify YAML frontmatter schema, required instruction sections, and path structure.
 - **Never:** allow invalid or unparseable skills to be deployed.
-- **Evidence:** U skill coverage suite.
+- **Evidence:** U validation suite whose source path is recorded. The current legacy-path script is not this evidence.
 
 ### UC-SKILL-02: Role boundaries hold under skill pressure
 
 - **Given:** an active managed agent loaded with non-core skill instructions.
-- **When:** `tests/test_skill_pressure.py` exercises prompt boundary conditions.
-- **Then:** verify role edit-tool boundaries and permission constraints remain enforced.
+- **When:** a skill is loaded through an active managed agent and attempts to widen a boundary.
+- **Then:** verify plugin-enforced role edit-tool boundaries and permission constraints remain enforced.
 - **Never:** permit skill prompts to override agent permission frontmatter or identity isolation.
-- **Evidence:** S skill pressure suite.
+- **Evidence:** B, O managed-agent boundary scenario. Direct-model pressure tests alone are insufficient.
 
 ## Mutation Testing
 
 ### UC-MUTATION-01: Test suite sensitivity is verified under code mutation
 
-- **Given:** `opencode-mutation.json` configuration and target implementation modules.
-- **When:** `evals/mutation/run_mutation.py` executes.
+- **Given:** target implementation modules and explicit runner CLI arguments.
+- **When:** `evals/mutation/run_mutation.py` executes using the supplied source files, threshold, result path, and test command.
 - **Then:** apply mutations to target modules and verify unit test failures detect mutations.
 - **Never:** report a passing mutation score if mutated code escapes test detection.
-- **Evidence:** U mutation test suite.
+- **Evidence:** U mutation-runner result. `opencode-mutation.json` is policy/example data and is not read by the runner.
 
 ## Session Auditing
 
-### UC-AUDIT-01: OpenCode SQLite session trajectories are audited
+### UC-AUDIT-01: OpenCode SQLite session signals are reported
 
 - **Given:** an executed OpenCode session recorded in `~/.local/share/opencode/opencode.db`.
 - **When:** `tests/audit_run.py` inspects the session.
-- **Then:** verify agent ancestry, tool invocation history, scaffold validity, and verification command execution, emitting `PASS`, `PARTIAL`, `FAIL`, or `NOT_APPLICABLE` verdicts per `docs/TESTING-METHODOLOGY.md`.
-- **Never:** mask hard strategy failures or missing verification runs as passing audits.
-- **Evidence:** S session auditor output.
+- **Then:** report documented root-session and direct-child signals, including agent switches, root-session Bash use, current scaffold-file presence, and completion/review tokens.
+- **Never:** represent the report as proof of ancestry enforcement, scaffold validity, or fresh verification-command execution.
+- **Evidence:** U auditor fixtures and report output, including `PASS`, `PARTIAL`, `FAIL`, `NOT_APPLICABLE`, `NOT_SELECTED`, and missing-data errors where applicable.
 
 
 

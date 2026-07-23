@@ -10,7 +10,8 @@ This document defines the runtime investigation, session auditing, and evaluatio
 
 ## Standardized Verdict Definitions
 
-Every automated or manual evaluation emits one of the following standardized verdicts:
+The session auditor emits the following verdicts. Other evaluations define their
+own exit codes unless they explicitly adopt this vocabulary:
 
 | Verdict | Meaning | Exit Code / Condition |
 | --- | --- | --- |
@@ -18,27 +19,37 @@ Every automated or manual evaluation emits one of the following standardized ver
 | `PARTIAL` | The primary implementation or triage succeeded, but non-fatal rubric defects (e.g., inefficient tool usage, minor formatting variance) were observed. | Exit Code `1` |
 | `FAIL` | Hard contract violation: unauthorized edits, unverified completion claims, strategy bypass, false planning readiness, or failed verification commands. | Exit Code `2` |
 | `NOT_APPLICABLE` / `SKIPPED` | The evaluated strategy, profile, or session type was not selected or active for the given run, or missing prerequisite environment keys. | Exit Code `0` (with warning/skip log) |
+| `NOT_SELECTED` | A strategy subagent was not observed in the selected session. | Exit Code `0` |
+| `ERROR` | Required session data or the OpenCode database is unavailable. | Exit Code `3` |
 
 ---
 
 ## Session Audit Procedure (`tests/audit_run.py`)
 
-Session auditing automates the manual investigation of OpenCode agent runs by querying SQLite database logs and worktree state.
+Session auditing is an investigative report over one selected session, its direct
+children, and the current project worktree. It does not reconstruct a complete
+run or prove policy enforcement.
 
 ### SQLite Log Schema
 
 OpenCode persists session telemetry to `~/.local/share/opencode/opencode.db` (or a custom path provided via `--db`). The auditor inspects:
 
-1. **`session` Table**: Tracks session ancestry (`id`, `parent_id`, `agent`, `slug`, `directory`, `time_created`, `time_updated`).
-2. **`part` Table**: Tracks message and tool call parts (`session_id`, `data`). Extract tool names, input file paths, commands, and patterns via SQLite JSON functions (`json_extract`).
+1. **`session` Table**: Lists the selected session and its direct children (`id`, `parent_id`, `agent`, `slug`, `directory`, `time_created`, `time_updated`).
+2. **`part` Table**: Lists tool calls for the selected root session only.
+3. **`session_message` and `message` Tables**: Supply agent-switch events and completion/review token searches for the selected root session.
 
 ### Audit Invariants
 
-When auditing a session, `tests/audit_run.py` verifies:
+When auditing a session, `tests/audit_run.py` reports:
 
-* **Ancestry & Identity Isolation**: The topmost managed ancestor's boundary is respected across all child sessions. Read-only roles (`ask`, `karpathy`, `reviewer`, `grounder`) produce no mutation or process tool calls.
-* **Scaffold Integrity**: For Karpathy/Ralph sessions, `SPEC.md` and `opencode-autonomous.json` exist and pass `tools/validate_scaffold.ts`.
-* **Execution Evidence**: Autonomous sessions execute exact verification commands freshly through native Bash before completing.
+* whether the selected root session recorded switches to Prometheus or Autonomous, and whether its current `SPEC.md` includes `## Approaches Considered`;
+* whether the selected root session made a Bash call while Prometheus was selected;
+* direct child-session agent names, including Karpathy, and whether current `SPEC.md` and `opencode-autonomous.json` files exist; and
+* whether the selected root session contains completion or reviewer-approval tokens.
+
+The auditor does not recursively inspect descendants, validate scaffold content,
+or determine whether declared verification commands ran freshly. Use the
+deterministic plugin, scaffold, and behavioral tests for those contracts.
 
 ---
 
@@ -58,7 +69,10 @@ Live end-to-end evaluations test planning (`test_planning.py`) and implementatio
 
 Mutation testing evaluates the sensitivity and strength of the test suite.
 
-* **Configuration**: `opencode-mutation.json` defines configuration settings:
+* **Invocation**: Callers pass source files, result path, threshold, and a test
+  command to `evals/mutation/run_mutation.py`. The checked-in
+  `opencode-mutation.json` is not read by the runner; it records project
+  policy/example values:
   ```json
   {
     "enabled": false,
@@ -66,13 +80,22 @@ Mutation testing evaluates the sensitivity and strength of the test suite.
     "result_path": ".opencode/mutation-result.json"
   }
   ```
-* **Execution**: `evals/mutation/run_mutation.py` applies targeted mutations to implementation sources and runs unit tests (`evals/mutation/tests/`) to ensure the test suite detects mutations.
+* **Execution**: `evals/mutation/run_mutation.py` applies targeted mutations to
+  selected implementation sources and runs the caller-supplied test command.
+  `evals/mutation/tests/` tests the mutation runner itself, not a project's
+  mutation score.
 
 ---
 
 ## Skills Validation Methodology (`tests/`)
 
-Non-core skills installed via `--with-skills` are evaluated using two dedicated test suites:
+Non-core skills installed via `--with-skills` need structural and behavioral
+validation. The current scripts are not release evidence because both target
+the legacy `.opencode/skills` source path rather than packaged `skills/`:
 
-1. **Coverage Testing (`tests/test_skill_coverage.py`)**: Verifies that every packaged skill directory under `skills/` contains valid markdown frontmatter, required skill contracts, and readable instruction sets.
-2. **Pressure Testing (`tests/test_skill_pressure.py`)**: Exercises agent prompt loading under complex, multi-skill pressure scenarios to ensure skill instructions do not override core role boundaries or permission constraints.
+1. **Coverage Testing (`tests/test_skill_coverage.py`)**: Intended to check
+   deployment, frontmatter, selected content requirements, and optional model
+   behavior after its source-path target is reconciled.
+2. **Pressure Testing (`tests/test_skill_pressure.py`)**: Sends individual
+   skills as direct model context and checks selected response cues. It does not
+   load managed agents or prove permission and identity enforcement.
