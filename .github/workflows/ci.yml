@@ -22,3 +22,5 @@ jobs:
         run: git clone --depth 1 https://github.com/pyenv/pyenv-virtualenv.git "$(pyenv root)/plugins/pyenv-virtualenv"
       - run: npm ci
       - run: bash scripts/ci.sh
+        env:
+          OPENCODE_DEPLOY_CONFIG_DIR: ${{ runner.temp }}/opencode-config
