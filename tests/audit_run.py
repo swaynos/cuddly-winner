@@ -224,23 +224,20 @@ def verdict_prometheus(
     if not prometheus_switches:
         return Verdict("NOT_APPLICABLE", evidence=["No agent-switched to prometheus found"])
 
-    # Prometheus may write SPEC.md and spike artifacts, but never uses Bash.
-    forbidden = [t for t in tool_calls if t.tool == "bash"]
+    # Tool calls are recorded only for the root session and cannot be reliably
+    # attributed to a particular agent after an agent switch.
+    observed_bash = [t for t in tool_calls if t.tool == "bash"]
     approaches_ok = spec_has_approaches_considered(project)
 
     evidence = [
         f"Prometheus agent-switched at {prometheus_switches[0].created}",
         f"SPEC.md has ## Approaches Considered: {'yes' if approaches_ok else 'no'}",
     ]
-    if forbidden:
-        evidence.append(f"Forbidden tool calls during session: {[t.tool for t in forbidden[:5]]}")
-
-    if forbidden:
-        return Verdict("FAIL", evidence=evidence,
-                       interpretation="Prometheus made a direct Bash call outside its managed role defaults.")
+    if observed_bash:
+        evidence.append(f"Root-session Bash calls observed without agent attribution: {len(observed_bash)}")
     if approaches_ok:
         return Verdict("PASS", evidence=evidence,
-                       interpretation="Prometheus produced a direct SPEC with Approaches Considered.")
+                       interpretation="Prometheus produced a direct SPEC with Approaches Considered; root-session tool calls are non-attributable.")
     return Verdict("PARTIAL", evidence=evidence,
                    interpretation="Prometheus switched into session but canonical SPEC evidence is incomplete.")
 

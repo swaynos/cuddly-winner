@@ -138,7 +138,7 @@ def generate_mutants(source: str, filepath: str) -> list[tuple[int, str, str]]:
 
 def run_tests(test_cmd: str, extra_env: dict | None = None) -> bool:
     """Run test_cmd; return True if exit code is 0 (tests pass)."""
-    env = {**os.environ, **(extra_env or {})}
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", **(extra_env or {})}
     result = subprocess.run(
         test_cmd,
         shell=True,
@@ -163,6 +163,8 @@ class MutationResult:
     generated_at: str = ""
     threshold: float = 0.70
     passed: bool = False
+    baseline_passed: bool = True
+    invalid_reason: str = ""
     survivors: list[dict] = field(default_factory=list)  # for feeding back to agent
 
     def to_dict(self) -> dict:
@@ -175,6 +177,8 @@ class MutationResult:
             "generated_at": self.generated_at,
             "threshold": self.threshold,
             "passed": self.passed,
+            "baseline_passed": self.baseline_passed,
+            "invalid_reason": self.invalid_reason,
             "survivors": self.survivors,
         }
 
@@ -192,6 +196,10 @@ def run_mutation(
         generated_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         threshold=threshold,
     )
+    if not run_tests(test_cmd):
+        result.baseline_passed = False
+        result.invalid_reason = "unmutated baseline test command failed"
+        return result
 
     # Collect mutants across all source files up to the cap
     all_mutants: list[tuple[Path, int, str, str]] = []
@@ -260,12 +268,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Python source files to mutate (diff-scoped).",
     )
     parser.add_argument(
+        "--config", default=None, metavar="PATH",
+        help="Optional JSON mutation policy; CLI arguments override its values.",
+    )
+    parser.add_argument(
         "--tests", nargs="+", default=None, metavar="FILE",
         help="Test files or directories to pass to the test command.",
     )
     parser.add_argument(
-        "--result", required=True, metavar="PATH",
-        help="Path to write the JSON result artifact.",
+        "--result", default=None, metavar="PATH",
+        help="Path to write the JSON result artifact (or provide it in --config).",
     )
     parser.add_argument(
         "--threshold", type=float, default=0.70,
@@ -284,6 +296,28 @@ def main(argv: list[str] | None = None) -> int:
         help="Shell command to run the test suite (default: python3 -m pytest -q).",
     )
     args = parser.parse_args(argv)
+
+    if args.config:
+        try:
+            policy = json.loads(Path(args.config).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"ERROR: invalid mutation policy: {error}", file=sys.stderr)
+            return 2
+        if not isinstance(policy, dict) or policy.get("enabled") is False:
+            print("ERROR: mutation policy is disabled", file=sys.stderr)
+            return 2
+        for key in ("score_threshold", "result_path"):
+            if key not in policy:
+                print(f"ERROR: mutation policy missing {key}", file=sys.stderr)
+                return 2
+        if args.threshold == parser.get_default("threshold"):
+            args.threshold = policy["score_threshold"]
+        if args.result is None:
+            args.result = policy["result_path"]
+
+    if args.result is None:
+        print("ERROR: --result is required unless supplied by --config", file=sys.stderr)
+        return 2
 
     source_files = [Path(f) for f in args.files]
     missing = [str(f) for f in source_files if not f.exists()]

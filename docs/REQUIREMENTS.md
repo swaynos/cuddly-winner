@@ -209,33 +209,34 @@ Prometheus → Autonomous workflow.
 When `--with-skills` is specified, the installer deploys eight non-core skills: `local-word-document`, `playwright-image-generation`, `project-agent-scaffolding`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, and `writing-skills`.
 
 Each skill must provide valid YAML frontmatter and markdown body guidelines.
-Skill structure and behavior need release evidence, but the current
-`tests/test_skill_coverage.py` and `tests/test_skill_pressure.py` scripts target
-the legacy `.opencode/skills` path and do not prove managed-agent permission or
-identity enforcement. They must be reconciled with the packaged `skills/`
-directory before being counted as release validation. The immutability plugin is
-the enforcement boundary for roles and permissions.
+`tests/test_skill_coverage.py` validates packaged and temporarily deployed skill
+assets without model credentials. Managed-agent integration tests prove the
+immutability plugin remains the enforcement boundary for roles and permissions.
+`tests/test_skill_pressure.py` is optional direct-model evidence and does not
+replace those deterministic checks.
 
 ## Mutation Testing
 
 The project includes an opt-in mutation runner (`evals/mutation/run_mutation.py`)
-for checking test-suite sensitivity. It receives source files, a result path, a
-threshold, and a test command through its CLI. `opencode-mutation.json` records
-project policy/example values but is not consumed by the runner.
+for checking test-suite sensitivity. It requires an unmutated baseline test run
+to pass before scoring mutants. It receives source files and a test command
+through its CLI; `opencode-mutation.json` is an optional validated policy passed
+with `--config`, and explicit CLI values override its threshold and result path.
 
 ## Session Auditing
 
 The project includes an investigative session-audit report (`tests/audit_run.py`)
 that queries OpenCode SQLite logs (`opencode.db`). It summarizes selected
 session signals but does not establish full trajectories, permission compliance,
-scaffold validity, or verification-command execution.
+scaffold validity, or verification-command execution. Root-session tool calls
+are reported without attributing them to a particular agent after a switch.
 
 ## Validation
 
 Release validation separately proves native compatibility, identity inheritance,
 role permissions, Prometheus triage and deliberation behavior, Autonomous
-approval-gated Bash, Ralph/Karpathy prompt contracts, mutation-runner behavior,
-additive deployment and
+approval-gated Bash, Ralph/Karpathy prompt contracts, deterministic skill and
+audit checks, mutation-runner behavior, additive deployment and
 safe removal, and documentation consistency, following the evidence requirements
 defined in `docs/TEST-PLAN.md` and `docs/TESTING-METHODOLOGY.md`. No release check may require Bubblewrap, Lima, a
 protected runner, or a custom supervisor.

@@ -152,6 +152,22 @@ if __name__ == '__main__':
         rigorous = self._run_with_suite(self.RIGOROUS_TEST)
         self.assertTrue(rigorous.passed, "rigorous suite should pass the 0.70 threshold")
 
+    def test_failing_baseline_never_reports_passing_score(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="mutation-baseline-") as td:
+            d = Path(td)
+            src = _write_source(d, "target.py", self.TARGET_SRC)
+            result = rm.run_mutation(
+                source_files=[src],
+                test_cmd="python3 -c 'import sys; sys.exit(1)'",
+                threshold=0.70,
+                mutant_cap=10,
+                wall_clock_seconds=60,
+            )
+            self.assertFalse(result.baseline_passed)
+            self.assertFalse(result.passed)
+            self.assertEqual(result.total, 0)
+            self.assertIn("baseline", result.invalid_reason)
+
 
 # ---------------------------------------------------------------------------
 # Result artifact writing

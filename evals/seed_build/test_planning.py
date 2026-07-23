@@ -16,6 +16,8 @@ Exits:
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import shutil
 import tempfile
 import sys
@@ -48,7 +50,7 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
         # Run @prometheus with the loose idea as the prompt
         prompt = (
             "Read idea.md and use the @prometheus workflow to plan this project. "
-            "Write the complete canonical SPEC.md directly in the workspace."
+            "Publish the complete canonical SPEC.md and opencode-autonomous.json directly in the workspace."
         )
         rc, stdout, stderr = run_opencode_agent(
             agent="prometheus",
@@ -83,6 +85,32 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
         "name": "SPEC produced by @prometheus",
         "passed": True,
         "evidence": f"source={report.evidence['spec_source']} length={len(spec_text)}",
+    })
+
+    manifest_path = workspace / "opencode-autonomous.json"
+    if not manifest_path.exists():
+        report.checks.append({
+            "name": "Manifest produced by @prometheus",
+            "passed": False,
+            "note": "No opencode-autonomous.json was written to the workspace.",
+        })
+        report.verdict = FAIL
+        return report
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        commands = re.findall(r"^- `([^`\n]+)`\s*$", spec_text, re.M)
+        manifest_commands = manifest["verification"]["commands"]
+        valid_manifest = (
+            manifest.get("schema_version") == 1
+            and manifest.get("strategy") in {"ralph", "karpathy"}
+            and commands == manifest_commands
+        )
+    except (json.JSONDecodeError, KeyError, TypeError):
+        valid_manifest = False
+    report.checks.append({
+        "name": "Manifest produced by @prometheus",
+        "passed": valid_manifest,
+        "note": "Manifest must be schema-v1 and match SPEC verification commands.",
     })
 
     # Score with planning_checks

@@ -146,12 +146,14 @@ PYTHON="$(bash scripts/ensure-venv.sh)"
 "$PYTHON" tests/verify_opencode.py --skip-llm
 node --test tests/plugins/*.test.mjs tests/integration/*.test.mjs
 "$PYTHON" -m unittest discover -s evals/mutation/tests -p 'test_*.py'
+"$PYTHON" tests/test_skill_coverage.py --skip-llm
+"$PYTHON" -m unittest discover -s tests -p 'test_audit_run.py'
 "$PYTHON" evals/seed_build/test_planning.py --dry-run
 "$PYTHON" evals/seed_build/test_build.py --dry-run
 "$PYTHON" tests/audit_run.py --help
 ```
 
-The skill-validation scripts currently target a legacy `.opencode/skills` path;
-they are not release-validation commands until that target is reconciled with
-the packaged `skills/` directory. The audit command validates its CLI only;
-auditing a recorded session also requires `--project` and an OpenCode database.
+Skill coverage validates packaged skills and a temporary deployed copy without
+model credentials. The separate pressure suite remains optional live-model
+evidence. The audit command validates its CLI only; auditing a recorded session
+also requires `--project` and an OpenCode database.

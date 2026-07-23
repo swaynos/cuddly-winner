@@ -30,7 +30,7 @@ except ImportError:
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILLS_DIR = REPO_ROOT / ".opencode" / "skills"
+SKILLS_DIR = REPO_ROOT / "skills"
 
 
 @dataclass

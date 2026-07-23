@@ -37,10 +37,38 @@ from typing import Optional
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SKILLS_DIR = REPO_ROOT / ".opencode" / "skills"
+SKILLS_DIR = REPO_ROOT / "skills"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 
 DEFAULT_MODEL = "openai/gpt-5-nano"
+
+
+def _validate_skill_file(skill_file: Path) -> list[str]:
+    """Return structural errors for one packaged skill file."""
+    if not skill_file.is_file():
+        return ["missing SKILL.md"]
+    text = skill_file.read_text(encoding="utf-8")
+    if not text.startswith("---\n"):
+        return ["missing YAML frontmatter"]
+    try:
+        _, frontmatter, body = text.split("---", 2)
+    except ValueError:
+        return ["unterminated YAML frontmatter"]
+    fields = {}
+    for line in frontmatter.splitlines():
+        if ":" in line:
+            key, value = line.split(":", 1)
+            fields[key.strip()] = value.strip()
+    errors = []
+    name = fields.get("name", "")
+    description = fields.get("description", "")
+    if not name or name != skill_file.parent.name:
+        errors.append("name must match directory")
+    if not description.startswith("Use when"):
+        errors.append("description must begin with 'Use when'")
+    if not body.strip():
+        errors.append("missing skill body")
+    return errors
 
 
 @dataclass
@@ -219,21 +247,7 @@ Body here.
             # Try to run validator on this malformed skill
             # We're checking that our validator can identify the issue
             try:
-                # Import the validation function from verify_opencode
-                sys.path.insert(0, str(REPO_ROOT / "tests"))
-                from verify_opencode import _validate_skill_file
-
-                # Build a relative path from the temp dir
-                rel_path = f"{fixture_name}/SKILL.md"
-
-                # Patch SKILLS_DIR to point to temp
-                import verify_opencode as vo
-                original_skills_dir = vo.SKILLS_DIR
-                vo.SKILLS_DIR = tmpdir_path
-
-                validation_failures = _validate_skill_file(rel_path)
-
-                vo.SKILLS_DIR = original_skills_dir  # restore
+                validation_failures = _validate_skill_file(skill_file)
 
                 if validation_failures:
                     _print_pass(f"Correctly rejected: {fixture_info['issue']}")
@@ -250,10 +264,6 @@ Body here.
                     f"Error validating fixture {fixture_name}: {exc}",
                 ))
                 _print_fail(str(exc))
-            finally:
-                if "verify_opencode" in sys.modules:
-                    del sys.modules["verify_opencode"]
-                sys.path.pop(0)
 
     return failures
 
@@ -267,15 +277,7 @@ def test_skill_discovery(opencode_bin: Optional[Path] = None) -> list[TestFailur
     failures = []
     _print_header("Test 3: Skill discovery (opencode debug skills)")
 
-    expected_skills = [
-        "project-agent-scaffolding",
-        "verification-before-completion",
-        "systematic-debugging",
-        "test-driven-development",
-        "subagent-driven-development",
-        "writing-skills",
-        "playwright-image-generation",
-    ]
+    expected_skills = sorted(path.parent.name for path in SKILLS_DIR.glob("*/SKILL.md"))
 
     if opencode_bin is None:
         _print_pass("Skipped (no OpenCode binary in this test run)")
@@ -387,6 +389,15 @@ def test_symlink_deploy() -> list[TestFailure]:
                 _print_pass(f"Install created {symlink_count} symlink(s)")
             else:
                 _print_pass(f"Install created {len(skill_files)} skill file(s)")
+            for skill_file in skill_files:
+                errors = _validate_skill_file(skill_file)
+                if errors:
+                    failures.append(TestFailure(
+                        "symlink_deploy",
+                        f"Invalid deployed skill: {skill_file.parent.name}",
+                        details=errors,
+                    ))
+                    _print_fail(f"Invalid deployed skill: {skill_file.parent.name}")
 
             # Now test remove in symlink mode
             result = subprocess.run(
@@ -428,15 +439,7 @@ def test_skill_body_limits() -> list[TestFailure]:
     failures = []
     _print_header("Test 5: Skill body line limits")
 
-    expected_skills = [
-        "project-agent-scaffolding",
-        "verification-before-completion",
-        "systematic-debugging",
-        "test-driven-development",
-        "subagent-driven-development",
-        "writing-skills",
-        "playwright-image-generation",
-    ]
+    expected_skills = sorted(path.parent.name for path in SKILLS_DIR.glob("*/SKILL.md"))
 
     for skill_name in expected_skills:
         skill_file = SKILLS_DIR / skill_name / "SKILL.md"

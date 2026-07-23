@@ -293,10 +293,10 @@ Evidence classes:
 ### UC-SKILL-01: Skill frontmatter and content structure are release-validated
 
 - **Given:** packaged skill assets under `skills/`.
-- **When:** a validation suite targets the packaged and deployed skill source.
+- **When:** the deterministic validation suite checks packaged skills and a temporary deployed copy.
 - **Then:** verify YAML frontmatter schema, required instruction sections, and path structure.
 - **Never:** allow invalid or unparseable skills to be deployed.
-- **Evidence:** U validation suite whose source path is recorded. The current legacy-path script is not this evidence.
+- **Evidence:** U packaged/deployed skill validation suite.
 
 ### UC-SKILL-02: Role boundaries hold under skill pressure
 
@@ -310,11 +310,11 @@ Evidence classes:
 
 ### UC-MUTATION-01: Test suite sensitivity is verified under code mutation
 
-- **Given:** target implementation modules and explicit runner CLI arguments.
-- **When:** `evals/mutation/run_mutation.py` executes using the supplied source files, threshold, result path, and test command.
-- **Then:** apply mutations to target modules and verify unit test failures detect mutations.
-- **Never:** report a passing mutation score if mutated code escapes test detection.
-- **Evidence:** U mutation-runner result. `opencode-mutation.json` is policy/example data and is not read by the runner.
+- **Given:** target implementation modules, a passing baseline command, and explicit CLI arguments or `--config opencode-mutation.json`.
+- **When:** `evals/mutation/run_mutation.py` executes.
+- **Then:** require the baseline to pass before applying mutations and verify unit test failures detect mutations.
+- **Never:** report a passing mutation score when the baseline fails or mutated code escapes test detection.
+- **Evidence:** U mutation-runner result and baseline outcome.
 
 ## Session Auditing
 
@@ -322,8 +322,8 @@ Evidence classes:
 
 - **Given:** an executed OpenCode session recorded in `~/.local/share/opencode/opencode.db`.
 - **When:** `tests/audit_run.py` inspects the session.
-- **Then:** report documented root-session and direct-child signals, including agent switches, root-session Bash use, current scaffold-file presence, and completion/review tokens.
-- **Never:** represent the report as proof of ancestry enforcement, scaffold validity, or fresh verification-command execution.
+- **Then:** report documented root-session and direct-child signals, including agent switches, non-attributable root-session Bash observations, current scaffold-file presence, and completion/review tokens.
+- **Never:** attribute a post-switch root-session tool call to a specific agent or represent the report as proof of ancestry enforcement, scaffold validity, or fresh verification-command execution.
 - **Evidence:** U auditor fixtures and report output, including `PASS`, `PARTIAL`, `FAIL`, `NOT_APPLICABLE`, `NOT_SELECTED`, and missing-data errors where applicable.
 
 

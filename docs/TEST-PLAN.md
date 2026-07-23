@@ -96,20 +96,20 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
-| TP-SKILL-01 | UC-SKILL-01 | U | Reconcile the skill test source path with packaged `skills/`, then validate every deployed skill's frontmatter and required content. | Validation report, frontmatter parsing, section inventory, and the tested source path. | Every packaged skill is tested from its deployed source path; invalid or unparseable skills fail. |
+| TP-SKILL-01 | UC-SKILL-01 | U | Validate every packaged skill and a temporary deployed copy for frontmatter and required content. | Validation report, frontmatter parsing, section inventory, and deployed-tree path. | Every packaged and deployed skill is tested; invalid or unparseable skills fail. |
 | TP-SKILL-02 | UC-SKILL-02 | B, O | Load skills through managed OpenCode agents and attempt permission and identity-boundary violations. | Effective identity, tool decisions, and filesystem state. | Skill text does not widen plugin-enforced role boundaries or command permissions. Direct-model prompt tests alone are insufficient. |
 
 ## Mutation Testing
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
-| TP-MUTATION-01 | UC-MUTATION-01 | U | Invoke `evals/mutation/run_mutation.py` with explicit `--files`, `--result`, `--threshold`, and `--test-cmd` arguments. Treat `opencode-mutation.json` as policy/example input unless runner support is added. | Mutation score output, killed mutant count, command arguments, and result artifact. | Mutated target lines trigger unit test failures; unkilled mutants report correctly. |
+| TP-MUTATION-01 | UC-MUTATION-01 | U | Invoke `evals/mutation/run_mutation.py` with a passing baseline and either explicit policy arguments or `--config opencode-mutation.json`. | Baseline result, mutation score output, killed mutant count, command arguments, and result artifact. | A failing baseline returns an invalid non-passing result; otherwise mutated target lines trigger unit test failures and survivors report correctly. |
 
 ## Session Auditing
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
-| TP-AUDIT-01 | UC-AUDIT-01 | U | Run `tests/audit_run.py` against recorded session databases (`opencode.db`) that cover its documented report signals and verdicts. | Runtime Validation Report, fixture database, and verdict output. | Auditor reports only its documented root-session and direct-child observations, including `NOT_SELECTED` and missing-data error handling. It is not evidence of policy enforcement or fresh verification execution. |
+| TP-AUDIT-01 | UC-AUDIT-01 | U | Run `tests/audit_run.py` against recorded session databases (`opencode.db`) that cover its documented report signals and verdicts. | Runtime Validation Report, fixture database, and verdict output. | Auditor reports only documented root-session and direct-child observations; post-switch root-session calls remain non-attributable. It includes `NOT_SELECTED` and missing-data handling but is not evidence of policy enforcement or fresh verification execution. |
 
 ## Documentation Consistency
 
@@ -243,10 +243,3 @@ pending validation of core agent behavior; see `docs/REQUIREMENTS.md` for contex
 | TP-SPIKE-01 | UC-SPIKE-01 | U | Attempt valid and invalid spike identifiers, missing and malformed contracts, direct Prometheus Bash, an unapproved spike, and an approved contracted spike. | Permission decisions, process execution, and result files. | Only a safe, contracted, approved spike runs. Direct Prometheus Bash remains denied. |
 | TP-SPIKE-02 | UC-SPIKE-02 | U, F | On supported macOS and Linux environments, exercise success, nonzero exit, timeout, excessive output, secret-shaped output, reduced environment, and concurrent invocation. | Working directory, environment, termination behavior, bounded output, and persisted result fields. | Execution is bounded and records the documented evidence with `sandboxed: false`. Sensitive output is redacted, and failures are represented honestly. |
 | TP-SPIKE-03 | UC-SPIKE-03 | B | Give Prometheus a load-bearing spike whose measured result violates the declared kill criterion. | Spike result, cited planning evidence, resulting approach, and scaffold presence. | Prometheus records the failed criterion and redesigns or blocks. It does not publish the disproven assumption as fact. |
-
-## Scaffold Publication Tools
-
-| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
-| --- | --- | --- | --- | --- | --- |
-| TP-PUB-01 | UC-PUB-01 | U | Validate complete Ralph and Karpathy scaffolds, then variants with each required field, path rule, inventory entry, SPEC section, or verification-command agreement missing or malformed. Include a verification command that would create a marker if executed. | Validation result, diagnostics, and marker absence. | Complete scaffolds pass. Every malformed contract fails for the relevant reason, and validation executes no project command. |
-| TP-PUB-02 | UC-PUB-02 | F | Exercise absent and existing `.gitignore`, unrelated bytes, CRLF, file modes, repeated invocation, symlinks, malformed markers, tracked generated files, and an existing Git index. | Exact bytes, modes, warnings, tracked-file state, and Git index state. | Only the canonical block changes. Unrelated content, modes, and the Git index remain intact; unsafe targets fail. |

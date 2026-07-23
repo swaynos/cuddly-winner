@@ -224,9 +224,27 @@ def dry_run_prometheus(workspace: Path) -> tuple[int, str, str]:
     (workspace / "SPEC.md").write_text(
         canonical.read_text(encoding="utf-8"), encoding="utf-8"
     )
+    (workspace / "opencode-autonomous.json").write_text(
+        json.dumps({
+            "schema_version": 1,
+            "strategy": "ralph",
+            "invariants": ["Frozen planning fixture."],
+            "implementation_scope": ["idea.md"],
+            "escalation_triggers": ["Fixture mismatch."],
+            "evaluator_inventory": [],
+            "verification": {
+                "baseline": "Frozen fixture baseline.",
+                "commands": [
+                    "python3 -c 'import ast, pathlib; ast.parse(pathlib.Path(\"rules_engine.py\").read_text())'",
+                    "PYTHONDONTWRITEBYTECODE=1 RULES_ENGINE_PATH=rules_engine.py python3 -m unittest discover -s .oracle_readonly/acceptance -p 'test_*.py' -v",
+                ],
+            },
+        }, indent=2) + "\n",
+        encoding="utf-8",
+    )
     stub_stdout = (
         "Stub @prometheus response for dry-run.\n"
-        "Wrote canonical SPEC.md directly. Invoke @autonomous to execute SPEC.md."
+        "Wrote canonical SPEC.md and opencode-autonomous.json. Invoke @autonomous to execute SPEC.md."
     )
     return 0, stub_stdout, ""
 

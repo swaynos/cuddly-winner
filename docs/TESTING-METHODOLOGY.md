@@ -43,7 +43,7 @@ OpenCode persists session telemetry to `~/.local/share/opencode/opencode.db` (or
 When auditing a session, `tests/audit_run.py` reports:
 
 * whether the selected root session recorded switches to Prometheus or Autonomous, and whether its current `SPEC.md` includes `## Approaches Considered`;
-* whether the selected root session made a Bash call while Prometheus was selected;
+* whether the selected root session recorded Bash calls, without attributing them to Prometheus or another agent after a switch;
 * direct child-session agent names, including Karpathy, and whether current `SPEC.md` and `opencode-autonomous.json` files exist; and
 * whether the selected root session contains completion or reviewer-approval tokens.
 
@@ -70,9 +70,9 @@ Live end-to-end evaluations test planning (`test_planning.py`) and implementatio
 Mutation testing evaluates the sensitivity and strength of the test suite.
 
 * **Invocation**: Callers pass source files, result path, threshold, and a test
-  command to `evals/mutation/run_mutation.py`. The checked-in
-  `opencode-mutation.json` is not read by the runner; it records project
-  policy/example values:
+  command to `evals/mutation/run_mutation.py`. `--config
+  opencode-mutation.json` loads validated policy values; explicit CLI values
+  override those values:
   ```json
   {
     "enabled": false,
@@ -80,8 +80,9 @@ Mutation testing evaluates the sensitivity and strength of the test suite.
     "result_path": ".opencode/mutation-result.json"
   }
   ```
-* **Execution**: `evals/mutation/run_mutation.py` applies targeted mutations to
-  selected implementation sources and runs the caller-supplied test command.
+* **Execution**: `evals/mutation/run_mutation.py` first requires the caller-
+  supplied baseline test command to pass, then applies targeted mutations to
+  selected implementation sources.
   `evals/mutation/tests/` tests the mutation runner itself, not a project's
   mutation score.
 
@@ -89,13 +90,11 @@ Mutation testing evaluates the sensitivity and strength of the test suite.
 
 ## Skills Validation Methodology (`tests/`)
 
-Non-core skills installed via `--with-skills` need structural and behavioral
-validation. The current scripts are not release evidence because both target
-the legacy `.opencode/skills` source path rather than packaged `skills/`:
+Non-core skills installed via `--with-skills` have deterministic structural and
+deployment validation. Direct-model pressure checks remain supplemental:
 
-1. **Coverage Testing (`tests/test_skill_coverage.py`)**: Intended to check
-   deployment, frontmatter, selected content requirements, and optional model
-   behavior after its source-path target is reconciled.
+1. **Coverage Testing (`tests/test_skill_coverage.py`)**: Checks packaged and
+   temporarily deployed skills, frontmatter, and selected content requirements.
 2. **Pressure Testing (`tests/test_skill_pressure.py`)**: Sends individual
-   skills as direct model context and checks selected response cues. It does not
-   load managed agents or prove permission and identity enforcement.
+   skills as direct model context and checks selected response cues. It remains
+   optional and does not replace managed-agent permission enforcement tests.
