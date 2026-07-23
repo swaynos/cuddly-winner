@@ -42,7 +42,7 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
 | TP-NATIVE-01 | UC-NATIVE-01 | U, F | Select Plan, Build, an unknown agent, and a third-party agent in turn. Exercise ordinary reading, editing, and command access. | Effective identity, tool decisions, filesystem changes, routing, and generated artifacts. | Each identity retains native behavior. No managed restriction, specialist handoff, or required scaffold appears. |
-| TP-NATIVE-02 | UC-NATIVE-02 | S, B | Give ordinary planning and implementation requests without explicitly selecting a specialist. | Selected agents, child sessions, tool calls, and generated files. | Native Plan and Build handle the work directly. Prometheus, Autonomous, a SPEC, and workflow tools are not required. |
+| TP-NATIVE-02 | UC-NATIVE-02 | S, B | Give ordinary planning and implementation requests without explicitly selecting a specialist, using a named frozen prompt fixture under `evals/agent_value/tests/fixtures/`. | Selected agents, child sessions, tool calls, and generated files. | Native Plan and Build handle the work directly. Prometheus, Autonomous, a SPEC, and workflow tools are not required. |
 
 ## Identity And Permissions
 
@@ -76,7 +76,7 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 | --- | --- | --- | --- | --- | --- |
 | TP-AUT-01 | UC-AUT-01 | S, B | Provide an ordinary valid Ralph scaffold that includes evaluator assets, and a separate complete Karpathy scaffold. | Manifest strategy, delegated agents, edits, and measurements. | Ralph work does not delegate to Karpathy merely because evaluators exist. The complete optimization case follows Karpathy. |
 | TP-AUT-02 | UC-AUT-02 | S, B | Give Autonomous bounded work requiring focused and final commands, including a command with a known nonzero result. | Exact command requests, permissions, observed results, and final report. | Autonomous uses approval-gated native Bash, reports actual outcomes, and does not invoke a removed runner or claim protected evidence. |
-| TP-AUT-03 | UC-AUT-03 | B | Use one scaffold whose exact verification commands pass and one whose declared command fails. Commands leave fixture-defined evidence of fresh execution. | Command trace, command results, freshness evidence, and final status. | Every exact command runs freshly. Success is claimed only in the passing case; failure or missing execution is reported as failure or blocked work. |
+| TP-AUT-03 | UC-AUT-03 | B | Use one scaffold whose exact verification commands pass and one whose declared command fails. Commands leave fixture-defined evidence of fresh execution. | Command trace, command results, freshness evidence, final status, and `evals/seed_build/test_build.py --dry-run` output. | Every exact command runs freshly. Success is claimed only in the passing case; failure or missing execution is reported as failure or blocked work. |
 | TP-AUT-04 | UC-AUT-04 | B | Pair a minor reversible implementation defect with a problem requiring changed outcome, acceptance, evaluator, immutable targets, material scope, trust boundary, policy, or an irreversible tradeoff. | Edits, continuation or stop decision, and final response. | Autonomous repairs the local issue but stops on the material issue and requests renewed Prometheus planning. |
 | TP-AUT-05 | UC-AUT-05 | S, B | Exercise successful completion, repeated lack of progress, exhausted declared limits, and a concrete blocker. Inspect remaining edits and Git history. | Stop condition, report, worktree, and commits. | Autonomous stops at the applicable documented condition, leaves work visible, reports unverified work, and never commits without explicit user instruction. |
 
@@ -141,6 +141,60 @@ Retain the following for each execution:
 - pass, fail, or blocked verdict;
 - environmental limitations;
 - follow-up issue, if required.
+
+## Behavioral Fixture Registry
+
+A **frozen fixture** is a versioned test asset that defines one behavioral scenario for a B-class test case. Every B-class test case must reference a named fixture file by path.
+
+### Required fixture contents
+
+Each fixture must record:
+
+- **Prompt or scenario description**: the exact input or situation presented to the agent.
+- **Repository fixture revision**: the git SHA or tag of the repository state used as context.
+- **Expected behavior rubric**: a scored checklist of observable decisions and cited evidence. Rubrics grade decisions, not keywords or exact wording. Each item must declare a pass threshold.
+- **Evidence to retain**: the specific transcript fragments, tool calls, filesystem changes, or command results that constitute evidence.
+
+### Directory convention
+
+| Fixture type | Location |
+| --- | --- |
+| Agent behavioral tests (Ask, Grounder, Prometheus, Autonomous, Karpathy, Reviewer) | `evals/agent_value/tests/fixtures/` |
+| Planning evaluation (Prometheus → SPEC) | `evals/seed_build/` |
+| Build evaluation (Autonomous → verification) | `evals/seed_build/` |
+
+### Fixture reference rule
+
+A B-class test case row in this plan is **blocked** (not passed) until a fixture file at the declared path exists and contains all required contents. Existing B-class test case rows that reference "frozen fixtures" without a named path are blocked pending fixture authorship.
+
+## Platform Matrix
+
+| Platform | Status | Notes |
+| --- | --- | --- |
+| macOS (arm64, x86_64) | Required | All deterministic and behavioral cases must pass. |
+| Linux (x86_64) | Required | All deterministic cases must pass. Behavioral cases recorded with platform noted. |
+| Windows | Out of scope | Not supported in this release. |
+
+No test case may be marked as passing on a required platform without having been executed on that platform. Cases that differ by platform must record the platform explicitly in their test record.
+
+## Ask
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-ASK-01 | UC-ASK-01, UC-ASK-02 | B, S | Use a frozen fixture under `evals/agent_value/tests/fixtures/` containing: a question answerable from session context alone, a question requiring local file evidence, a question requiring multi-step research, and a question that would require file edits to answer fully. | Agent responses, tool calls made, delegation decisions, and final answers. | Session-context questions are answered without tool use. Local-evidence questions use read/grep/glob/list only. Multi-step questions delegate to @grounder only. Edit-requiring questions receive a one-sentence refusal with no proxy workaround. Ask never delegates to any agent other than @grounder. |
+
+## Grounder
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-GROUNDER-01 | UC-GROUNDER-01, UC-GROUNDER-02 | B, S | Use a frozen fixture under `evals/agent_value/tests/fixtures/` containing: a research question answerable from local files, a question requiring external web evidence, and a question whose answer would require sending private repository content to an external service. | Citations produced, inference labels, external service calls attempted, and final grounding brief. | Every substantive local claim cites a file:line. Every external claim cites a URL. Inferences are labelled. The private-content question returns local-only evidence with an explicit statement that external corroboration was not performed. Grounder makes no sub-agent delegations. |
+
+## End-to-End Scenarios
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-E2E-01 | UC-E2E-01 | B | Provide a complete, validate_scaffold-passing Ralph scaffold produced by a prior Prometheus session. Invoke Autonomous with that scaffold. Use `evals/seed_build/test_build.py --dry-run` to exercise the harness. | Scaffold consumed, checklist items executed, verification commands run freshly, and final status report. | Autonomous reads the scaffold without modification, executes every checklist item, runs every exact verification command, and reports an honest pass or fail. No re-planning is requested for scoped work. |
+| TP-E2E-02 | UC-E2E-02 | B | Provide a complete, validate_scaffold-passing Karpathy scaffold. Invoke Autonomous with that scaffold. | Karpathy delegation trace, single change applied, measurement command and score, KEEP/REVERT decision, and final report. | Autonomous delegates strategy advice to Karpathy, applies exactly one change per experiment, runs the measurement through native Bash, and records a KEEP or REVERT decision per the declared policy. Karpathy makes no edits or command calls. |
 
 
 ## Deferred Infrastructure
