@@ -1,90 +1,86 @@
-# Documentation Evidence-Accuracy Correction
+# Release-Contract Implementation
 
 ## Grounding
 
-The pending documentation adds a docs index and records skills, mutation
-testing, and session auditing as durable project behavior. Repository evidence
-shows several claims need narrowing before those docs can be trusted:
+The project’s documented application outcome includes optional specialist
+workflows with release evidence for skills, mutation checks, session auditing,
+and Prometheus-to-Autonomous publication. Current implementation evidence
+identifies concrete gaps:
 
-- `tests/audit_run.py` reports signals for a selected root session and direct
-  children; it does not validate scaffolds, recurse through descendants, or
-  prove fresh verification-command execution.
-- `evals/mutation/run_mutation.py` requires CLI inputs and does not read
-  `opencode-mutation.json`; `evals/mutation/tests/` tests the runner itself.
-- `tests/test_skill_coverage.py` and `tests/test_skill_pressure.py` currently
-  target `.opencode/skills`, while packaged skills are under `skills/`; direct
-  model prompting does not prove managed-agent permission enforcement.
-- `docs/TEST-PLAN.md` currently duplicates the Scaffold Publication section and
-  `TP-PUB-03`.
+- `tests/test_skill_coverage.py` and `tests/test_skill_pressure.py` target the
+  nonexistent legacy `.opencode/skills` path, and the coverage suite imports a
+  missing validator. These checks are absent from `scripts/ci.sh`.
+- `evals/mutation/run_mutation.py` does not run its unmutated baseline. A failing
+  test command therefore marks every mutant as killed and can return a passing
+  score. `opencode-mutation.json` is present but has no runtime effect.
+- `tests/audit_run.py` marks every root-session Bash call as a Prometheus
+  violation after any Prometheus switch, even when a later agent made the call.
+  It has no fixture coverage for its verdicts or missing-data behavior.
+- `evals/seed_build/test_planning.py` requires only `SPEC.md`; it does not prove
+  automatic publication of `opencode-autonomous.json` or structural validation.
+- `docs/TEST-PLAN.md` retains a duplicate deferred Scaffold Publication block.
 
-The project virtual-environment preflight passed before verification. Session
-spike evidence is disposable and is not retained in this scaffold.
-
-The follow-on implementation backlog is recorded here but is outside this
-scaffold's implementation scope:
-
-1. Rebuild skill validation to target packaged `skills/`, validate deployed
-   skills, and exercise managed-agent permission and identity boundaries.
-2. Rebuild the session auditor if it must certify recursive ancestry, complete
-   tool history, scaffold validity, and fresh final-verification execution.
-3. Either make `opencode-mutation.json` an input to the mutation runner or
-   replace it with a supported CLI-only policy mechanism.
-4. Add recorded SQLite fixtures for every documented audit verdict, including
-   `NOT_SELECTED` and missing-data errors.
-
-Prometheus publication investigation: the installed runtime copy of
-`agents/prometheus.md` matches this repository and already describes a
-publication sequence. It does not, however, explicitly make publication a
-precondition of every successful planning response. This ambiguity permits a
-planning response to end after analysis without writing the scaffold. The
-correction is a mandatory publication gate, documented and statically checked.
+The mandatory Prometheus publication prompt is installed, but text matching is
+not behavioral evidence. The release must test the output artifacts produced in
+a frozen planning workspace.
 
 ## Approaches Considered
 
-### Selected: Documentation-only evidence correction
+### Selected: Implement deterministic release contracts
 
-Revise the durable docs and README to state the implemented limits of the audit,
-mutation, and skill-validation tooling; remove the duplicated test-plan section;
-keep the validation list limited to executable, meaningful commands; and make
-automatic scaffold publication a mandatory Prometheus completion gate. This
-preserves the project’s optional-agent boundary while preventing a completed
-Prometheus planning response from ending without `SPEC.md` and
-`opencode-autonomous.json`.
+Repair the broken deterministic checks, make mutation policy operational,
+eliminate audit misattribution, and extend the existing frozen planning harness
+to verify both scaffold artifacts. This closes correctness gaps while keeping
+live model-pressure checks optional rather than making credentials a CI
+requirement.
+
+### Rejected: Documentation-only release
+
+Kill reason: documentation accurately records the gaps but cannot prevent a
+false passing mutation score, validate shipped skill assets, or demonstrate
+automatic scaffold publication.
 
 ## Acceptance Criteria
 
-- README provides a useful docs index and does not present the legacy-path skill
-  scripts as release-validation commands.
-- Architecture, requirements, use cases, and testing methodology describe the
-  session auditor as an investigative, limited-signal report rather than proof
-  of policy enforcement, scaffold validity, or fresh verification execution.
-- Mutation documentation states that the runner takes explicit CLI arguments and
-  does not consume `opencode-mutation.json`.
-- Skills documentation distinguishes the packaged `skills/` source from the
-  legacy `.opencode/skills` test target and does not claim direct-model tests
-  prove managed-agent boundaries.
-- `docs/TEST-PLAN.md` has one Scaffold Publication section and one `TP-PUB-03`.
-- The Prometheus prompt requires a planning-ready run to publish and statically
-  validate the scaffold before its final response, without asking the user for a
-  separate publication request.
-- Durable requirements, architecture, use cases, and the static verification
-  test describe and retain that publication gate.
-- No runtime product source, deployment scripts, or configuration files are
-  modified for this task.
+- Skill validation reads packaged `skills/`, validates every installed skill in
+  a temporary deployment, rejects malformed frontmatter/content, and runs as a
+  deterministic CI gate without model credentials.
+- Managed-agent integration coverage proves a loaded skill cannot widen edit or
+  command permissions; direct-model pressure checks remain optional evidence.
+- The mutation runner first executes the unmutated test command. A failing
+  baseline writes a machine-readable invalid/error result and exits nonzero
+  without reporting a passing mutation score.
+- `opencode-mutation.json` becomes a validated, documented operative policy
+  input with explicit CLI override behavior, or is removed with all references
+  updated so no dead configuration remains.
+- Audit verdicts do not attribute a tool call to Prometheus without a matching
+  active-agent interval. Fixture tests cover normal, malformed, and missing-data
+  database cases and every documented verdict.
+- The frozen planning harness requires both `SPEC.md` and
+  `opencode-autonomous.json`, validates their structural agreement when the tool
+  is available, and fails planning-ready runs that omit either artifact.
+- `scripts/ci.sh` runs the deterministic skill, mutation, audit, and planning
+  checks. Documentation and test-plan rows match the resulting behavior, with a
+  single canonical Scaffold Publication section.
 
 ## Verification
 
 - `PYTHON="$(bash scripts/ensure-venv.sh)" && "$PYTHON" tests/verify_opencode.py --skip-llm`
 - `node --test tests/plugins/*.test.mjs tests/integration/*.test.mjs`
+- `PYTHON="$(bash scripts/ensure-venv.sh)" && "$PYTHON" -m unittest discover -s evals/mutation/tests -p 'test_*.py'`
+- `PYTHON="$(bash scripts/ensure-venv.sh)" && "$PYTHON" tests/test_skill_coverage.py --skip-llm`
+- `PYTHON="$(bash scripts/ensure-venv.sh)" && "$PYTHON" -m unittest discover -s tests -p 'test_audit_run.py'`
+- `PYTHON="$(bash scripts/ensure-venv.sh)" && "$PYTHON" evals/seed_build/test_planning.py --dry-run`
+- `bash scripts/ci.sh`
 - `git diff --check`
 
 ## Implementation Checklist
 
-- [ ] Update `README.md` documentation navigation and validation guidance to avoid unsupported skill-validation claims.
-- [ ] Correct audit, mutation, and skills descriptions in architecture, requirements, use cases, and testing methodology.
-- [ ] Reconcile test-plan expectations with actual evidence limits and remove duplicate Scaffold Publication coverage.
-- [ ] Add and document the mandatory Prometheus publication gate, plus a static regression check for the prompt contract.
-- [ ] Review the documentation diff for clarity, cross-document consistency, and preservation of the documentation-only scope.
-- [ ] Run every declared verification command and report exact outcomes.
+- [ ] Replace legacy-path skill checks with packaged/deployed-skill validation and add deterministic managed-agent boundary coverage.
+- [ ] Add mutation baseline gating, operative policy configuration or remove the dead configuration, and regression tests for both decisions.
+- [ ] Make audit reporting timeline-aware or explicitly non-attributable, then add SQLite fixture coverage for all outcomes.
+- [ ] Extend frozen Prometheus planning evaluation to require and structurally validate both published scaffold artifacts.
+- [ ] Add deterministic release checks to CI and consolidate duplicate documentation test-plan coverage.
+- [ ] Update durable documentation for the implemented release contracts and run every declared verification command.
 
 Invoke @autonomous to execute SPEC.md.
