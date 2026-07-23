@@ -182,13 +182,21 @@ Optional non-core skills are packaged under `skills/` and deployed when `--with-
 - `verification-before-completion`: Evidence-gathering protocols before completion claims.
 - `writing-skills`: Custom skill packaging and frontmatter formatting.
 
-Skills reside under `<config_dir>/skills/<skill_name>/SKILL.md`. OpenCode automatically discovers and loads skill packages at session startup. Skills do not modify role edit-tool boundaries or grant command execution permissions to read-only roles.
+Skills reside under `<config_dir>/skills/<skill_name>/SKILL.md`. OpenCode automatically discovers and loads skill packages at session startup. The immutability plugin, rather than skill text, enforces role edit-tool boundaries and command permissions.
 
 ## Mutation Testing Framework
 
-Mutation evaluation (`evals/mutation/run_mutation.py`) validates test suite sensitivity. Root configuration file `opencode-mutation.json` defines score thresholds and result paths. The framework mutates target implementation logic and runs unit tests in `evals/mutation/tests/` to verify that mutations trigger test failures.
+`evals/mutation/run_mutation.py` is a standalone, opt-in Python mutation runner.
+Callers provide source files, result path, threshold, and test command explicitly
+on its CLI. `opencode-mutation.json` is a project policy/example artifact; the
+runner does not load it. The runner temporarily mutates selected source files
+and classifies mutants by whether the supplied test command fails.
 
 ## Session Auditing System
 
-Session auditing (`tests/audit_run.py`) inspects historical session telemetry stored in OpenCode's SQLite database (`~/.local/share/opencode/opencode.db`). It queries `session` and `part` tables to verify agent ancestry inheritance, tool invocation boundaries, scaffold existence, and verification command execution, emitting `PASS`, `PARTIAL`, `FAIL`, or `NOT_APPLICABLE` verdicts per `docs/TESTING-METHODOLOGY.md`.
-
+`tests/audit_run.py` inspects selected historical session telemetry in OpenCode's
+SQLite database (`~/.local/share/opencode/opencode.db`). It reports observed
+agent switches, root-session Bash use, direct child-session agents, current
+scaffold-file presence, and completion/review tokens. It is an investigative
+reporting aid, not proof of ancestry enforcement, tool-boundary compliance,
+scaffold validity, or fresh verification-command execution.

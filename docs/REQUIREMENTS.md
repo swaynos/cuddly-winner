@@ -204,23 +204,35 @@ Prometheus → Autonomous workflow.
 
 When `--with-skills` is specified, the installer deploys eight non-core skills: `local-word-document`, `playwright-image-generation`, `project-agent-scaffolding`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, and `writing-skills`.
 
-Each skill must provide valid YAML frontmatter and markdown body guidelines. Skills must be tested for structural coverage (`tests/test_skill_coverage.py`) and prompt pressure robustness (`tests/test_skill_pressure.py`) to ensure loading skills does not alter role boundaries or permission rules.
+Each skill must provide valid YAML frontmatter and markdown body guidelines.
+Skill structure and behavior need release evidence, but the current
+`tests/test_skill_coverage.py` and `tests/test_skill_pressure.py` scripts target
+the legacy `.opencode/skills` path and do not prove managed-agent permission or
+identity enforcement. They must be reconciled with the packaged `skills/`
+directory before being counted as release validation. The immutability plugin is
+the enforcement boundary for roles and permissions.
 
 ## Mutation Testing
 
-The project incorporates mutation testing (`evals/mutation/run_mutation.py`) configured via `opencode-mutation.json`. Mutation testing validates test suite sensitivity by injecting controlled code mutations and verifying that unit test suites fail accordingly.
+The project includes an opt-in mutation runner (`evals/mutation/run_mutation.py`)
+for checking test-suite sensitivity. It receives source files, a result path, a
+threshold, and a test command through its CLI. `opencode-mutation.json` records
+project policy/example values but is not consumed by the runner.
 
 ## Session Auditing
 
-The project includes an automated session auditor (`tests/audit_run.py`) that queries OpenCode SQLite database logs (`opencode.db`). Auditing evaluates session trajectories, child sub-sessions, tool invocation sequences, and verification command runs against the standardized verdict rules in `docs/TESTING-METHODOLOGY.md`.
+The project includes an investigative session-audit report (`tests/audit_run.py`)
+that queries OpenCode SQLite logs (`opencode.db`). It summarizes selected
+session signals but does not establish full trajectories, permission compliance,
+scaffold validity, or verification-command execution.
 
 ## Validation
 
 Release validation separately proves native compatibility, identity inheritance,
 role permissions, Prometheus triage and deliberation behavior, Autonomous
-approval-gated Bash, Ralph/Karpathy prompt contracts, skill coverage/pressure, mutation sensitivity, session audit compliance, additive deployment and
+approval-gated Bash, Ralph/Karpathy prompt contracts, mutation-runner behavior,
+additive deployment and
 safe removal, and documentation consistency, following the evidence requirements
 defined in `docs/TEST-PLAN.md` and `docs/TESTING-METHODOLOGY.md`. No release check may require Bubblewrap, Lima, a
 protected runner, or a custom supervisor.
-
 
