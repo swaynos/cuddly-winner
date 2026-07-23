@@ -112,7 +112,7 @@ Before publication, Prometheus:
 7. Compares genuinely credible approaches without manufacturing alternatives.
 8. Recommends one approach with evidence, consequences, and tradeoffs.
 9. Records informed non-safety overrides without reopening settled debate.
-10. Publishes only when implementation can proceed without inventing product intent.
+10. Publishes only when implementation can proceed without inventing product intent, and writes the scaffold before its final response rather than waiting for a separate publication request.
 
 Prometheus refuses unsafe, destructively unauthorized, internally inconsistent,
 unboundedly lossy, or unverifiable work. These are planning readiness failures,
@@ -148,8 +148,12 @@ Every published scaffold contains:
 
 `validate_scaffold` performs static shape, path, inventory, section, and command
 consistency checks. It executes no project command and does not certify that
-verification passes. Prometheus invokes `scaffold_gitignore` before completing
-handoff so generated artifacts stay outside ordinary version-control discovery.
+verification passes. When governance tools are installed, Prometheus invokes
+`scaffold_gitignore` and `validate_scaffold` before completing handoff. A
+planning-ready Prometheus run must write `SPEC.md` and
+`opencode-autonomous.json` before its final response; only a concrete planning
+blocker or a focused, decision-changing question may end the run without a
+scaffold.
 
 ## Autonomous Profile
 
@@ -235,4 +239,3 @@ additive deployment and
 safe removal, and documentation consistency, following the evidence requirements
 defined in `docs/TEST-PLAN.md` and `docs/TESTING-METHODOLOGY.md`. No release check may require Bubblewrap, Lima, a
 protected runner, or a custom supervisor.
-

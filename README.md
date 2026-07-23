@@ -104,6 +104,9 @@ Autonomous follows that recommendation.
 
 Publication is structurally validated, not an execution attestation.
 Prometheus defines exact final verification commands; Autonomous runs them.
+Once planning-ready, Prometheus publishes `SPEC.md` and
+`opencode-autonomous.json` before its final response. It does not wait for a
+separate user request to write the scaffold.
 
 ## Autonomous Workflow
 

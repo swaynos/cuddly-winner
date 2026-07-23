@@ -149,11 +149,11 @@ Evidence classes:
 
 ### UC-PUB-03: Publication hands off final verification
 
-- **Given:** static scaffold validation succeeds.
-- **When:** Prometheus completes handoff.
-- **Then:** tell the user to invoke Autonomous, which owns command execution.
-- **Never:** describe static publication as proof that final tests pass.
-- **Evidence:** S prompt/doc contract; B handoff scenario.
+- **Given:** Prometheus has resolved planning readiness without a concrete blocker.
+- **When:** it prepares its final response.
+- **Then:** write `SPEC.md` and `opencode-autonomous.json` before that response, then tell the user to invoke Autonomous, which owns command execution.
+- **Never:** wait for a separate publication request or describe static publication as proof that final tests pass.
+- **Evidence:** S prompt/doc contract; B automatic-publication handoff scenario.
 
 ## Autonomous Execution
 

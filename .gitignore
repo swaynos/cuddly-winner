@@ -57,6 +57,9 @@ evals/seed_build/reports/
 # Spike workspaces are disposable and never committed
 .spike/
 
+# OpenCode session state is local to the active conversation.
+/.opencode/supervisor/
+
 # BEGIN OpenCode Autonomous artifacts
 /SPEC.md
 /opencode-autonomous.json

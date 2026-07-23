@@ -54,15 +54,21 @@ Publish the scaffold in this order (see docs/ARCHITECTURE.md § Prometheus Flow)
    measured before handoff.
 3. If a custom evaluator is needed, create `.prometheus/evaluator/**` and record
    any measured positive, negative, and malformed-case spike results.
-4. Invoke `scaffold_gitignore` (no arguments) and keep any tracked-artifact
-   warnings.
+4. When governance tools are installed, invoke `scaffold_gitignore` (no
+   arguments) and keep any tracked-artifact warnings.
 5. Write `opencode-autonomous.json` (schema v1: `strategy`,
    `invariants`, `implementation_scope`, `escalation_triggers`,
    `evaluator_inventory`, `verification`, and a Karpathy `optimization` block
    when applicable).
-6. Write `SPEC.md`, invoke `validate_scaffold`, and correct structural errors
-   before declaring the handoff complete. Static validation executes no project
-   command and does not prove that final verification passes.
+6. Write `SPEC.md`. When `validate_scaffold` is installed, invoke it and correct
+   structural errors before declaring the handoff complete. Static validation
+   executes no project command and does not prove that final verification passes.
+
+Publication is mandatory for every planning-ready Prometheus run. Before its
+final response, Prometheus writes `opencode-autonomous.json` and `SPEC.md`; it
+does not wait for a separate user request to write the scaffold. It may finish
+without a scaffold only when it reports a concrete planning blocker or asks a
+focused, decision-changing question.
 
 End every completed SPEC with exactly:
 

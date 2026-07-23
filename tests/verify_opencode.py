@@ -37,6 +37,8 @@ def main() -> int:
     agents = {p.stem: p.read_text() for p in (ROOT / "agents").glob("*.md")}
     require(set(agents) == MANAGED_AGENTS, "optional managed-agent roster mismatch")
     require("bash: deny" in agents["prometheus"] and "spike: ask" in agents["prometheus"], "Prometheus defaults missing")
+    require("Publication is mandatory for every planning-ready Prometheus run" in agents["prometheus"], "Prometheus publication gate missing")
+    require("does not wait for a separate user request to write the scaffold" in agents["prometheus"], "Prometheus publication must not require a second request")
     require("bash: ask" in agents["autonomous"] and "run: allow" not in agents["autonomous"], "Autonomous must use approval-gated native Bash")
     for name in ("ask", "karpathy", "reviewer", "grounder"):
         require("bash: deny" in agents[name], f"{name} must remain read-only")
@@ -66,6 +68,7 @@ def main() -> int:
     require("does **not** replace, wrap, redirect, restrict" in readme, "README product goal is ambiguous")
     require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
     require("Standardized Verdict Definitions" in methodology, "TESTING-METHODOLOGY missing verdict definitions")
+    require("before its final response" in requirements and "without waiting for a separate user request" in architecture, "durable Prometheus publication gate missing")
 
 
     require(not (ROOT / "progress.txt").exists(), "stale root progress.txt remains")

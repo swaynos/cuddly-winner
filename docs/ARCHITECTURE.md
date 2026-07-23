@@ -120,12 +120,14 @@ Publication order is:
 2. Identify whether outcomes are measurable and select Ralph or Karpathy.
 3. Define acceptance criteria, implementation scope, escalation triggers, limits, and exact final verification.
 4. Create optional evaluator and spike assets.
-5. Write `opencode-autonomous.json` and `SPEC.md`.
-6. Optionally invoke governance tools (`scaffold_gitignore`, `validate_scaffold`) if installed.
-7. Hand off to Autonomous.
+5. Write `opencode-autonomous.json` and `SPEC.md` before the final Prometheus response.
+6. Invoke governance tools (`scaffold_gitignore`, `validate_scaffold`) when installed.
+7. Hand off to Autonomous without waiting for a separate user request to publish.
 
 Static publication means “complete enough to implement without inventing
 requirements,” not “all commands have already passed.”
+Prometheus may end without publishing only for a concrete planning blocker or a
+focused, decision-changing question.
 
 ## Autonomous Flow
 

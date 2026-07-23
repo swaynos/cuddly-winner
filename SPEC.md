@@ -17,14 +17,27 @@ shows several claims need narrowing before those docs can be trusted:
 - `docs/TEST-PLAN.md` currently duplicates the Scaffold Publication section and
   `TP-PUB-03`.
 
-Measured planning prerequisite: spike `docs-verification-env` ran
-`PYTHON="$(bash ../../scripts/ensure-venv.sh)" && test -x "$PYTHON" && printf '%s\n' "$PYTHON"`
-from `.spike/docs-verification-env`. It exited 0 and printed
-`/Users/jpswaynos/.pyenv/versions/cuddly-winner/bin/python3`; its kill criterion
-did not fail. The spike was native (`sandboxed: false`).
+The project virtual-environment preflight passed before verification. Session
+spike evidence is disposable and is not retained in this scaffold.
 
-`scaffold_gitignore` reported that `SPEC.md` is already tracked; exclusion does
-not untrack it.
+The follow-on implementation backlog is recorded here but is outside this
+scaffold's implementation scope:
+
+1. Rebuild skill validation to target packaged `skills/`, validate deployed
+   skills, and exercise managed-agent permission and identity boundaries.
+2. Rebuild the session auditor if it must certify recursive ancestry, complete
+   tool history, scaffold validity, and fresh final-verification execution.
+3. Either make `opencode-mutation.json` an input to the mutation runner or
+   replace it with a supported CLI-only policy mechanism.
+4. Add recorded SQLite fixtures for every documented audit verdict, including
+   `NOT_SELECTED` and missing-data errors.
+
+Prometheus publication investigation: the installed runtime copy of
+`agents/prometheus.md` matches this repository and already describes a
+publication sequence. It does not, however, explicitly make publication a
+precondition of every successful planning response. This ambiguity permits a
+planning response to end after analysis without writing the scaffold. The
+correction is a mandatory publication gate, documented and statically checked.
 
 ## Approaches Considered
 
@@ -32,9 +45,11 @@ not untrack it.
 
 Revise the durable docs and README to state the implemented limits of the audit,
 mutation, and skill-validation tooling; remove the duplicated test-plan section;
-and keep the validation list limited to executable, meaningful commands. This
-meets the requested documentation focus without changing the codebase’s behavior
-or disguising missing evidence as validation.
+keep the validation list limited to executable, meaningful commands; and make
+automatic scaffold publication a mandatory Prometheus completion gate. This
+preserves the project’s optional-agent boundary while preventing a completed
+Prometheus planning response from ending without `SPEC.md` and
+`opencode-autonomous.json`.
 
 ## Acceptance Criteria
 
@@ -49,8 +64,13 @@ or disguising missing evidence as validation.
   legacy `.opencode/skills` test target and does not claim direct-model tests
   prove managed-agent boundaries.
 - `docs/TEST-PLAN.md` has one Scaffold Publication section and one `TP-PUB-03`.
-- No production code, tests, agent prompts, deployment scripts, or configuration
-  files are modified for this task.
+- The Prometheus prompt requires a planning-ready run to publish and statically
+  validate the scaffold before its final response, without asking the user for a
+  separate publication request.
+- Durable requirements, architecture, use cases, and the static verification
+  test describe and retain that publication gate.
+- No runtime product source, deployment scripts, or configuration files are
+  modified for this task.
 
 ## Verification
 
@@ -63,6 +83,7 @@ or disguising missing evidence as validation.
 - [ ] Update `README.md` documentation navigation and validation guidance to avoid unsupported skill-validation claims.
 - [ ] Correct audit, mutation, and skills descriptions in architecture, requirements, use cases, and testing methodology.
 - [ ] Reconcile test-plan expectations with actual evidence limits and remove duplicate Scaffold Publication coverage.
+- [ ] Add and document the mandatory Prometheus publication gate, plus a static regression check for the prompt contract.
 - [ ] Review the documentation diff for clarity, cross-document consistency, and preservation of the documentation-only scope.
 - [ ] Run every declared verification command and report exact outcomes.
 

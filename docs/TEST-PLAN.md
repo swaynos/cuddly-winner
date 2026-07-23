@@ -90,7 +90,7 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 | --- | --- | --- | --- | --- | --- |
 | TP-PUB-01 | UC-PUB-01 | U | Validate complete Ralph and Karpathy scaffolds, then variants with each required field, path rule, inventory entry, SPEC section, or verification-command agreement missing or malformed. Include a verification command that would create a marker if executed. | Validation result, diagnostics, and marker absence. | Complete scaffolds pass. Every malformed contract fails for the relevant reason, and validation executes no project command. |
 | TP-PUB-02 | UC-PUB-02 | F | Exercise absent and existing `.gitignore`, unrelated bytes, CRLF, file modes, repeated invocation, symlinks, malformed markers, tracked generated files, and an existing Git index. | Exact bytes, modes, warnings, tracked-file state, and Git index state. | Only the canonical block changes. Unrelated content, modes, and the Git index remain intact; unsafe targets fail. |
-| TP-PUB-03 | UC-PUB-03 | S, B | Complete successful Prometheus publication from a frozen planning fixture. | Published scaffold, static validation result, and final response. | Prometheus explicitly hands off to Autonomous and does not describe static validation as proof that final verification passes. |
+| TP-PUB-03 | UC-PUB-03 | S, B | Complete planning-ready Prometheus runs from frozen fixtures without a separate request to write the scaffold. | Published scaffold, static validation result when available, final response, and tool activity. | Before its final response, Prometheus writes both scaffold files, explicitly hands off to Autonomous, and does not describe static validation as proof that final verification passes. |
 
 ## Skills Ecosystem
 
