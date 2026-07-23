@@ -131,6 +131,22 @@ Evidence classes:
 
 ## Scaffold Publication
 
+### UC-PUB-01: Scaffold shape is exact
+
+- **Given:** SPEC, manifest, and optional evaluators.
+- **When:** `validate_scaffold` runs.
+- **Then:** validate schema, canonical paths, inventory, required sections, and exact command-list agreement.
+- **Never:** execute project commands or certify passing behavior.
+- **Evidence:** U positive/negative fixtures.
+
+### UC-PUB-02: Git exclusion is constrained
+
+- **Given:** Prometheus invokes `scaffold_gitignore` without arguments.
+- **When:** `.gitignore` is absent or valid.
+- **Then:** atomically manage only the canonical four-path block and preserve unrelated bytes/modes.
+- **Never:** follow symlinks, accept malformed markers, or alter the Git index.
+- **Evidence:** F target/marker/idempotence/index fixtures.
+
 ### UC-PUB-03: Publication hands off final verification
 
 - **Given:** static scaffold validation succeeds.
@@ -140,6 +156,7 @@ Evidence classes:
 - **Evidence:** S prompt/doc contract; B handoff scenario.
 
 ## Autonomous Execution
+
 
 ### UC-AUT-01: Ralph is the ordinary default
 
@@ -270,6 +287,46 @@ Evidence classes:
 - **Then:** README, requirements, architecture, use cases, agents, scripts, and tests agree.
 - **Never:** retain claims about retired runners, supervisors, Bubblewrap, Lima, or old profile flags.
 - **Evidence:** S repository text checks; full CI.
+
+## Skills Ecosystem
+
+### UC-SKILL-01: Skill frontmatter and content structure are verified
+
+- **Given:** packaged skill assets under `skills/`.
+- **When:** `tests/test_skill_coverage.py` evaluates them.
+- **Then:** verify YAML frontmatter schema, required instruction sections, and path structure.
+- **Never:** allow invalid or unparseable skills to be deployed.
+- **Evidence:** U skill coverage suite.
+
+### UC-SKILL-02: Role boundaries hold under skill pressure
+
+- **Given:** an active managed agent loaded with non-core skill instructions.
+- **When:** `tests/test_skill_pressure.py` exercises prompt boundary conditions.
+- **Then:** verify role edit-tool boundaries and permission constraints remain enforced.
+- **Never:** permit skill prompts to override agent permission frontmatter or identity isolation.
+- **Evidence:** S skill pressure suite.
+
+## Mutation Testing
+
+### UC-MUTATION-01: Test suite sensitivity is verified under code mutation
+
+- **Given:** `opencode-mutation.json` configuration and target implementation modules.
+- **When:** `evals/mutation/run_mutation.py` executes.
+- **Then:** apply mutations to target modules and verify unit test failures detect mutations.
+- **Never:** report a passing mutation score if mutated code escapes test detection.
+- **Evidence:** U mutation test suite.
+
+## Session Auditing
+
+### UC-AUDIT-01: OpenCode SQLite session trajectories are audited
+
+- **Given:** an executed OpenCode session recorded in `~/.local/share/opencode/opencode.db`.
+- **When:** `tests/audit_run.py` inspects the session.
+- **Then:** verify agent ancestry, tool invocation history, scaffold validity, and verification command execution, emitting `PASS`, `PARTIAL`, `FAIL`, or `NOT_APPLICABLE` verdicts per `docs/TESTING-METHODOLOGY.md`.
+- **Never:** mask hard strategy failures or missing verification runs as passing audits.
+- **Evidence:** S session auditor output.
+
+
 
 
 ## Deferred Infrastructure

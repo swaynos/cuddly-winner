@@ -8,6 +8,16 @@ Use the extension when work benefits from stronger triage, an explicit
 implementation scaffold, bounded iterative execution, or scalar-metric
 optimization. Continue using native Plan and Build for ordinary work.
 
+## Documentation
+
+The durable source of truth for this project lives in `docs/`:
+
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md): System architecture, identity inheritance, workflow tools, manifest schemas, and skills.
+- [REQUIREMENTS.md](docs/REQUIREMENTS.md): Product goals, permission models, agent profiles, skills, and validation rules.
+- [TEST-PLAN.md](docs/TEST-PLAN.md): Evidence classes, test cases, and platform matrix.
+- [USE-CASES.md](docs/USE-CASES.md): Concrete use cases for native compatibility, identity, triage, execution, skills, and auditing.
+- [TESTING-METHODOLOGY.md](docs/TESTING-METHODOLOGY.md): Runtime investigation, SQLite log schema, verdict definitions, and harness conventions.
+
 ## Design Boundary
 
 This project defines agent roles, edit-tool boundaries, and small workflow
@@ -48,6 +58,9 @@ Install non-core skills separately when wanted:
 ```bash
 bash scripts/deploy-opencode-agents.sh install --with-skills
 ```
+
+This installs eight non-core skills (`local-word-document`, `playwright-image-generation`, `project-agent-scaffolding`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `writing-skills`).
+
 
 Installation is additive: omitting `--with-workflow-tools` or `--with-skills`
 leaves previously installed optional entries unchanged. Use `status` to inspect
@@ -130,6 +143,10 @@ PYTHON="$(bash scripts/ensure-venv.sh)"
 "$PYTHON" tests/verify_opencode.py --skip-llm
 node --test tests/plugins/*.test.mjs tests/integration/*.test.mjs
 "$PYTHON" -m unittest discover -s evals/mutation/tests -p 'test_*.py'
+"$PYTHON" tests/test_skill_coverage.py
+"$PYTHON" tests/test_skill_pressure.py
 "$PYTHON" evals/seed_build/test_planning.py --dry-run
 "$PYTHON" evals/seed_build/test_build.py --dry-run
+"$PYTHON" tests/audit_run.py --help
 ```
+

@@ -168,3 +168,27 @@ must be removed manually if they remain from an older version.
 
 Installation is platform-neutral. It never checks for or installs Bubblewrap,
 Lima, Docker, a VM image, or a supervisor.
+
+## Skills Architecture
+
+Optional non-core skills are packaged under `skills/` and deployed when `--with-skills` is passed:
+
+- `local-word-document`: Manipulate and format document files.
+- `playwright-image-generation`: Visual evaluation and DOM screenshot generation.
+- `project-agent-scaffolding`: Project layout and agent configuration generation.
+- `subagent-driven-development`: Subagent delegation patterns and isolation.
+- `systematic-debugging`: Root-cause diagnosis protocols.
+- `test-driven-development`: Red-green-refactor loop patterns.
+- `verification-before-completion`: Evidence-gathering protocols before completion claims.
+- `writing-skills`: Custom skill packaging and frontmatter formatting.
+
+Skills reside under `<config_dir>/skills/<skill_name>/SKILL.md`. OpenCode automatically discovers and loads skill packages at session startup. Skills do not modify role edit-tool boundaries or grant command execution permissions to read-only roles.
+
+## Mutation Testing Framework
+
+Mutation evaluation (`evals/mutation/run_mutation.py`) validates test suite sensitivity. Root configuration file `opencode-mutation.json` defines score thresholds and result paths. The framework mutates target implementation logic and runs unit tests in `evals/mutation/tests/` to verify that mutations trigger test failures.
+
+## Session Auditing System
+
+Session auditing (`tests/audit_run.py`) inspects historical session telemetry stored in OpenCode's SQLite database (`~/.local/share/opencode/opencode.db`). It queries `session` and `part` tables to verify agent ancestry inheritance, tool invocation boundaries, scaffold existence, and verification command execution, emitting `PASS`, `PARTIAL`, `FAIL`, or `NOT_APPLICABLE` verdicts per `docs/TESTING-METHODOLOGY.md`.
+

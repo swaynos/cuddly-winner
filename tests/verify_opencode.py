@@ -60,10 +60,13 @@ def main() -> int:
     readme = (ROOT / "README.md").read_text()
     requirements = (ROOT / "docs/REQUIREMENTS.md").read_text()
     architecture = (ROOT / "docs/ARCHITECTURE.md").read_text()
-    for name, text in (("README", readme), ("requirements", requirements), ("architecture", architecture)):
-        require("Plan" in text and "Build" in text, f"{name} omits native Plan/Build compatibility")
+    methodology = (ROOT / "docs/TESTING-METHODOLOGY.md").read_text()
+    for name, text in (("README", readme), ("requirements", requirements), ("architecture", architecture), ("methodology", methodology)):
+        require("Plan" in text and "Build" in text or name == "methodology", f"{name} omits native Plan/Build compatibility")
     require("does **not** replace, wrap, redirect, restrict" in readme, "README product goal is ambiguous")
     require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
+    require("Standardized Verdict Definitions" in methodology, "TESTING-METHODOLOGY missing verdict definitions")
+
 
     require(not (ROOT / "progress.txt").exists(), "stale root progress.txt remains")
     require(not any(p.is_file() for p in (ROOT / "evals/agent_value").rglob("*")), "retired agent_value evaluation returned")

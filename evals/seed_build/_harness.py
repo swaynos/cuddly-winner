@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 ORACLE = Path(__file__).resolve().parent / "oracle"
 
-# Verdict constants matching docs/testing-methodology.md
+# Verdict constants matching docs/TESTING-METHODOLOGY.md
 PASS    = "PASS"
 PARTIAL = "PARTIAL"
 FAIL    = "FAIL"

@@ -88,6 +88,33 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 | TP-KAR-02 | UC-KAR-02 | B | Use frozen experiment cases whose declared optimization contracts and command-derived measurements require KEEP and REVERT decisions. Include conflicting Reviewer advice. | Applied diff, measurement command and score, decision, restored state when applicable, and Reviewer treatment. | Autonomous owns edits and measurements and follows the declared decision policy. Strategist or Reviewer prose never substitutes for the metric. |
 | TP-REV-01 | UC-REV-01 | S, B | Give Reviewer one conforming diff and verification summary and one containing rubric violations or failed verification. | Findings, citations, final verdict, and tool activity. | The report maps evidence to the rubric and ends with the appropriate `APPROVE` or `REQUEST_CHANGES` verdict. Reviewer does not edit, execute, delegate, or claim sole completion authority. |
 
+## Scaffold Publication
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-PUB-01 | UC-PUB-01 | U | Validate complete Ralph and Karpathy scaffolds, then variants with each required field, path rule, inventory entry, SPEC section, or verification-command agreement missing or malformed. Include a verification command that would create a marker if executed. | Validation result, diagnostics, and marker absence. | Complete scaffolds pass. Every malformed contract fails for the relevant reason, and validation executes no project command. |
+| TP-PUB-02 | UC-PUB-02 | F | Exercise absent and existing `.gitignore`, unrelated bytes, CRLF, file modes, repeated invocation, symlinks, malformed markers, tracked generated files, and an existing Git index. | Exact bytes, modes, warnings, tracked-file state, and Git index state. | Only the canonical block changes. Unrelated content, modes, and the Git index remain intact; unsafe targets fail. |
+| TP-PUB-03 | UC-PUB-03 | S, B | Complete successful Prometheus publication from a frozen planning fixture. | Published scaffold, static validation result, and final response. | Prometheus explicitly hands off to Autonomous and does not describe static validation as proof that final verification passes. |
+
+## Skills Ecosystem
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-SKILL-01 | UC-SKILL-01 | U | Execute `tests/test_skill_coverage.py` across all packaged skill directories under `skills/`. | Validation report, frontmatter parsing, section inventory. | Every skill satisfies frontmatter YAML schema and required instructions. |
+| TP-SKILL-02 | UC-SKILL-02 | S | Execute `tests/test_skill_pressure.py` evaluating prompt boundary retention under skill instructions. | Boundary check results, permission retention trace. | Skill loading does not alter role edit boundaries or permission restrictions. |
+
+## Mutation Testing
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-MUTATION-01 | UC-MUTATION-01 | U | Run `evals/mutation/run_mutation.py` using configuration in `opencode-mutation.json`. | Mutation score output, killed mutant count. | Mutated target lines trigger unit test failures; unkilled mutants report correctly. |
+
+## Session Auditing
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-AUDIT-01 | UC-AUDIT-01 | S, U | Run `tests/audit_run.py` against a set of recorded session databases (`opencode.db`). | Runtime Validation Report, DB query logs, verdict output. | Auditor accurately verifies session ancestry, tool calls, and verification execution, emitting verdicts matching `docs/TESTING-METHODOLOGY.md`. |
+
 ## Documentation Consistency
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |

@@ -2,7 +2,7 @@
 """
 audit_run.py — Autonomous loop behavior auditor.
 
-Automates the manual investigation procedure from docs/testing-methodology.md.
+Automates the manual investigation procedure from docs/TESTING-METHODOLOGY.md.
 Queries the OpenCode SQLite database and project artifacts to emit
 PASS / PARTIAL / FAIL verdicts for a given project session.
 
