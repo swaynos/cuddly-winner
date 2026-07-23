@@ -1,4 +1,4 @@
-import { lstatSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
@@ -69,6 +69,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
   const lexicalRoot = resolve(worktree || directory);
   const root = realpathSync(lexicalRoot);
   const sessionAgents = new Map<string, string>();
+  const publicationReminders = new Set<string>();
 
   async function resolveAgent(sessionID: string, visited = new Set<string>()): Promise<string | undefined> {
     if (visited.has(sessionID)) return undefined;
@@ -107,6 +108,23 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
   }
 
   return {
+    event: async ({ event }: { event: { type: string; properties?: { sessionID?: string } } }) => {
+      if (event.type !== "session.idle") return;
+      const sessionID = event.properties?.sessionID;
+      if (!sessionID || publicationReminders.has(sessionID)) return;
+      if (await resolveAgent(sessionID) !== "prometheus") return;
+      if (existsSync(resolve(root, "SPEC.md")) && existsSync(resolve(root, "opencode-autonomous.json"))) return;
+
+      // Continue the same session once rather than allowing an unpublished plan to end silently.
+      publicationReminders.add(sessionID);
+      await client?.session?.promptAsync?.({
+        path: { id: sessionID },
+        body: {
+          agent: "prometheus",
+          parts: [{ type: "text", text: "Before completing, publish SPEC.md and opencode-autonomous.json if this task is planning-ready. If a concrete planning blocker remains, state it as a focused question." }],
+        },
+      });
+    },
     "chat.params": async (input: { sessionID: string; agent: string }) => {
       if (input.sessionID && input.agent) sessionAgents.set(input.sessionID, input.agent);
     },

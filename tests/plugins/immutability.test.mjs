@@ -10,15 +10,16 @@ async function fixture(fn) {
   try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
-function client(agents = {}, parents = {}, sessions = {}) {
+function client(agents = {}, parents = {}, sessions = {}, prompts = []) {
   return { session: {
     get: async ({ path: value }) => ({ data: sessions[value.id] ?? (parents[value.id] ? { parentID: parents[value.id] } : {}) }),
     messages: async ({ path: value }) => ({ data: agents[value.id] ? [{ info: { role: "user", agent: agents[value.id] } }] : [] }),
+    promptAsync: async (input) => { prompts.push(input); },
   } };
 }
 
-async function hooks(root, agents = {}, parents = {}, sessions = {}) {
-  return ImmutabilityGuard({ directory: root, worktree: root, client: client(agents, parents, sessions) });
+async function hooks(root, agents = {}, parents = {}, sessions = {}, prompts = []) {
+  return ImmutabilityGuard({ directory: root, worktree: root, client: client(agents, parents, sessions, prompts) });
 }
 
 const mutate = (guard, agent, filePath, tool = "edit") => guard["tool.execute.before"](
@@ -58,6 +59,26 @@ test("prometheus can write scaffold artifacts only", async () => fixture(async r
   await assert.rejects(mutate(guard, "p", path.join(root, "src", "app.ts")), /restricted/);
   await assert.rejects(guard["tool.execute.before"]({ tool: "bash", sessionID: "p", callID: "shell" }, { args: { command: "true", cwd: root } }), /directly/);
   await guard["tool.execute.before"]({ tool: "spike", sessionID: "p", callID: "spike" }, { args: { spike_id: "probe" } });
+}));
+
+test("prometheus is continued once when it idles without publishing a scaffold", async () => fixture(async root => {
+  const prompts = [];
+  const guard = await hooks(root, { p: "prometheus" }, {}, {}, prompts);
+  const idle = () => guard.event({ event: { type: "session.idle", properties: { sessionID: "p" } } });
+
+  await idle();
+  await idle();
+
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].path.id, "p");
+  assert.match(prompts[0].body.parts[0].text, /SPEC\.md/);
+
+  await writeFile(path.join(root, "SPEC.md"), "spec");
+  await writeFile(path.join(root, "opencode-autonomous.json"), "{}");
+  const publishedPrompts = [];
+  const publishedGuard = await hooks(root, { p: "prometheus" }, {}, {}, publishedPrompts);
+  await publishedGuard.event({ event: { type: "session.idle", properties: { sessionID: "p" } } });
+  assert.equal(publishedPrompts.length, 0);
 }));
 
 test("only prometheus may invoke workflow tools", async () => fixture(async root => {

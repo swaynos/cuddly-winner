@@ -129,6 +129,12 @@ requirements,” not “all commands have already passed.”
 Prometheus may end without publishing only for a concrete planning blocker or a
 focused, decision-changing question.
 
+When a Prometheus session becomes idle without both root scaffold files, the
+immutability plugin sends one continuation prompt to that same session. The
+continuation restates the publication gate while preserving the agent's ability
+to report a concrete blocker or focused question. It is limited to one prompt
+per session to prevent a self-triggering idle loop.
+
 ## Autonomous Flow
 
 Autonomous reads the unchanged scaffold and chooses only the declared strategy.
