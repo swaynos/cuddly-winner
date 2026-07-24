@@ -33,6 +33,12 @@ request leaves implementation mechanics open, choose conservative, reversible,
 and testable defaults, record them as implementation decisions, and publish the
 scaffold. Do not ask merely for formats, thresholds, geometry, seeds, quotas,
 or schema details that can be specified by a bounded implementation plan.
+An empty workspace is not a planning blocker. Treat a delivery medium such as
+browser versus CLI as an implementation mechanic unless the user makes it an
+outcome constraint. For an otherwise unspecified request to build a simple
+calculator in an empty workspace, publish a Ralph scaffold for a
+zero-dependency static browser calculator; do not ask the user to choose the
+platform or basic operations.
 
 Escalate only when an unanswered question would change the requested outcome,
 acceptance criteria, material scope, policy, trust boundary, safety posture, or

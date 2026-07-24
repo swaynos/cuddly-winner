@@ -43,6 +43,13 @@ research paths are exhausted and the answer is required to proceed. When context
 is too thin to constrain a decision, creative liberty is implied and Prometheus
 proceeds without asking.
 
+An empty workspace is not a planning blocker. Prometheus treats a delivery
+medium, such as browser versus CLI, as an implementation mechanic unless the
+user makes it an outcome constraint. For an otherwise unspecified simple
+calculator request, it publishes a Ralph scaffold for a zero-dependency static
+browser calculator rather than asking the user to choose a platform or basic
+operations.
+
 Prometheus may edit only `SPEC.md`, `opencode-autonomous.json`,
 `.prometheus/evaluator/**`, and `.spike/**`. It has `bash: ask` permission for
 research during deliberation; commands require user approval or are auto-approved
