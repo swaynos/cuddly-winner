@@ -18,28 +18,6 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
-def _load_dotenv(path: pathlib.Path = ROOT / ".env") -> None:
-    """Load KEY=VALUE from .env into os.environ via setdefault (never overwrites)."""
-    if not path.is_file():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[7:].lstrip()
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if not key or not key.replace("_", "a").isalnum() or key[0].isdigit():
-            continue
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        os.environ.setdefault(key, value)
-
-
 def deploy(config: pathlib.Path, *args: str) -> None:
     env = os.environ | {"OPENCODE_DEPLOY_CONFIG_DIR": str(config)}
     subprocess.run(
@@ -52,11 +30,15 @@ def deploy(config: pathlib.Path, *args: str) -> None:
     )
 
 
-def _run_scenario_agent(agent: str, prompt: str, model: str, workspace: pathlib.Path) -> str:
+def _run_scenario_agent(agent: str, prompt: str, model: str | None, workspace: pathlib.Path) -> str:
     """Run one OpenCode agent scenario and return combined stdout+stderr."""
     workspace.mkdir(parents=True, exist_ok=True)
+    command = ["opencode", "run", "--dir", str(workspace), "--agent", agent]
+    if model:
+        command.extend(["--model", model])
+    command.append(prompt)
     result = subprocess.run(
-        ["opencode", "run", "--dir", str(workspace), "--agent", agent, "--model", model, prompt],
+        command,
         capture_output=True,
         text=True,
         timeout=120,
@@ -64,13 +46,10 @@ def _run_scenario_agent(agent: str, prompt: str, model: str, workspace: pathlib.
     return result.stdout + result.stderr
 
 
-def run_behavioral_scenarios(model: str) -> None:
-    """Run LLM-in-the-loop behavioral scenarios. Skipped if opencode or OPENAI_API_KEY is absent."""
+def run_behavioral_scenarios(model: str | None) -> None:
+    """Run LLM-in-the-loop scenarios with the configured OpenCode profile."""
     if not shutil.which("opencode"):
         print("opencode not on PATH — skipping LLM behavioral scenarios")
-        return
-    if not os.environ.get("OPENAI_API_KEY"):
-        print("OPENAI_API_KEY not set — skipping LLM behavioral scenarios")
         return
 
     print("\nRunning LLM behavioral scenarios…")
@@ -143,10 +122,8 @@ def run_behavioral_scenarios(model: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-llm", action="store_true")
-    parser.add_argument("--model", default="openai/gpt-5.4-nano")
+    parser.add_argument("--model", help="Override the configured OpenCode default model")
     args = parser.parse_args()
-
-    _load_dotenv()
 
     agents = {p.stem: p.read_text() for p in (ROOT / "agents").glob("*.md")}
     require(set(agents) == MANAGED_AGENTS, "optional managed-agent roster mismatch")

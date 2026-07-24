@@ -40,9 +40,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 
-DEFAULT_MODEL = "openai/gpt-5.4-nano"
-
-
 def _validate_skill_file(skill_file: Path) -> list[str]:
     """Return structural errors for one packaged skill file."""
     if not skill_file.is_file():
@@ -487,7 +484,7 @@ def test_skill_body_limits() -> list[TestFailure]:
 # Test 6: Project-local agent suggestion behavior (LLM pressure test)
 # ---------------------------------------------------------------------------
 
-def test_project_local_suggestion(model: str, skip_llm: bool) -> list[TestFailure]:
+def test_project_local_suggestion(model: str | None, skip_llm: bool) -> list[TestFailure]:
     """
     Pressure test: ask plan agent to suggest project curation.
     Verify it gates on:
@@ -502,11 +499,6 @@ def test_project_local_suggestion(model: str, skip_llm: bool) -> list[TestFailur
         _print_pass("Skipped via --skip-llm")
         return failures
 
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    if not api_key:
-        _print_pass("Skipped (no OPENAI_API_KEY)")
-        return failures
-
     with tempfile.TemporaryDirectory(prefix="skill-plan-test-") as tmpdir:
         tmpdir_path = Path(tmpdir)
         repo_root = tmpdir_path / "test_repo"
@@ -519,13 +511,15 @@ def test_project_local_suggestion(model: str, skip_llm: bool) -> list[TestFailur
         try:
             env = os.environ.copy()
             # Point to repo root
+            command = ["opencode", "run", "--agent", "plan"]
+            if model:
+                command.extend(["--model", model])
+            command.append(
+                "I need a project-specific curation strategy. Suggest how to organize agents. "
+                "Should we use project-local agents or rely on globals?"
+            )
             result = subprocess.run(
-                [
-                    "opencode", "run",
-                    "--agent", "plan",
-                    "--model", model,
-                    "I need a project-specific curation strategy. Suggest how to organize agents. Should we use project-local agents or rely on globals?",
-                ],
+                command,
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -630,7 +624,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--skip-llm", action="store_true", help="Skip LLM pressure tests")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Model for LLM tests (default: {DEFAULT_MODEL})")
+    parser.add_argument("--model", help="Override the configured OpenCode default model")
     args = parser.parse_args()
 
     print("\n\033[1mOpenCode Skill Coverage Tests\033[0m")

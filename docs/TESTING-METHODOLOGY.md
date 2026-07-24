@@ -65,6 +65,15 @@ Live end-to-end evaluations test planning (`test_planning.py`) and implementatio
 
 ---
 
+## Live Model Defaults
+
+`tests/verify_opencode.py` and `tests/test_skill_coverage.py` run optional
+live-model scenarios with the user's configured OpenCode provider, credentials,
+and default model. They do not load `.env` credentials or select a model by
+default. Callers may select a configured model explicitly with `--model`.
+
+---
+
 ## Mutation Testing Methodology (`evals/mutation/`)
 
 Mutation testing evaluates the sensitivity and strength of the test suite.
