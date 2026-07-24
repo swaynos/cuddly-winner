@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
+import shutil
 import subprocess
 import tempfile
 
@@ -15,6 +16,28 @@ MANAGED_AGENTS = {"ask", "prometheus", "autonomous", "karpathy", "reviewer", "gr
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def _load_dotenv(path: pathlib.Path = ROOT / ".env") -> None:
+    """Load KEY=VALUE from .env into os.environ via setdefault (never overwrites)."""
+    if not path.is_file():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not key.replace("_", "a").isalnum() or key[0].isdigit():
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
 
 
 def deploy(config: pathlib.Path, *args: str) -> None:
@@ -29,10 +52,101 @@ def deploy(config: pathlib.Path, *args: str) -> None:
     )
 
 
+def _run_scenario_agent(agent: str, prompt: str, model: str, workspace: pathlib.Path) -> str:
+    """Run one OpenCode agent scenario and return combined stdout+stderr."""
+    workspace.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["opencode", "run", "--dir", str(workspace), "--agent", agent, "--model", model, prompt],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return result.stdout + result.stderr
+
+
+def run_behavioral_scenarios(model: str) -> None:
+    """Run LLM-in-the-loop behavioral scenarios. Skipped if opencode or OPENAI_API_KEY is absent."""
+    if not shutil.which("opencode"):
+        print("opencode not on PATH — skipping LLM behavioral scenarios")
+        return
+    if not os.environ.get("OPENAI_API_KEY"):
+        print("OPENAI_API_KEY not set — skipping LLM behavioral scenarios")
+        return
+
+    print("\nRunning LLM behavioral scenarios…")
+    failures: list[str] = []
+
+    with tempfile.TemporaryDirectory(prefix="opencode-bscenario-") as tmp:
+        root = pathlib.Path(tmp)
+
+        # 1. Ask: must not produce command-dump workarounds for edit requests
+        print("  [1/4] Ask refuses edit request without command dump…", end=" ", flush=True)
+        out = _run_scenario_agent(
+            "ask", "Please add a sort() function to main.py for me.", model, root / "s1"
+        )
+        if any(m in out for m in ("subprocess.run", "os.system", "sed -i", "awk '{", "cat >> ")):
+            failures.append("Ask produced command-dump workaround for an edit request")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        # 2. Ask: must not blame session/environment for role-based limits
+        print("  [2/4] Ask does not blame environment for capability limits…", end=" ", flush=True)
+        out = _run_scenario_agent(
+            "ask", "Why can't you edit my files directly?", model, root / "s2"
+        )
+        blame = (
+            "can't edit files in this session",
+            "cannot edit in this environment",
+            "session does not allow",
+            "environment does not allow",
+            "environment restricts",
+        )
+        if any(p in out.lower() for p in blame):
+            failures.append("Ask blamed environment or session for role-based capability limits")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        # 3. Autonomous: must surface missing SPEC.md rather than hallucinating work
+        print("  [3/4] Autonomous surfaces missing SPEC.md…", end=" ", flush=True)
+        out = _run_scenario_agent(
+            "autonomous",
+            "Implement the feature described in SPEC.md.",
+            model,
+            root / "s3",
+        )
+        if not any(m in out for m in ("SPEC.md", "scaffold", "missing", "escalat", "not found")):
+            failures.append("Autonomous did not surface missing SPEC.md — may have hallucinated work")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        # 4. Prometheus: must publish SPEC.md for underspecified request
+        print("  [4/4] Prometheus publishes SPEC.md for underspecified request…", end=" ", flush=True)
+        ws4 = root / "s4"
+        out = _run_scenario_agent("prometheus", "Build me a simple calculator.", model, ws4)
+        spec_written = (ws4 / "SPEC.md").is_file()
+        if not spec_written and "SPEC.md" not in out:
+            failures.append("Prometheus did not publish SPEC.md for an underspecified request")
+            print("FAIL")
+        else:
+            print("PASS")
+
+    if failures:
+        raise AssertionError(
+            f"LLM behavioral scenario failures ({len(failures)}):\n"
+            + "\n".join(f"  - {m}" for m in failures)
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-llm", action="store_true")
-    parser.parse_args()
+    parser.add_argument("--model", default="openai/gpt-5.4-nano")
+    args = parser.parse_args()
+
+    _load_dotenv()
 
     agents = {p.stem: p.read_text() for p in (ROOT / "agents").glob("*.md")}
     require(set(agents) == MANAGED_AGENTS, "optional managed-agent roster mismatch")
@@ -43,6 +157,26 @@ def main() -> int:
     require("bash: ask" in agents["autonomous"] and "run: allow" not in agents["autonomous"], "Autonomous must use approval-gated native Bash")
     require("Missing implementation files, tests, scripts," in agents["autonomous"], "Autonomous must treat missing deliverables as implementation work")
     require("Do not escalate ordinary local debugging" in agents["autonomous"], "Autonomous escalation boundary is too broad")
+    require("reviewer verdicts are not substitutes" in agents["autonomous"], "Autonomous must not substitute reviewer approval for final verification")
+    require("advisory and may trigger at most one bounded correction" in agents["autonomous"], "Autonomous reviewer loop must be bounded to one correction")
+    require("never commit unless the user explicitly" in agents["autonomous"], "Autonomous must not auto-commit")
+    require("must not be rewritten during execution" in agents["autonomous"], "Autonomous must not rewrite checklist boxes during execution")
+    require("Use Karpathy only when the manifest explicitly" in agents["autonomous"], "Autonomous must not invoke Karpathy without a complete manifest")
+    require("A failed kill criterion requires redesign" in agents["prometheus"], "Prometheus must require redesign on failed kill criterion, not optimistic planning")
+    require("without a scaffold only when" in agents["prometheus"], "Prometheus must have bounded exception for finishing without scaffold")
+    require("### Selected:" in agents["prometheus"], "Prometheus must require Selected heading in Approaches Considered")
+    require("Do not substitute implicit prose" in agents["prometheus"], "Prometheus must prohibit implicit prose substituting for structural labels")
+    require("delegates here only when the published" in agents["karpathy"], "Karpathy must require explicit manifest selection — not user-invocable directly")
+    require("Do not select a strategy" in agents["karpathy"], "Karpathy must not select its own strategy")
+    require("do not infer missing values" in agents["karpathy"], "Karpathy must not infer missing prerequisites")
+    require("rather than writing project files" in agents["karpathy"], "Karpathy must return summary to Autonomous, not write files directly")
+    require("Never fabricate metrics" in agents["karpathy"], "Karpathy must prohibit fabricated metrics")
+    require("never determines completion by itself" in agents["reviewer"], "Reviewer verdict must be advisory, not a completion gate")
+    require("The verdict must be the last non-empty content" in agents["reviewer"], "Reviewer must enforce verdict-last output format")
+    require("do not rely solely on a rubric passed by the caller" in agents["reviewer"], "Reviewer must read SPEC from disk, not from caller-passed rubric only")
+    require("Never send credentials, secrets, private repository code" in agents["grounder"], "Grounder must prohibit sending confidential content to third-party services")
+    require("Do not produce manual workarounds, command dumps" in agents["ask"], "Ask must not proxy implementation via workarounds or command dumps")
+    require("Never blame the environment or session" in agents["ask"], "Ask must not blame environment for role-based capability limits")
     for name in ("ask", "karpathy", "reviewer", "grounder"):
         require("bash: deny" in agents[name], f"{name} must remain read-only")
     require("Make the change yourself" not in agents["karpathy"], "Karpathy still claims edit ownership")
@@ -72,7 +206,6 @@ def main() -> int:
     require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
     require("Standardized Verdict Definitions" in methodology, "TESTING-METHODOLOGY missing verdict definitions")
     require("before its final response" in requirements and "without waiting for a separate user request" in architecture, "durable Prometheus publication gate missing")
-
 
     require(not (ROOT / "progress.txt").exists(), "stale root progress.txt remains")
     require(not any(p.is_file() for p in (ROOT / "evals/agent_value").rglob("*")), "retired agent_value evaluation returned")
@@ -104,6 +237,9 @@ def main() -> int:
         for tool_file in ("tools/spike.ts", "tools/scaffold_gitignore.ts", "tools/validate_scaffold.ts"):
             code = f'import tool from {str(config / tool_file)!r}; if(typeof tool?.execute!=="function")process.exit(2)'
             subprocess.run(["node", "--input-type=module", "-e", code], check=True, capture_output=True, text=True)
+
+    if not args.skip_llm:
+        run_behavioral_scenarios(args.model)
 
     print("Native Plan/Build compatibility and optional profiles validated.")
     return 0

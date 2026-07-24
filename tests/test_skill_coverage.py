@@ -40,7 +40,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-opencode-agents.sh"
 
-DEFAULT_MODEL = "openai/gpt-5-nano"
+DEFAULT_MODEL = "openai/gpt-5.4-nano"
 
 
 def _validate_skill_file(skill_file: Path) -> list[str]:
