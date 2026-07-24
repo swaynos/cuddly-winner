@@ -53,9 +53,12 @@ with `--auto`. Governance tools (`spike`, `validate_scaffold`,
 
 Autonomous owns implementation and final verification. It reads the published
 scaffold, executes bounded right-sized work, makes reversible implementation
-decisions within scope, and returns material product or policy ambiguity to
-Prometheus. It is the only managed identity permitted to edit ordinary project
-files.
+decisions within scope, and returns only outcome-changing product or policy
+ambiguity to Prometheus. Absent implementation files and unspecified mechanics
+such as formats, thresholds, geometry, seeds, quotas, split ratios, and schemas
+are implementation work: Autonomous selects conservative, reversible,
+deterministic defaults that satisfy the scaffold. It is the only managed identity
+permitted to edit ordinary project files.
 
 Autonomous uses native Bash with `ask` permission. OpenCode auto mode may approve
 those requests automatically. Autonomous must report exact commands and results,

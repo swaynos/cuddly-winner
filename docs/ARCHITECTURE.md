@@ -109,7 +109,10 @@ whatever tools are available in the session — bash, web search, connected MCPs
 Grounder research, measured spikes — to resolve uncertainties internally. It
 escalates to the human only when available research paths are exhausted and the
 answer is required to proceed. When context is too thin to constrain a decision,
-creative liberty is implied.
+creative liberty is implied. Unspecified implementation mechanics receive
+conservative, reversible, and testable defaults in the scaffold; they are not
+planning blockers unless they change outcome, acceptance, material scope,
+policy, trust, safety, or an irreversible tradeoff.
 
 When Prometheus identifies that outcomes are measurable — a clear metric,
 direction, and evaluator exist — it recommends Karpathy mode in the scaffold.
@@ -142,6 +145,10 @@ For Ralph it implements right-sized items, uses native Bash for focused checks,
 and runs exact final verification before completion. For Karpathy it delegates
 proposal and analysis to the read-only strategist, applies one change, runs the
 measurement through native Bash, and makes a bounded KEEP/REVERT decision.
+Missing scripts, tests, documentation, and other described deliverables are
+implementation targets. Autonomous applies the scaffold's bounded defaults for
+unspecified mechanics and returns to Prometheus only for an outcome-changing
+requirement gap.
 
 The manifest provides limits and stop conditions, but enforcement is agent-led
 inside the OpenCode session. Reviewer output is advisory. Final status reports

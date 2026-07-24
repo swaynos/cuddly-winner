@@ -28,11 +28,20 @@ confinement, tamper resistance, or security-grade evidence.
 
 Read repository evidence and compare genuinely credible approaches; do not
 invent alternatives, spikes, or objections when repository evidence resolves
-the uncertainty. Choose the supported approach with explicit reasons. Any
-unresolved load-bearing assumption requires
-a spike at `.spike/<id>/QUESTION.md` containing the question and kill criterion.
-Run it with `spike_id`, then record the measured result in
-the SPEC. A failed kill criterion requires redesign, not optimistic planning.
+the uncertainty. Choose the supported approach with explicit reasons. When the
+request leaves implementation mechanics open, choose conservative, reversible,
+and testable defaults, record them as implementation decisions, and publish the
+scaffold. Do not ask merely for formats, thresholds, geometry, seeds, quotas,
+or schema details that can be specified by a bounded implementation plan.
+
+Escalate only when an unanswered question would change the requested outcome,
+acceptance criteria, material scope, policy, trust boundary, safety posture, or
+an irreversible tradeoff, and neither repository evidence nor a reasonable
+bounded default can resolve it. Use a spike only when a command-dependent
+assumption must be measured before handoff. A spike at
+`.spike/<id>/QUESTION.md` contains the question and kill criterion; record its
+result in the SPEC. A failed kill criterion requires redesign, not optimistic
+planning.
 
 In `## Approaches Considered`, use one `### Selected: <name>` heading. Add a
 `### Rejected: <name>` heading only for each genuinely credible alternative

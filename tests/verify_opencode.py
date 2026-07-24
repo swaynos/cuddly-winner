@@ -39,7 +39,10 @@ def main() -> int:
     require("bash: deny" in agents["prometheus"] and "spike: ask" in agents["prometheus"], "Prometheus defaults missing")
     require("Publication is mandatory for every planning-ready Prometheus run" in agents["prometheus"], "Prometheus publication gate missing")
     require("does not wait for a separate user request to write the scaffold" in agents["prometheus"], "Prometheus publication must not require a second request")
+    require("Do not ask merely for formats, thresholds, geometry, seeds, quotas" in agents["prometheus"], "Prometheus must apply bounded defaults for unspecified mechanics")
     require("bash: ask" in agents["autonomous"] and "run: allow" not in agents["autonomous"], "Autonomous must use approval-gated native Bash")
+    require("Missing implementation files, tests, scripts," in agents["autonomous"], "Autonomous must treat missing deliverables as implementation work")
+    require("Do not escalate ordinary local debugging" in agents["autonomous"], "Autonomous escalation boundary is too broad")
     for name in ("ask", "karpathy", "reviewer", "grounder"):
         require("bash: deny" in agents[name], f"{name} must remain read-only")
     require("Make the change yourself" not in agents["karpathy"], "Karpathy still claims edit ownership")
