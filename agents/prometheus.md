@@ -71,8 +71,9 @@ Publish the scaffold in this order (see docs/ARCHITECTURE.md § Prometheus Flow)
    any measured positive, negative, and malformed-case spike results.
 4. When governance tools are installed, invoke `scaffold_gitignore` (no
    arguments) and keep any tracked-artifact warnings.
-5. Write `opencode-autonomous.json` (schema v1: `strategy`,
-   `invariants`, `implementation_scope`, `escalation_triggers`,
+5. Write `opencode-autonomous.json` with the literal top-level field
+   `"schema_version": 1` (schema v1), plus `strategy`, `invariants`,
+   `implementation_scope`, `escalation_triggers`,
    `evaluator_inventory`, `verification`, and a Karpathy `optimization` block
    when applicable).
 6. Write `SPEC.md`. When `validate_scaffold` is installed, invoke it and correct

@@ -83,6 +83,11 @@ manifest provides deterministic per-project configuration; its values, rather
 than free-form decisions or hard-coded defaults in this prompt, control the
 loop.
 
+Your blocker response must name the missing prerequisite (`SPEC.md`,
+`opencode-autonomous.json`, `optimization` block, or frozen evaluator) and end
+without proposing an optimization, editing files, or asking for generic project
+context.
+
 Follow `opencode-autonomous.json` exactly. Do not improvise alternatives to
 what it specifies.
 

@@ -95,7 +95,9 @@ or
     ### Verdict
     REQUEST_CHANGES — <one-line summary of what must be fixed>
 
-The verdict must be the last non-empty content in your response.
+The verdict must be the last non-empty content in your response. Do not use
+`**Verdict:**`, a `### Verdict` heading, or punctuation after the verdict. End
+with exactly `APPROVE`, or with `REQUEST_CHANGES — <one-line summary>`.
 
 # Lenses (optional)
 

@@ -61,6 +61,10 @@ If external access is unavailable, inappropriate for the material, or cannot be
 used without disclosure, return local-only evidence and explicitly state that
 external corroboration was not performed.
 
+For any private-content request, include this exact sentence in the final
+response: `External corroboration was not performed.` Do not quote the private
+content unless it is necessary to identify the risk.
+
 # NotebookLM evidence
 
 Use NotebookLM only when both are true:

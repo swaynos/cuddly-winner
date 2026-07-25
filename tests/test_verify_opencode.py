@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import verify_opencode
@@ -31,6 +33,37 @@ class BehavioralAssertionTests(unittest.TestCase):
             )
         )
         self.assertFalse(verify_opencode._subagent_fallback(output, "grounder"))
+
+    def test_json_events_extract_text_and_delegated_child(self) -> None:
+        stream = "\n".join(
+            [
+                '{"type":"text","part":{"text":"Parent summary"}}',
+                '{"type":"tool_use","part":{"tool":"task","state":{"input":{"subagent_type":"grounder"},"output":"<task_result>Child result</task_result>"}}}',
+            ]
+        )
+
+        events, text = verify_opencode._parse_json_events(stream)
+
+        self.assertEqual(text, "Parent summary")
+        self.assertTrue(verify_opencode._delegated_to(events, "grounder"))
+        self.assertEqual(verify_opencode._delegated_result(events, "grounder"), "<task_result>Child result</task_result>")
+
+    def test_task_result_text_removes_task_wrapper(self) -> None:
+        output = "<task id=\"ses_123\" state=\"completed\">\n<task_result>\nAPPROVE\n</task_result>\n</task>"
+
+        self.assertEqual(verify_opencode._task_result_text(output), "APPROVE")
+
+    def test_agent_timeout_becomes_a_scenario_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with mock.patch.object(
+                verify_opencode.subprocess,
+                "run",
+                side_effect=subprocess.TimeoutExpired(["opencode"], 300, output="partial output"),
+            ):
+                result = verify_opencode._run_scenario_agent("ask", "test", None, pathlib.Path(temporary))
+
+        self.assertEqual(result.returncode, 124)
+        self.assertIn("Timed out after 300 seconds", result.raw_output)
 
     def test_canonical_scaffold_requires_both_files(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

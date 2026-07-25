@@ -91,19 +91,18 @@ The suite defines 12 scenarios for all 6 managed agents (`ask`, `autonomous`,
 4. **`Autonomous` Auto-Commit Prevention**: Fixes a fixture typo but leaves Git `HEAD` and commit count unchanged without an explicit commit request.
 5. **`Prometheus` Scaffold Publication**: Writes both `SPEC.md` and `opencode-autonomous.json` for an underspecified request.
 6. **`Prometheus` Canonical Structure**: Validates exact canonical sections, selected approach, final handoff, and required manifest fields.
-7. **`Karpathy` Scaffold Guard**: Reports both missing scaffold files and makes no changes.
+7. **`Karpathy` Scaffold Guard**: Reports an incomplete published optimization harness and makes no changes.
 8. **`Karpathy` Bounded Proposal**: Uses a complete optimization fixture to propose a concrete change to one declared mutable target without modifying it.
 9. **`Reviewer` Rejection**: Ends a failed-verification review with `REQUEST_CHANGES` on the final non-empty line.
 10. **`Reviewer` Approval**: Ends a conforming verified-fixture review with `APPROVE` on the final non-empty line and cites evidence.
 11. **`Grounder` Local Evidence**: Cites the requested local `file:line` evidence.
 12. **`Grounder` Private Content**: Reports local-only handling and does not echo a private-content canary.
 
-`karpathy`, `reviewer`, and `grounder` are intentionally subagents. Current
-OpenCode CLI direct invocations fall back to Build for those roles; their
-scenarios are reported as `SKIP` in that runtime rather than falsely attributing
-Build output to them. Their permission and prompt contracts remain
-deterministically checked by `tests/verify_opencode.py`; parent-child behavioral
-coverage requires an OpenCode subagent-session integration fixture.
+`karpathy`, `reviewer`, and `grounder` are intentionally subagents. Their live
+scenarios invoke them through OpenCode's documented `@mention` path, then require
+the JSON task event to identify the requested child agent. The harness reads the
+child session's recorded tool calls for read-only and private-content checks; a
+fallback to the parent agent is a failure, not a skip.
 
 Deterministic unit tests in `tests/test_verify_opencode.py` cover the scenario
 assertion helpers, including missing scaffolds, duplicate sections, non-final
