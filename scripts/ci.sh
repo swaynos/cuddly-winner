@@ -12,6 +12,7 @@ fi
 
 PYTHON="$(bash scripts/ensure-venv.sh)"
 "$PYTHON" tests/verify_opencode.py --skip-llm
+"$PYTHON" -m unittest discover -s tests -p 'test_verify_opencode.py'
 node --test tests/plugins/*.test.mjs tests/integration/*.test.mjs
 "$PYTHON" -m unittest discover -s evals/mutation/tests -p 'test_*.py'
 "$PYTHON" tests/test_skill_coverage.py --skip-llm
