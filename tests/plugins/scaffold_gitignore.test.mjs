@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp, mkdir, rm, readFile, writeFile, symlink, chmod, stat } from "node:fs/promises";
-import { applyScaffoldGitignore, MANAGED_BLOCK, __testing } from "../../tools/scaffold_gitignore.ts";
+import scaffoldTool, { applyScaffoldGitignore, MANAGED_BLOCK, __testing } from "../../tools/scaffold_gitignore.ts";
 
 async function fixture(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "scaffold-gi-"));
@@ -17,6 +17,12 @@ test("creates .gitignore with the exact canonical block when absent", async () =
   const content = await readFile(gi(root), "utf8");
   assert.ok(content.includes(MANAGED_BLOCK));
   assert.equal(result.managed_paths.length, 4);
+}));
+
+test("uses the session directory when worktree is stale", async () => fixture(async (root) => {
+  const result = JSON.parse(await scaffoldTool.execute({}, { directory: root, worktree: "/" }));
+  assert.equal(result.changed, true);
+  assert.equal((await readFile(gi(root), "utf8")).includes(MANAGED_BLOCK), true);
 }));
 
 test("is byte-idempotent on repeated calls", async () => fixture(async (root) => {

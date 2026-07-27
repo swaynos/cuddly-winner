@@ -51,13 +51,12 @@ The eight skills are `local-word-document`, `playwright-image-generation`,
 `systematic-debugging`, `test-driven-development`,
 `verification-before-completion`, and `writing-skills`.
 
-`--with-workflow-tools` and `--with-skills` remain accepted as compatibility
-no-ops. Use `status` to inspect all managed entries and `remove` to remove
-current byte-identical copies or repository symlinks while preserving
-modifications. Use `--mode symlink` for a live development install. Override
-the OpenCode root with `--config-dir` or `OPENCODE_DEPLOY_CONFIG_DIR`; all
-destination directories derive from that one root. OpenCode loads agents, tools,
-and plugins at startup, so restart it after changes.
+Use `status` to inspect all managed entries and `remove` to remove current
+byte-identical copies or repository symlinks while preserving modifications. Use
+`--mode symlink` for a live development install. Override the OpenCode root with
+`--config-dir` or `OPENCODE_DEPLOY_CONFIG_DIR`; all destination directories
+derive from that one root. OpenCode loads agents, tools, and plugins at startup,
+so restart it after changes.
 
 ## Optional Agents
 

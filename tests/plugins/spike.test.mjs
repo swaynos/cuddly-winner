@@ -44,6 +44,15 @@ test("spike runs natively from its directory and persists bounded evidence", asy
   assert.equal(await fs.readFile(path.join(dir, "runs", `${result.run_id}.log`), "utf8"), "ok");
 }));
 
+test("spike uses the session directory when worktree is stale", async () => fixture(async root => {
+  await contract(root);
+  const result = JSON.parse(await spikeTool.execute(
+    { command: "printf ok", spike_id: "probe" },
+    { directory: root, worktree: "/" },
+  ));
+  assert.equal(result.working_directory, path.join(root, ".spike", "probe"));
+}));
+
 test("spike reports nonzero exits and enforces time and output bounds", async () => fixture(async root => {
   await contract(root);
   assert.equal((await runSpike({ command: "exit 7", root, spike_id: "probe" })).exit_code, 7);

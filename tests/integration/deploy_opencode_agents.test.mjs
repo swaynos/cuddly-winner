@@ -44,14 +44,14 @@ test("default copy install is idempotent and includes the complete managed profi
   assert.match(second.stdout, /Unchanged:/);
 }));
 
-test("legacy workflow-tools flag installs the complete managed profile", async () => fixture(async root => {
+test("default installation provides a self-contained workflow tool runtime", async () => fixture(async root => {
   const bin = path.join(root, "bin");
   const config = path.join(root, "config");
   const log = path.join(root, "npm.log");
   await mkdir(bin, { recursive: true });
   await writeFile(path.join(bin, "npm"), "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" > \"$NPM_LOG\"\n", { mode: 0o755 });
 
-  await deployFixture(root, "install", ["--with-workflow-tools"], { NPM_LOG: log });
+  await deployFixture(root, "install", [], { NPM_LOG: log });
   for (const name of ["spike.ts", "scaffold_gitignore.ts", "validate_scaffold.ts"]) {
     await stat(path.join(config, "tools", name));
   }
@@ -64,13 +64,13 @@ test("legacy workflow-tools flag installs the complete managed profile", async (
     assert.equal(installed.version, "1.17.15");
   }
 
-  await deployFixture(root, "install", ["--with-skills"]);
+  await deployFixture(root);
   await stat(path.join(config, "tools", "spike.ts"));
 }));
 
 test("symlink install and mode-independent remove cover all managed groups", async () => fixture(async root => {
   const config = path.join(root, "config");
-  await deployFixture(root, "install", ["--mode", "symlink", "--with-workflow-tools", "--with-skills"]);
+  await deployFixture(root, "install", ["--mode", "symlink"]);
   assert.equal((await lstat(path.join(config, "agents", "prometheus.md"))).isSymbolicLink(), true);
   assert.equal((await lstat(path.join(config, "plugins", "immutability.ts"))).isSymbolicLink(), true);
   assert.equal((await lstat(path.join(config, "tools", "spike.ts"))).isSymbolicLink(), true);
@@ -114,7 +114,7 @@ test("status reports every managed group without profile flags", async () => fix
 }));
 
 test("retired and per-category configuration flags are rejected", async () => fixture(async root => {
-  for (const args of [["--with-autonomous"], ["--with-tools"], ["--agents-dir", path.join(root, "agents")], ["--source-dir", path.join(root, "source")]]) {
+  for (const args of [["--with-autonomous"], ["--with-tools"], ["--with-workflow-tools"], ["--with-skills"], ["--agents-dir", path.join(root, "agents")], ["--source-dir", path.join(root, "source")]]) {
     await assert.rejects(deployFixture(root, "install", args), /Unknown argument/);
   }
 }));

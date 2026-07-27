@@ -339,20 +339,20 @@ Evidence classes:
 - **Never:** install repository `AGENTS.md`, a runner, or a supervisor.
 - **Evidence:** F deployment fixture.
 
-### UC-DEP-02: Legacy profile flags preserve complete installation
+### UC-DEP-02: Retired profile flags are rejected
 
 - **Given:** `install --with-workflow-tools` or `install --with-skills`.
-- **When:** installation completes.
-- **Then:** install the complete managed profile, including `spike`, `validate_scaffold`, `scaffold_gitignore`, the pinned tool SDK, and all packaged skills.
-- **Never:** install Bubblewrap, Lima, a VM, a runner, or a supervisor.
-- **Evidence:** F deployment fixture and import smoke test.
+- **When:** installation parses arguments.
+- **Then:** reject the command as an unknown argument.
+- **Never:** retain alternate installation profiles.
+- **Evidence:** F deployment fixture.
 
 ### UC-DEP-03: Installation is additive from one config root
 
-- **Given:** a config root and optional compatibility flags.
+- **Given:** a config root.
 - **When:** installation runs in copy or symlink mode.
 - **Then:** derive all destinations beneath the root and install every managed group.
-- **Never:** accept per-category/source overrides or treat compatibility flags as profile selectors.
+- **Never:** accept per-category/source overrides or alternate profile flags.
 - **Evidence:** F copy/symlink/additive fixture.
 
 ### UC-DEP-04: Status and removal cover current managed entries safely

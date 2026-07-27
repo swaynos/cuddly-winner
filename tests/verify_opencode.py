@@ -758,9 +758,9 @@ def main() -> int:
         require({"prometheus", "autonomous"} <= installed, "managed agents missing from default profile")
         require((config / "node_modules/@opencode-ai/plugin").is_dir(), "tool SDK missing from default profile")
 
-    with tempfile.TemporaryDirectory(prefix="opencode-workflow-tools-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="opencode-tools-") as tmp:
         config = pathlib.Path(tmp) / "config"
-        deploy(config, "--with-workflow-tools")
+        deploy(config)
         require(not (config / "plugins/opencode-autonomous-supervisor.js").exists(), "obsolete supervisor deployed")
         require(not (config / "tools/run.ts").exists(), "obsolete protected runner deployed")
         require((config / "tools/spike.ts").is_file(), "spike tool not deployed")
@@ -774,7 +774,7 @@ def main() -> int:
     if not args.skip_llm:
         run_behavioral_scenarios(args.model)
 
-    print("Native Plan/Build compatibility and optional profiles validated.")
+    print("Native Plan/Build compatibility and managed profile validated.")
     return 0
 
 

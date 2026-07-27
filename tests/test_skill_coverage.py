@@ -345,13 +345,11 @@ def test_symlink_deploy() -> list[TestFailure]:
             env = os.environ.copy()
             env["OPENCODE_CONFIG_DIR"] = str(config_dir)
 
-            # Legacy compatibility flag must preserve symlink deployment.
             result = subprocess.run(
                 [
                     "bash", str(DEPLOY_SCRIPT), "install",
                     "--config-dir", str(config_dir),
                     "--mode", "symlink",
-                    "--with-skills",
                 ],
                 capture_output=True,
                 text=True,

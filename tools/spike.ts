@@ -199,7 +199,7 @@ export default tool({
     timeoutSec: tool.schema.number().positive().optional().describe("Timeout in seconds"),
   },
   async execute(args, context) {
-    const root = path.resolve(context.worktree ?? context.directory ?? process.cwd());
+    const root = path.resolve(context.directory ?? context.worktree ?? process.cwd());
     return JSON.stringify(await runSpike({ ...args, root }), null, 2);
   },
 });

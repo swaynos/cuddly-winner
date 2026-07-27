@@ -190,22 +190,21 @@ engineering context. Git commits remain user-controlled.
 
 Default installation deploys the complete managed profile: all six agents, the
 immutability plugin, `spike`, `validate_scaffold`, `scaffold_gitignore`, the
-pinned OpenCode tool SDK, and all non-core skills. `--with-workflow-tools` and
-`--with-skills` remain accepted compatibility no-ops. This ensures the shipped
+pinned OpenCode tool SDK, and all non-core skills. This ensures the shipped
 Prometheus agent always has its declared command and governance tools available.
 
 The installer accepts one configuration root from `--config-dir`,
 `OPENCODE_DEPLOY_CONFIG_DIR`, or `opencode debug paths`, in that order. Agent,
 plugin, tool, and skill destinations are fixed subdirectories of that root.
 Copy and symlink modes are supported. Status and removal inspect every current
-managed entry regardless of compatibility flags. Removal deletes only links
+managed entry. Removal deletes only links
 to current repository sources or current byte-identical copies; modified and
 unrelated entries are preserved.
 
-The retired `--with-autonomous`, `--with-tools`, per-category path overrides,
-source overrides, and local deployment environment file are unsupported. The
-installer performs no automatic migration of retired runner or supervisor
-artifacts.
+The retired `--with-autonomous`, `--with-tools`, `--with-workflow-tools`,
+`--with-skills`, per-category path overrides, source overrides, and local
+deployment environment file are unsupported. The installer performs no
+automatic migration of retired runner or supervisor artifacts.
 
 ## Governance Tools
 

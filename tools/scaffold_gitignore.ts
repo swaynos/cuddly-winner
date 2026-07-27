@@ -205,8 +205,8 @@ export default tool({
   args: {},
   async execute(_args, context) {
     const root = path.resolve(
-      (context as { worktree?: string; directory?: string }).worktree ??
-        (context as { directory?: string }).directory ??
+      (context as { directory?: string }).directory ??
+        (context as { worktree?: string }).worktree ??
         process.cwd(),
     );
     return JSON.stringify(await applyScaffoldGitignore(root), null, 2);

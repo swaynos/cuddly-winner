@@ -200,6 +200,7 @@ test("validate_scaffold tool performs static SPEC and manifest consistency check
     writeFileSync(path.join(root, "SPEC.md"), spec(command));
     writeFileSync(path.join(root, "opencode-autonomous.json"), JSON.stringify(manifest));
     assert.equal((await validateScaffold(root)).valid, true);
+    assert.equal(JSON.parse(await validateTool.execute({}, { directory: root, worktree: "/" })).valid, true);
     writeFileSync(path.join(root, "SPEC.md"), spec("different command"));
     await assert.rejects(validateScaffold(root), /must match exactly/);
   } finally {

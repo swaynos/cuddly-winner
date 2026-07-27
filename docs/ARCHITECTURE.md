@@ -165,14 +165,17 @@ read-only roles, remain denied.
 
 The installer deploys one complete managed profile: agents, `immutability.ts`,
 the three workflow tools and pinned SDK dependency, and non-core skills.
-`--with-workflow-tools` and `--with-skills` remain accepted compatibility
-no-ops.
 
 Install sources are fixed repository paths. A single configuration root is
 resolved from the CLI, one environment variable, or OpenCode's debug output;
 `agents/`, `plugins/`, `tools/`, and `skills/` are derived beneath it. One entry
 synchronizer handles files and directories in copy or symlink mode, including
 idempotence, collision backups, status, and safe removal.
+
+Workflow tools and the immutability plugin treat the OpenCode session directory
+as the active project root. They use worktree only when no session directory is
+available, preventing a stale root worktree from redirecting scaffold artifacts
+or path enforcement to `/`.
 
 Status and remove always process all current managed groups. Remove accepts
 only a current repository symlink or byte-identical current copy and preserves

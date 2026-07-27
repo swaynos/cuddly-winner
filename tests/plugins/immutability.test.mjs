@@ -18,8 +18,8 @@ function client(agents = {}, parents = {}, sessions = {}, prompts = []) {
   } };
 }
 
-async function hooks(root, agents = {}, parents = {}, sessions = {}, prompts = []) {
-  return ImmutabilityGuard({ directory: root, worktree: root, client: client(agents, parents, sessions, prompts) });
+async function hooks(root, agents = {}, parents = {}, sessions = {}, prompts = [], worktree = root) {
+  return ImmutabilityGuard({ directory: root, worktree, client: client(agents, parents, sessions, prompts) });
 }
 
 const mutate = (guard, agent, filePath, tool = "edit") => guard["tool.execute.before"](
@@ -59,6 +59,12 @@ test("prometheus can write scaffold artifacts only", async () => fixture(async r
   await assert.rejects(mutate(guard, "p", path.join(root, "src", "app.ts")), /restricted/);
   await assert.rejects(guard["tool.execute.before"]({ tool: "bash", sessionID: "p", callID: "shell" }, { args: { command: "true", cwd: root } }), /directly/);
   await guard["tool.execute.before"]({ tool: "spike", sessionID: "p", callID: "spike" }, { args: { spike_id: "probe" } });
+}));
+
+test("session directory remains the managed root when worktree is stale", async () => fixture(async root => {
+  const guard = await hooks(root, { p: "prometheus" }, {}, {}, [], "/");
+  await mutate(guard, "p", path.join(root, "SPEC.md"));
+  await assert.rejects(mutate(guard, "p", "/SPEC.md"), /escapes active worktree/);
 }));
 
 test("prometheus is continued once when it idles without publishing a scaffold", async () => fixture(async root => {

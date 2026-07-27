@@ -13,8 +13,6 @@ Usage:
 Options:
   --config-dir PATH      OpenCode configuration root
   --mode MODE            Install mode: copy (default) or symlink
-  --with-workflow-tools  Accepted for compatibility; workflow tools install by default
-  --with-skills          Accepted for compatibility; skills install by default
   -h, --help             Show this help
 
 Configuration root precedence:
@@ -196,7 +194,6 @@ while [[ $# -gt 0 ]]; do
       MODE="$2"
       shift 2
       ;;
-    --with-workflow-tools|--with-skills) shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1" ;;
   esac

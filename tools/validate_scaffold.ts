@@ -309,7 +309,7 @@ export default tool({
   description: "Validate SPEC.md and opencode-autonomous.json structurally without executing project commands.",
   args: {},
   async execute(_args, context) {
-    const root = path.resolve(context.worktree ?? context.directory ?? process.cwd());
+    const root = path.resolve(context.directory ?? context.worktree ?? process.cwd());
     return JSON.stringify(await validateScaffold(root), null, 2);
   },
 });

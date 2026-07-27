@@ -66,7 +66,7 @@ function isPublishedScaffold(relPath: string): boolean {
 }
 
 export const ImmutabilityGuard = async ({ directory, worktree, client }: { directory: string; worktree: string; client: any }) => {
-  const lexicalRoot = resolve(worktree || directory);
+  const lexicalRoot = resolve(directory || worktree);
   const root = realpathSync(lexicalRoot);
   const sessionAgents = new Map<string, string>();
   const publicationReminders = new Set<string>();
