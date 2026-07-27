@@ -11,7 +11,7 @@ Plan / Build / unknown agents -> OpenCode unchanged
 Managed agent
   -> ancestry-based identity resolution
   -> fixed edit-tool boundary
-  -> optional lightweight workflow tools
+  -> managed workflow tools
   -> OpenCode native permissions for commands
 ```
 
@@ -32,8 +32,8 @@ Native subprocess effects are outside path interception. Prometheus and Autonomo
 both use `bash: ask`, so each command requires user approval and auto mode may
 approve it. Explicit command denies for read-only roles remain enforced.
 
-The immutability plugin is deferred pending agent behavior validation; see
-`docs/REQUIREMENTS.md` for details.
+The immutability plugin is part of the managed profile and does not affect
+native OpenCode agents.
 
 ## Workflow Tools
 
@@ -163,11 +163,10 @@ read-only roles, remain denied.
 
 ## Deployment
 
-The installer has three independent choices:
-
-- default: agents plus `immutability.ts`;
-- `--with-workflow-tools`: the three tools and pinned SDK dependency;
-- `--with-skills`: non-core skills.
+The installer deploys one complete managed profile: agents, `immutability.ts`,
+the three workflow tools and pinned SDK dependency, and non-core skills.
+`--with-workflow-tools` and `--with-skills` remain accepted compatibility
+no-ops.
 
 Install sources are fixed repository paths. A single configuration root is
 resolved from the CLI, one environment variable, or OpenCode's debug output;
@@ -175,7 +174,6 @@ resolved from the CLI, one environment variable, or OpenCode's debug output;
 synchronizer handles files and directories in copy or symlink mode, including
 idempotence, collision backups, status, and safe removal.
 
-Install is additive, so omitted optional flags do not uninstall prior entries.
 Status and remove always process all current managed groups. Remove accepts
 only a current repository symlink or byte-identical current copy and preserves
 everything else. Retired control-plane artifacts are outside this installer and
@@ -186,7 +184,7 @@ Lima, Docker, a VM image, or a supervisor.
 
 ## Skills Architecture
 
-Optional non-core skills are packaged under `skills/` and deployed when `--with-skills` is passed:
+Non-core skills are packaged under `skills/` and deployed by default:
 
 - `local-word-document`: Manipulate and format document files.
 - `playwright-image-generation`: Visual evaluation and DOM screenshot generation.

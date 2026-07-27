@@ -34,42 +34,30 @@ Command security belongs to OpenCode's native permission model:
 
 ## Installation
 
-The default profile installs the six agent definitions and managed-agent
-immutability plugin:
+The default installation deploys the complete managed profile: six agent
+definitions, the managed-agent immutability plugin, three workflow tools and
+their pinned SDK, and eight non-core skills:
 
 ```bash
 bash scripts/deploy-opencode-agents.sh install
 ```
 
-Install the optional Prometheus workflow tools:
-
-```bash
-bash scripts/deploy-opencode-agents.sh install --with-workflow-tools
-```
-
-This profile installs:
-
 - `spike`, an approval-gated native command helper for contracted investigations
 - `validate_scaffold`, a static SPEC and manifest validator
 - `scaffold_gitignore`, the constrained generated-artifact exclusion helper
 
-Install non-core skills separately when wanted:
+The eight skills are `local-word-document`, `playwright-image-generation`,
+`project-agent-scaffolding`, `subagent-driven-development`,
+`systematic-debugging`, `test-driven-development`,
+`verification-before-completion`, and `writing-skills`.
 
-```bash
-bash scripts/deploy-opencode-agents.sh install --with-skills
-```
-
-This installs eight non-core skills (`local-word-document`, `playwright-image-generation`, `project-agent-scaffolding`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, `writing-skills`).
-
-
-Installation is additive: omitting `--with-workflow-tools` or `--with-skills`
-leaves previously installed optional entries unchanged. Use `status` to inspect
-all managed entries and `remove` to remove current byte-identical copies or
-repository symlinks while preserving modifications. Use `--mode symlink` for a
-live development install. Override the OpenCode root with `--config-dir` or
-`OPENCODE_DEPLOY_CONFIG_DIR`; all destination directories derive from that one
-root. OpenCode loads agents, tools, and plugins at startup, so restart it after
-changes.
+`--with-workflow-tools` and `--with-skills` remain accepted as compatibility
+no-ops. Use `status` to inspect all managed entries and `remove` to remove
+current byte-identical copies or repository symlinks while preserving
+modifications. Use `--mode symlink` for a live development install. Override
+the OpenCode root with `--config-dir` or `OPENCODE_DEPLOY_CONFIG_DIR`; all
+destination directories derive from that one root. OpenCode loads agents, tools,
+and plugins at startup, so restart it after changes.
 
 ## Optional Agents
 

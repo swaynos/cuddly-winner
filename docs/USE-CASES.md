@@ -329,36 +329,30 @@ Evidence classes:
 
 
 
-## Deferred Infrastructure
-
-The following use cases cover the optional governance layer (deployment lifecycle,
-spike tool, and scaffold validation tools). They are deferred pending validation
-of core agent behavior; see `docs/REQUIREMENTS.md` for context.
-
 ## Deployment
 
-### UC-DEP-01: Default profile is lightweight
+### UC-DEP-01: Default profile is complete
 
 - **Given:** a clean OpenCode configuration.
 - **When:** default installation runs.
-- **Then:** install six agents and `immutability.ts` only.
-- **Never:** install tools, SDK dependencies, repository `AGENTS.md`, a runner, or a supervisor.
+- **Then:** install six agents, `immutability.ts`, all workflow tools and their SDK, and all packaged skills.
+- **Never:** install repository `AGENTS.md`, a runner, or a supervisor.
 - **Evidence:** F deployment fixture.
 
-### UC-DEP-02: Workflow tools are opt-in
+### UC-DEP-02: Legacy profile flags preserve complete installation
 
-- **Given:** `install --with-workflow-tools`.
+- **Given:** `install --with-workflow-tools` or `install --with-skills`.
 - **When:** installation completes.
-- **Then:** install `spike`, `validate_scaffold`, `scaffold_gitignore`, and the pinned tool SDK.
+- **Then:** install the complete managed profile, including `spike`, `validate_scaffold`, `scaffold_gitignore`, the pinned tool SDK, and all packaged skills.
 - **Never:** install Bubblewrap, Lima, a VM, a runner, or a supervisor.
 - **Evidence:** F deployment fixture and import smoke test.
 
 ### UC-DEP-03: Installation is additive from one config root
 
-- **Given:** a config root and any optional install flags.
+- **Given:** a config root and optional compatibility flags.
 - **When:** installation runs in copy or symlink mode.
-- **Then:** derive all destinations beneath the root and add requested groups without removing omitted optional groups.
-- **Never:** accept per-category/source overrides or treat omitted flags as uninstall requests.
+- **Then:** derive all destinations beneath the root and install every managed group.
+- **Never:** accept per-category/source overrides or treat compatibility flags as profile selectors.
 - **Evidence:** F copy/symlink/additive fixture.
 
 ### UC-DEP-04: Status and removal cover current managed entries safely

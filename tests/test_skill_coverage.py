@@ -5,7 +5,7 @@ test_skill_coverage.py
 Comprehensive tests for skill deployment, discovery, and behavior pressure testing.
 
 Covers:
-1. Default install excludes skills (AC 20 compliance)
+1. Default install deploys skills
 2. Negative fixtures: unsupported frontmatter, mismatches, bad descriptions, etc.
 3. Skill discovery via `opencode debug skills`
 4. Pressure scenarios for each skill's behavior
@@ -98,13 +98,13 @@ def _print_dim(msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 1: Default install excludes skills
+# Test 1: Default install deploys skills
 # ---------------------------------------------------------------------------
 
-def test_default_install_no_skills() -> list[TestFailure]:
-    """AC 20: Default install must be agent-only, skills only with --with-skills."""
+def test_default_install_deploys_skills() -> list[TestFailure]:
+    """Default installation must deploy every packaged skill."""
     failures = []
-    _print_header("Test 1: Default install excludes skills")
+    _print_header("Test 1: Default install deploys skills")
 
     with tempfile.TemporaryDirectory(prefix="skill-test-default-") as tmpdir:
         tmpdir_path = Path(tmpdir)
@@ -120,7 +120,6 @@ def test_default_install_no_skills() -> list[TestFailure]:
                     "bash", str(DEPLOY_SCRIPT), "install",
                     "--config-dir", str(config_dir),
                     "--mode", "copy",
-                    # Notably: NO --with-skills flag
                 ],
                 capture_output=True,
                 text=True,
@@ -136,23 +135,20 @@ def test_default_install_no_skills() -> list[TestFailure]:
                 _print_fail("Deploy failed")
                 return failures
 
-            # Check that skills directory does NOT exist or is empty
-            if skills_dir.exists():
-                files = list(skills_dir.glob("**/SKILL.md"))
-                if files:
-                    failures.append(TestFailure(
-                        "default_install_no_skills",
-                        f"Default install deployed skills (unexpected): {len(files)} files found",
-                        details=[str(f) for f in files],
-                    ))
-                    _print_fail(f"Found {len(files)} skill files (should be 0)")
-                else:
-                    _print_pass("Skills directory exists but is empty — correct")
+            expected = {path.parent.name for path in SKILLS_DIR.glob("*/SKILL.md")}
+            deployed = {path.parent.name for path in skills_dir.glob("*/SKILL.md")}
+            if deployed != expected:
+                failures.append(TestFailure(
+                    "default_install_deploys_skills",
+                    "Default install did not deploy the complete skill set",
+                    details=[f"expected: {sorted(expected)}", f"deployed: {sorted(deployed)}"],
+                ))
+                _print_fail("Default install did not deploy the complete skill set")
             else:
-                _print_pass("Skills directory not created — correct")
+                _print_pass(f"Deployed all {len(expected)} packaged skills")
 
         except Exception as exc:
-            failures.append(TestFailure("default_install_no_skills", str(exc)))
+            failures.append(TestFailure("default_install_deploys_skills", str(exc)))
             _print_fail(str(exc))
 
     return failures
@@ -349,7 +345,7 @@ def test_symlink_deploy() -> list[TestFailure]:
             env = os.environ.copy()
             env["OPENCODE_CONFIG_DIR"] = str(config_dir)
 
-            # Install with --mode=symlink and --with-skills
+            # Legacy compatibility flag must preserve symlink deployment.
             result = subprocess.run(
                 [
                     "bash", str(DEPLOY_SCRIPT), "install",
@@ -633,7 +629,7 @@ def main() -> None:
     all_failures: list[TestFailure] = []
 
     # Run all tests
-    all_failures += test_default_install_no_skills()
+    all_failures += test_default_install_deploys_skills()
     all_failures += test_negative_fixtures()
     all_failures += test_skill_body_limits()
     all_failures += test_symlink_deploy()

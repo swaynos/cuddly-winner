@@ -188,17 +188,17 @@ engineering context. Git commits remain user-controlled.
 
 ## Deployment
 
-Default installation copies all six agents and the immutability plugin.
-`--with-workflow-tools` additionally installs `spike`, `validate_scaffold`, and
-`scaffold_gitignore` plus the pinned OpenCode tool SDK. `--with-skills` installs
-non-core skills. Installation is additive: omitted optional flags leave
-previously installed optional entries unchanged.
+Default installation deploys the complete managed profile: all six agents, the
+immutability plugin, `spike`, `validate_scaffold`, `scaffold_gitignore`, the
+pinned OpenCode tool SDK, and all non-core skills. `--with-workflow-tools` and
+`--with-skills` remain accepted compatibility no-ops. This ensures the shipped
+Prometheus agent always has its declared command and governance tools available.
 
 The installer accepts one configuration root from `--config-dir`,
 `OPENCODE_DEPLOY_CONFIG_DIR`, or `opencode debug paths`, in that order. Agent,
 plugin, tool, and skill destinations are fixed subdirectories of that root.
 Copy and symlink modes are supported. Status and removal inspect every current
-managed entry regardless of optional install flags. Removal deletes only links
+managed entry regardless of compatibility flags. Removal deletes only links
 to current repository sources or current byte-identical copies; modified and
 unrelated entries are preserved.
 
@@ -209,17 +209,15 @@ artifacts.
 
 ## Governance Tools
 
-The optional governance tools — `spike` (contracted investigation helper),
+The governance tools — `spike` (contracted investigation helper),
 `validate_scaffold` (static scaffold checker), and `scaffold_gitignore`
 (generated-artifact exclusion helper) — and the managed-agent immutability
-plugin are deferred pending validation of core agent behavior. They remain
-available for installation with `--with-workflow-tools` and described in
-`docs/ARCHITECTURE.md` for reference, but are not required for the core
-Prometheus → Autonomous workflow.
+plugin are part of the default managed profile and described in
+`docs/ARCHITECTURE.md`. Native Plan and Build workflows do not require them.
 
 ## Skills Ecosystem
 
-When `--with-skills` is specified, the installer deploys eight non-core skills: `local-word-document`, `playwright-image-generation`, `project-agent-scaffolding`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, and `writing-skills`.
+The installer deploys eight non-core skills: `local-word-document`, `playwright-image-generation`, `project-agent-scaffolding`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, and `writing-skills`.
 
 Each skill must provide valid YAML frontmatter and markdown body guidelines.
 `tests/test_skill_coverage.py` validates packaged and temporarily deployed skill

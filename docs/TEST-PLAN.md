@@ -220,18 +220,13 @@ No test case may be marked as passing on a required platform without having been
 | TP-E2E-02 | UC-E2E-02 | B | Provide a complete, validate_scaffold-passing Karpathy scaffold. Invoke Autonomous with that scaffold. | Karpathy delegation trace, single change applied, measurement command and score, KEEP/REVERT decision, and final report. | Autonomous delegates strategy advice to Karpathy, applies exactly one change per experiment, runs the measurement through native Bash, and records a KEEP or REVERT decision per the declared policy. Karpathy makes no edits or command calls. |
 
 
-## Deferred Infrastructure
-
-The following test cases cover the optional governance layer. They are deferred
-pending validation of core agent behavior; see `docs/REQUIREMENTS.md` for context.
-
 ## Deployment
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
-| TP-DEP-01 | UC-DEP-01 | F | Install the default profile into an empty configuration root, then repeat the installation. | Exact installed tree, file contents, and second-run result. | Exactly six agents and `immutability.ts` are installed. Tools, SDK dependencies, skills, repository `AGENTS.md`, a runner, and a supervisor are absent. Reinstallation is idempotent. |
-| TP-DEP-02 | UC-DEP-02 | F | Install with `--with-workflow-tools` into an empty configuration root. | Installed tree, package metadata, and tool import results. | The three documented tools and pinned SDK are installed. Bubblewrap, Lima, VM assets, a runner, and a supervisor are absent. |
-| TP-DEP-03 | UC-DEP-03 | F | Exercise each documented configuration-root source, copy and symlink modes, and repeated installs that omit previously selected optional flags. | Resolved destinations and final installed tree after each operation. | Every destination is derived beneath one root, both modes work, and omitted optional flags do not uninstall existing groups. Unsupported per-category or source overrides are not accepted. |
+| TP-DEP-01 | UC-DEP-01 | F | Install the default profile into an empty configuration root, then repeat the installation. | Exact installed tree, file contents, and second-run result. | Six agents, `immutability.ts`, all three tools, the pinned SDK, and all packaged skills are installed. Repository `AGENTS.md`, a runner, and a supervisor are absent. Reinstallation is idempotent. |
+| TP-DEP-02 | UC-DEP-02 | F | Install with each legacy compatibility flag into an empty configuration root. | Installed tree, package metadata, and tool import results. | Each invocation installs the complete managed profile. Bubblewrap, Lima, VM assets, a runner, and a supervisor are absent. |
+| TP-DEP-03 | UC-DEP-03 | F | Exercise each documented configuration-root source, copy and symlink modes, and repeated installs with and without compatibility flags. | Resolved destinations and final installed tree after each operation. | Every destination is derived beneath one root, both modes install every managed group, and compatibility flags do not select profiles. Unsupported per-category or source overrides are not accepted. |
 | TP-DEP-04 | UC-DEP-04 | F | Prepare current copies, repository symlinks, modified copies, foreign symlinks, and unrelated entries across all managed groups. Run status and removal without profile flags. | Status classifications and final filesystem state. | Every current managed group is inspected. Only current matching copies or repository links are removed; modified and unrelated entries remain. |
 | TP-DEP-05 | UC-DEP-05 | F, S | Supply every retired profile flag, source override, and per-category destination override. Inspect help and configuration behavior. | Exit status, diagnostics, help text, and resolved configuration. | Unsupported options fail, help presents the single-root interface, and no retired local deployment-environment behavior is used. |
 | TP-DEP-06 | UC-DEP-06 | S | Inspect installation, update, and profile-change instructions. | README, deployment documentation, and installer completion text. | Every relevant path instructs the user to restart OpenCode, and none promises hot reload. |

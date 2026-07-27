@@ -29,19 +29,22 @@ async function exists(file) {
   try { await stat(file); return true; } catch (error) { if (error?.code === "ENOENT") return false; throw error; }
 }
 
-test("default copy install is idempotent and excludes optional groups", async () => fixture(async root => {
+test("default copy install is idempotent and includes the complete managed profile", async () => fixture(async root => {
   const config = path.join(root, "config");
   await deployFixture(root);
   assert.equal((await readdir(path.join(config, "agents"))).filter(name => name.endsWith(".md")).length, 6);
   await stat(path.join(config, "plugins", "immutability.ts"));
-  assert.equal(await exists(path.join(config, "tools")), false);
-  assert.equal(await exists(path.join(config, "skills")), false);
+  for (const name of ["spike.ts", "scaffold_gitignore.ts", "validate_scaffold.ts"]) {
+    await stat(path.join(config, "tools", name));
+  }
+  await stat(path.join(config, "node_modules", "@opencode-ai", "plugin", "package.json"));
+  await stat(path.join(config, "skills", "systematic-debugging", "SKILL.md"));
 
   const second = await deployFixture(root);
   assert.match(second.stdout, /Unchanged:/);
 }));
 
-test("workflow tools install additively and remain after a default install", async () => fixture(async root => {
+test("legacy workflow-tools flag installs the complete managed profile", async () => fixture(async root => {
   const bin = path.join(root, "bin");
   const config = path.join(root, "config");
   const log = path.join(root, "npm.log");
@@ -52,6 +55,7 @@ test("workflow tools install additively and remain after a default install", asy
   for (const name of ["spike.ts", "scaffold_gitignore.ts", "validate_scaffold.ts"]) {
     await stat(path.join(config, "tools", name));
   }
+  await stat(path.join(config, "skills", "systematic-debugging", "SKILL.md"));
   try {
     assert.match(await readFile(log, "utf8"), /@opencode-ai\/plugin@1\.17\.15/);
   } catch (error) {
@@ -60,7 +64,7 @@ test("workflow tools install additively and remain after a default install", asy
     assert.equal(installed.version, "1.17.15");
   }
 
-  await deployFixture(root);
+  await deployFixture(root, "install", ["--with-skills"]);
   await stat(path.join(config, "tools", "spike.ts"));
 }));
 
@@ -73,7 +77,7 @@ test("symlink install and mode-independent remove cover all managed groups", asy
   assert.equal((await lstat(path.join(config, "skills", "playwright-image-generation"))).isSymbolicLink(), true);
 
   await deployFixture(root);
-  assert.equal((await lstat(path.join(config, "skills", "playwright-image-generation"))).isSymbolicLink(), true);
+  assert.equal(await exists(path.join(config, "skills", "playwright-image-generation")), true);
 
   await deployFixture(root, "remove");
   for (const relative of [

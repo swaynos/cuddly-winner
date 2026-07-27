@@ -13,8 +13,8 @@ Usage:
 Options:
   --config-dir PATH      OpenCode configuration root
   --mode MODE            Install mode: copy (default) or symlink
-  --with-workflow-tools  Install spike and scaffold workflow tools
-  --with-skills          Install optional non-core skills
+  --with-workflow-tools  Accepted for compatibility; workflow tools install by default
+  --with-skills          Accepted for compatibility; skills install by default
   -h, --help             Show this help
 
 Configuration root precedence:
@@ -22,8 +22,8 @@ Configuration root precedence:
   2) OPENCODE_DEPLOY_CONFIG_DIR
   3) `opencode debug paths`
 
-Install is additive: omitted optional flags leave previously installed optional
-entries unchanged. Status and remove always inspect every managed entry.
+Install deploys the complete managed profile. Status and remove always inspect
+every managed entry.
 EOF
 }
 
@@ -176,8 +176,6 @@ install_tool_sdk() {
 ACTION="install"
 MODE="copy"
 CONFIG_ARG=""
-WITH_WORKFLOW_TOOLS=false
-WITH_SKILLS=false
 
 if [[ $# -gt 0 ]]; then
   case "$1" in
@@ -198,8 +196,7 @@ while [[ $# -gt 0 ]]; do
       MODE="$2"
       shift 2
       ;;
-    --with-workflow-tools) WITH_WORKFLOW_TOOLS=true; shift ;;
-    --with-skills) WITH_SKILLS=true; shift ;;
+    --with-workflow-tools|--with-skills) shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1" ;;
   esac
@@ -244,12 +241,8 @@ fi
 
 sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
 sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$MODE" "${PLUGIN_SOURCES[@]}"
-if [[ "$WITH_WORKFLOW_TOOLS" == true ]]; then
-  sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
-  install_tool_sdk "$CONFIG_DIR"
-fi
-if [[ "$WITH_SKILLS" == true ]]; then
-  sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
-fi
+sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
+install_tool_sdk "$CONFIG_DIR"
+sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 
 printf 'Done. Restart OpenCode to load changed agents, plugins, or tools.\n'

@@ -137,8 +137,8 @@ Mutation testing evaluates the sensitivity and strength of the test suite.
 
 ## Skills Validation Methodology (`tests/`)
 
-Non-core skills installed via `--with-skills` have deterministic structural and
-deployment validation. Direct-model pressure checks remain supplemental:
+Non-core skills installed by the default profile have deterministic structural
+and deployment validation. Direct-model pressure checks remain supplemental:
 
 1. **Coverage Testing (`tests/test_skill_coverage.py`)**: Checks packaged and
    temporarily deployed skills, frontmatter, and selected content requirements.

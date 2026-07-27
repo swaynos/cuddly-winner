@@ -750,11 +750,13 @@ def main() -> int:
         require({p.stem for p in (config / "agents").glob("*.md")} == MANAGED_AGENTS, "specialist agents not deployed")
         require((config / "plugins/immutability.ts").is_file(), "managed-agent immutability plugin missing")
         require(not (config / "plugins/opencode-autonomous-supervisor.js").exists(), "obsolete supervisor installed in default profile")
-        require(not (config / "tools/spike.ts").exists(), "workflow tools installed in default profile")
-        require(not (config / "skills").exists(), "optional skills installed by default")
+        require((config / "tools/spike.ts").is_file(), "spike tool missing from default profile")
+        require((config / "tools/scaffold_gitignore.ts").is_file(), "scaffold_gitignore missing from default profile")
+        require((config / "tools/validate_scaffold.ts").is_file(), "validate_scaffold missing from default profile")
+        require((config / "skills/systematic-debugging/SKILL.md").is_file(), "skills missing from default profile")
         installed = {p.stem for p in (config / "agents").glob("*.md")}
         require({"prometheus", "autonomous"} <= installed, "managed agents missing from default profile")
-        require(not (config / "node_modules/@opencode-ai/plugin").exists(), "tool SDK present without --with-workflow-tools")
+        require((config / "node_modules/@opencode-ai/plugin").is_dir(), "tool SDK missing from default profile")
 
     with tempfile.TemporaryDirectory(prefix="opencode-workflow-tools-") as tmp:
         config = pathlib.Path(tmp) / "config"
