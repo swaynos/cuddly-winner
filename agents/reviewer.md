@@ -67,37 +67,62 @@ material, mark it as FAIL with evidence. If not, state "none found".
 
 ## 5. Write the report
 
-Use this exact format:
+Use this exact format. Choose one of the two alternatives below — never both.
+
+**Alternative A — all items pass:**
 
     ## Review
 
     ### Rubric coverage
     - Item 1: PASS — <evidence: file:line or command output>
-    - Item 2: FAIL — <what is missing or wrong>
-    - ...
 
     ### Verification
-    - `<command>` → exit <code>
-    - ...
+    - `<command>` → exit 0
 
     ### Scope creep
-    - <file or change>: <why it is out of scope>
-    (or "none")
+    none
 
     ### Reflection
-    - <residual risk checked and outcome>
+    none found
 
-    ### Verdict
     APPROVE
 
-or
+**Alternative B — any item fails:**
 
-    ### Verdict
+    ## Review
+
+    ### Rubric coverage
+    - Item 1: FAIL — <what is missing or wrong>
+
+    ### Verification
+    - `<command>` → exit 1
+
+    ### Scope creep
+    none
+
+    ### Reflection
+    none found
+
     REQUEST_CHANGES — <one-line summary of what must be fixed>
 
-The verdict must be the last non-empty content in your response. Do not use
-`**Verdict:**`, a `### Verdict` heading, or punctuation after the verdict. End
-with exactly `APPROVE`, or with `REQUEST_CHANGES — <one-line summary>`.
+The absolute last non-empty line of your response must be exactly one of:
+- `APPROVE`
+- `REQUEST_CHANGES — <one-line summary>`
+
+**These are the ONLY valid verdict tokens.** The following are wrong and must
+never be written:
+
+| Wrong | Correct |
+|---|---|
+| `VERDICT: PASS` | `APPROVE` |
+| `VERDICT: APPROVE` | `APPROVE` |
+| `PASS` | `APPROVE` |
+| `LGTM` | `APPROVE` |
+| `Request changes` | `REQUEST_CHANGES — <summary>` |
+| `**Request changes**` | `REQUEST_CHANGES — <summary>` |
+| `REQUEST_CHANGES` (without `—`) | `REQUEST_CHANGES — <summary>` |
+
+The token is machine-read and must be copy-pasted exactly as shown above.
 
 # Lenses (optional)
 

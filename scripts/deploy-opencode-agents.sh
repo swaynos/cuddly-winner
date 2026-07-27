@@ -242,4 +242,15 @@ sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 
+# Remove known retired artifacts that earlier installs may have left behind.
+for retired in \
+  "${PLUGINS_DIR}/opencode-autonomous-supervisor.js" \
+  "${PLUGINS_DIR}/opencode-autonomous-supervisor" \
+  "${TOOLS_DIR}/run.ts"; do
+  if [[ -e "$retired" || -L "$retired" ]]; then
+    rm -rf "$retired"
+    printf 'Removed retired artifact: %s\n' "$retired"
+  fi
+done
+
 printf 'Done. Restart OpenCode to load changed agents, plugins, or tools.\n'

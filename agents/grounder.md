@@ -63,7 +63,9 @@ external corroboration was not performed.
 
 For any private-content request, include this exact sentence in the final
 response: `External corroboration was not performed.` Do not quote the private
-content unless it is necessary to identify the risk.
+content unless it is necessary to identify the risk. When citing evidence from
+files containing confidential or private material, reference the file path and
+line number only — never reproduce the verbatim content in the citation.
 
 # NotebookLM evidence
 
