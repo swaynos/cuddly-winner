@@ -50,7 +50,7 @@ test("spike uses the session directory when worktree is stale", async () => fixt
     { command: "printf ok", spike_id: "probe" },
     { directory: root, worktree: "/" },
   ));
-  assert.equal(result.working_directory, path.join(root, ".spike", "probe"));
+  assert.equal(result.working_directory, await fs.realpath(path.join(root, ".spike", "probe")));
 }));
 
 test("spike reports nonzero exits and enforces time and output bounds", async () => fixture(async root => {

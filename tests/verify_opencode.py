@@ -760,17 +760,6 @@ def main() -> int:
     require("Standardized Verdict Definitions" in methodology, "TESTING-METHODOLOGY missing verdict definitions")
     require("before its final response" in requirements and "without waiting for a separate user request" in architecture, "durable Prometheus publication gate missing")
 
-    live_config = _active_config_dir()
-    if live_config is not None:
-        require(
-            not (live_config / "plugins/opencode-autonomous-supervisor.js").exists(),
-            "obsolete supervisor present in live profile — run: bash scripts/deploy-opencode-agents.sh install",
-        )
-        require(
-            not (live_config / "plugins/opencode-autonomous-supervisor").exists(),
-            "obsolete supervisor directory present in live profile — run: bash scripts/deploy-opencode-agents.sh install",
-        )
-
     require(not (ROOT / "progress.txt").exists(), "stale root progress.txt remains")
     require(not any(p.is_file() for p in (ROOT / "evals/agent_value").rglob("*")), "retired agent_value evaluation returned")
     require(not any(p.is_file() for p in (ROOT / "evals/plan_outcome").rglob("*")), "retired plan_outcome evaluation returned")

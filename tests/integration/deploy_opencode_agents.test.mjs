@@ -64,7 +64,7 @@ test("default installation provides a self-contained workflow tool runtime", asy
     assert.equal(installed.version, "1.17.15");
   }
 
-  await deployFixture(root);
+  await deployFixture(root, "install", [], { NPM_LOG: log });
   await stat(path.join(config, "tools", "spike.ts"));
 }));
 
