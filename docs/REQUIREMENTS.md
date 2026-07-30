@@ -10,6 +10,13 @@ platform.
 `docs/REQUIREMENTS.md` and `docs/ARCHITECTURE.md` are the durable source of
 truth. `SPEC.md` and `opencode-autonomous.json` are transient task scaffolds.
 
+## Runtime Compatibility
+
+The repository supports Node.js `>=22.22.2 <25`. This floor matches the
+transitive `ini@7` dependency used by the OpenCode plugin runtime. CI uses
+Node.js `24.15.0`, and local deployment uses the active `node` and `npm` on
+the user's PATH.
+
 ## Native Compatibility
 
 Built-in Plan and Build, future built-ins, unknown identities, and third-party

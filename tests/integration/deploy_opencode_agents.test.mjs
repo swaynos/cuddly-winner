@@ -118,3 +118,14 @@ test("retired and per-category configuration flags are rejected", async () => fi
     await assert.rejects(deployFixture(root, "install", args), /Unknown argument/);
   }
 }));
+
+test("Node policy covers the locked plugin dependency engine", async () => {
+  const manifest = JSON.parse(await readFile(path.join(repo, "package.json"), "utf8"));
+  const ci = await readFile(path.join(repo, "scripts", "ci.sh"), "utf8");
+  const workflow = await readFile(path.join(repo, ".github", "workflows", "ci.yml"), "utf8");
+
+  assert.equal(manifest.engines.node, ">=22.22.2 <25");
+  assert.match(ci, /NODE_MINOR/);
+  assert.match(ci, /NODE_PATCH/);
+  assert.match(workflow, /node-version: 24\.15\.0/);
+});

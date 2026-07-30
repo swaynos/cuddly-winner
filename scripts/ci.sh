@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-NODE_MAJOR="$(node -p 'Number(process.versions.node.split(".")[0])')"
-if (( NODE_MAJOR < 22 || NODE_MAJOR >= 25 )); then
-  printf 'Unsupported Node.js version: %s (required >=22.6 <25)\n' "$(node --version)" >&2
+IFS=. read -r NODE_MAJOR NODE_MINOR NODE_PATCH <<<"$(node -p 'process.versions.node')"
+if (( NODE_MAJOR < 22 || NODE_MAJOR >= 25 || (NODE_MAJOR == 22 && (NODE_MINOR < 22 || (NODE_MINOR == 22 && NODE_PATCH < 2))) )); then
+  printf 'Unsupported Node.js version: %s (required >=22.22.2 <25)\n' "$(node --version)" >&2
   exit 1
 fi
 
