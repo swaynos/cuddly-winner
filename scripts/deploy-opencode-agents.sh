@@ -154,6 +154,24 @@ sync_group() {
   done
 }
 
+sync_rule_instructions() {
+  local action="$1"
+  shift
+  local sources=("$@")
+  [[ ${#sources[@]} -eq 0 ]] && return
+  command -v node >/dev/null 2>&1 || die "node is required to manage opencode.json instructions"
+  local dests=()
+  local src
+  for src in "${sources[@]}"; do
+    dests+=("${RULES_DIR}/$(basename "$src")")
+  done
+  case "$action" in
+    install) node "$INSTRUCTIONS_HELPER" add --config "$OPENCODE_JSON" "${dests[@]}" ;;
+    remove) node "$INSTRUCTIONS_HELPER" remove --config "$OPENCODE_JSON" "${dests[@]}" ;;
+    status) node "$INSTRUCTIONS_HELPER" status --config "$OPENCODE_JSON" "${dests[@]}" ;;
+  esac
+}
+
 install_tool_sdk() {
   local config_dir="$1"
   local vendored_modules="${REPO_ROOT}/.opencode/node_modules"
@@ -212,10 +230,14 @@ AGENTS_DIR="${CONFIG_DIR}/agents"
 PLUGINS_DIR="${CONFIG_DIR}/plugins"
 TOOLS_DIR="${CONFIG_DIR}/tools"
 SKILLS_DIR="${CONFIG_DIR}/skills"
+RULES_DIR="${CONFIG_DIR}/rules"
+OPENCODE_JSON="${CONFIG_DIR}/opencode.json"
+INSTRUCTIONS_HELPER="${SCRIPT_DIR}/opencode-instructions.mjs"
 
 shopt -s nullglob
 AGENT_SOURCES=("${REPO_ROOT}"/agents/*.md)
 SKILL_SOURCES=("${REPO_ROOT}"/skills/*)
+RULE_SOURCES=("${REPO_ROOT}"/rules/*.md)
 shopt -u nullglob
 PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts")
 TOOL_SOURCES=(
@@ -233,6 +255,8 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$MODE" "${PLUGIN_SOURCES[@]}"
   sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
   sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
+  sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
+  sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
   exit 0
 fi
 
@@ -241,6 +265,8 @@ sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$MODE" "${PLUGIN_SOURCES[@]}"
 sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
+sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
+sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
 
 # Remove known retired artifacts that earlier installs may have left behind.
 for retired in \

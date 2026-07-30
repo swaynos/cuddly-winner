@@ -164,13 +164,39 @@ read-only roles, remain denied.
 ## Deployment
 
 The installer deploys one complete managed profile: agents, `immutability.ts`,
-the three workflow tools and pinned SDK dependency, and non-core skills.
+the three workflow tools and pinned SDK dependency, non-core skills, and
+global rule files.
 
 Install sources are fixed repository paths. A single configuration root is
 resolved from the CLI, one environment variable, or OpenCode's debug output;
-`agents/`, `plugins/`, `tools/`, and `skills/` are derived beneath it. One entry
-synchronizer handles files and directories in copy or symlink mode, including
-idempotence, collision backups, status, and safe removal.
+`agents/`, `plugins/`, `tools/`, `skills/`, and `rules/` are derived beneath
+it. One entry synchronizer handles files and directories in copy or symlink
+mode, including idempotence, collision backups, status, and safe removal.
+
+Every file under `rules/` deploys, name preserved, to `<config_dir>/rules/`
+through the same synchronizer used for agents and skills. That alone does not
+make OpenCode load the file: OpenCode only auto-loads `<config_dir>/AGENTS.md`
+by fixed name, plus whatever paths are listed in the `instructions` array of
+`<config_dir>/opencode.json`. `scripts/opencode-instructions.mjs` closes that
+gap — a small Node helper, called by the installer after the file sync, that
+adds one absolute-path entry per deployed rule file to `instructions`, and
+removes it on `remove`. It edits only that one array: it parses the existing
+`opencode.json`, backs it up first, refuses to touch a file that fails to
+parse, and leaves every other key untouched. If `instructions` ends up empty
+on removal, the key is dropped rather than left as an empty array.
+
+Adding a rule therefore takes two steps that both happen automatically on
+install: drop a file in `rules/`, and the file sync plus the instructions
+helper each pick it up on their own. Nothing here compiles or concatenates
+rule files — each stays a separate file, separately deployed, separately
+wired.
+
+One tradeoff: this makes the installer write into `opencode.json`, which is
+also where models, providers, and every other OpenCode setting live. A bug in
+the helper risks that whole file, not just the rules feature. The helper is
+scoped tightly (one array, nothing else) and tested against a throwaway
+config before being pointed at a real one, but this is a larger blast radius
+than the rest of the installer, which only ever adds or removes whole files.
 
 Workflow tools and the immutability plugin treat the OpenCode session directory
 as the active project root. They use worktree only when no session directory is
