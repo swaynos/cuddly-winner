@@ -32,7 +32,7 @@ async function exists(file) {
 test("default copy install is idempotent and includes the complete managed profile", async () => fixture(async root => {
   const config = path.join(root, "config");
   await deployFixture(root);
-  assert.equal((await readdir(path.join(config, "agents"))).filter(name => name.endsWith(".md")).length, 6);
+  assert.equal((await readdir(path.join(config, "agents"))).filter(name => name.endsWith(".md")).length, 7);
   await stat(path.join(config, "plugins", "immutability.ts"));
   for (const name of ["spike.ts", "scaffold_gitignore.ts", "validate_scaffold.ts"]) {
     await stat(path.join(config, "tools", name));

@@ -29,6 +29,7 @@ export const MANAGED_BLOCK = [BEGIN, ...MANAGED_PATHS, END].join("\n");
 
 export interface ScaffoldGitignoreResult {
   changed: boolean;
+  skipped?: "not a Git worktree";
   managed_paths: string[];
   tracked_artifacts: string[];
   warnings: string[];
@@ -162,8 +163,29 @@ async function queryTrackedArtifacts(root: string): Promise<string[]> {
   }
 }
 
+async function isGitWorktree(root: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: root,
+      maxBuffer: 1024,
+    });
+    return stdout.trim() === "true";
+  } catch {
+    return false;
+  }
+}
+
 export async function applyScaffoldGitignore(root: string): Promise<ScaffoldGitignoreResult> {
   const resolvedRoot = path.resolve(root);
+  if (!await isGitWorktree(resolvedRoot)) {
+    return {
+      changed: false,
+      skipped: "not a Git worktree",
+      managed_paths: [...MANAGED_PATHS],
+      tracked_artifacts: [],
+      warnings: [],
+    };
+  }
   const gitignorePath = path.join(resolvedRoot, ".gitignore");
   assertSafeTarget(gitignorePath);
 

@@ -4,8 +4,8 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 const SHELL_TOOLS = new Set(["bash"]);
 const PROMETHEUS_ONLY_TOOLS = new Set(["spike", "scaffold_gitignore", "validate_scaffold"]);
-const MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder"]);
-const READ_ONLY_AGENTS = new Set(["ask", "karpathy", "reviewer", "grounder"]);
+const MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"]);
+const READ_ONLY_AGENTS = new Set(["ask", "karpathy", "reviewer", "grounder", "implementation-validator"]);
 const PROMETHEUS_WRITABLE = ["SPEC.md", "opencode-autonomous.json", ".prometheus/evaluator/**", ".spike/**"];
 const TRUSTED_PATHS = [
   "tools/spike.ts",

@@ -25,7 +25,7 @@ identity is found, it returns before inspecting tools or paths.
 
 Prometheus can edit only the four scaffold path families. Autonomous can edit
 ordinary files but cannot edit the published scaffold or this extension's tool
-and plugin sources. Ask, Karpathy, Reviewer, and Grounder are read-only.
+and plugin sources. Ask, Karpathy, Reviewer, Grounder, and Implementation-Validator are read-only.
 
 The plugin intercepts OpenCode mutation tools. It is not a filesystem sandbox.
 Native subprocess effects are outside path interception. Prometheus and Autonomous
@@ -87,7 +87,7 @@ an optimization block.
 
 ### Git Exclusion
 
-`tools/scaffold_gitignore.ts` manages exactly this root block:
+In a Git worktree, `tools/scaffold_gitignore.ts` manages exactly this root block:
 
 ```gitignore
 # BEGIN OpenCode Autonomous artifacts
@@ -100,7 +100,8 @@ an optimization block.
 
 It accepts no paths, preserves unrelated content and permissions, rejects
 symlinks and malformed markers, writes atomically, and reports tracked generated
-artifacts without changing the Git index.
+artifacts without changing the Git index. Outside a Git worktree it does not
+create `.gitignore` and reports that exclusion was skipped.
 
 ## Prometheus Flow
 
@@ -124,7 +125,7 @@ Publication order is:
 3. Define acceptance criteria, implementation scope, escalation triggers, limits, and exact final verification.
 4. Create optional evaluator and spike assets.
 5. Write `opencode-autonomous.json` and `SPEC.md` before the final Prometheus response.
-6. Invoke governance tools (`scaffold_gitignore`, `validate_scaffold`) when installed.
+6. Invoke governance tools (`scaffold_gitignore`, `validate_scaffold`) when installed; scaffold exclusion is a no-op outside a Git worktree.
 7. Hand off to Autonomous without waiting for a separate user request to publish.
 
 Static publication means “complete enough to implement without inventing
@@ -151,8 +152,18 @@ unspecified mechanics and returns to Prometheus only for an outcome-changing
 requirement gap.
 
 The manifest provides limits and stop conditions, but enforcement is agent-led
-inside the OpenCode session. Reviewer output is advisory. Final status reports
-include commands, observed results, remaining blockers, and any unverified work.
+inside the OpenCode session. Autonomous does not stage, commit, stash, reset,
+switch branches, or initialize Git; the pending worktree is the human-owned
+aggregate review artifact. Reviewer output is advisory.
+
+Before its final handoff, Autonomous must prepare a PR Contract covering Intent,
+Implementation record, Proof of function (terminal output showing exit code 0),
+Risk assessment, Review focus, and a mandatory Coverage checklist. It delegates
+the candidate implementation to `@implementation-validator`, includes the full
+severity-grouped report in the handoff, and may make one bounded correction for a
+critical or major gap. Emitting `<promise>COMPLETE</promise>` is strictly forbidden
+without terminal output proving exit code 0 for all declared verification commands
+after the final edit and a final `VALIDATED` validator report.
 
 ## Permission Semantics
 

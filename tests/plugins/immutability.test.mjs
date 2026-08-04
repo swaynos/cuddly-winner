@@ -93,7 +93,7 @@ test("only prometheus may invoke workflow tools", async () => fixture(async root
   const pg = await hooks(root, { p: "prometheus" });
   for (const tool of ["spike", "scaffold_gitignore", "validate_scaffold"]) {
     await invoke(pg, "p", tool);
-    for (const agent of ["autonomous", "ask", "karpathy", "reviewer", "grounder"]) {
+    for (const agent of ["autonomous", "ask", "karpathy", "reviewer", "grounder", "implementation-validator"]) {
       const guard = await hooks(root, { [agent]: agent });
       await assert.rejects(invoke(guard, agent, tool), /only @prometheus may invoke/);
     }
@@ -119,7 +119,7 @@ test("autonomous edits source but not trusted extension paths", async () => fixt
 }));
 
 test("read-only managed agents cannot mutate or execute", async () => fixture(async root => {
-  for (const agent of ["ask", "karpathy", "reviewer", "grounder"]) {
+  for (const agent of ["ask", "karpathy", "reviewer", "grounder", "implementation-validator"]) {
     const guard = await hooks(root, { [agent]: agent });
     await assert.rejects(mutate(guard, agent, path.join(root, "README.md")), /read-only/);
     await assert.rejects(guard["tool.execute.before"]({ tool: "bash", sessionID: agent, callID: "shell" }, { args: { command: "true", cwd: root } }), /read-only/);

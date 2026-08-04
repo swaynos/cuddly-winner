@@ -34,10 +34,10 @@ Violating this rule corrupts the user's system Python and poisons test results.
 
 ## Git commits
 
-Do NOT commit to Git unless the user explicitly asks you to.
-"Commit this", "save this to git", or "git commit" are required before any commit is made.
-Finishing a task, fixing a bug, or completing a workflow step does not mean committing it.
-Never auto-commit as part of any workflow.
+Agents do not stage, commit, stash, reset, switch branches, or initialize Git.
+Pending worktree changes are the human-owned review artifact across Prometheus and
+Autonomous runs. Only an explicit user request may authorize a final commit after
+human review.
 
 ## Agent compatibility
 
@@ -46,7 +46,7 @@ without custom routing, a `SPEC.md`, specialist agents, or workflow tools. Do
 not redirect ordinary planning to Prometheus or ordinary implementation to
 Autonomous.
 
-Prometheus, Autonomous, Karpathy, Reviewer, Grounder, and Ask are optional
+Prometheus, Autonomous, Karpathy, Reviewer, Grounder, Ask, and Implementation-Validator are optional
 specialist agents. Apply their role-specific contracts only when the user
 explicitly invokes one of them.
 

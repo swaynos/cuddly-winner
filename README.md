@@ -102,6 +102,11 @@ and runs exact final verification through native Bash. Normal sessions ask
 before each Bash invocation; users who intentionally choose `opencode --auto`
 get uninterrupted approval.
 
+Autonomous never stages or commits. Pending worktree changes remain the
+human-owned aggregate review artifact across repeated Prometheus and Autonomous
+runs. Before its final handoff, Autonomous provides an evidence-backed PR
+Contract and a fresh Implementation Validator report against `SPEC.md`.
+
 Ralph is the default strategy for ordinary feature and defect work. Karpathy is
 used only for explicit scalar optimization with a metric, evaluator, mutable and
 immutable targets, limits, noise policy, and stop criteria. Both strategies are
@@ -110,13 +115,13 @@ host coordinator or durable workflow state machine.
 
 ## Managed-Agent Immutability
 
-The plugin applies fixed edit-tool boundaries only to the six managed agents:
+The plugin applies fixed edit-tool boundaries only to the seven managed agents:
 
 - Prometheus may edit only `SPEC.md`, `opencode-autonomous.json`,
   `.prometheus/evaluator/**`, and `.spike/**`.
 - Autonomous may edit ordinary project files but not the published scaffold or
   this extension's trusted plugin/tool sources.
-- Ask, Karpathy, Reviewer, and Grounder are read-only.
+- Ask, Karpathy, Reviewer, Grounder, and Implementation Validator are read-only.
 - Descendants inherit the originating managed identity.
 - Native Plan, native Build, unknown agents, and third-party agents bypass the
   plugin.

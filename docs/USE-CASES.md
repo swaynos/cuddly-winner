@@ -142,10 +142,13 @@ Evidence classes:
 ### UC-PUB-02: Git exclusion is constrained
 
 - **Given:** Prometheus invokes `scaffold_gitignore` without arguments.
-- **When:** `.gitignore` is absent or valid.
+- **When:** the workspace is a Git worktree and `.gitignore` is absent or valid.
 - **Then:** atomically manage only the canonical four-path block and preserve unrelated bytes/modes.
 - **Never:** follow symlinks, accept malformed markers, or alter the Git index.
 - **Evidence:** F target/marker/idempotence/index fixtures.
+
+For a non-Git workspace, the tool reports a skip and does not create `.gitignore`
+or initialize Git.
 
 ### UC-PUB-03: Publication hands off final verification
 
@@ -195,8 +198,16 @@ Evidence classes:
 - **Given:** success, repeated no progress, exhausted limits, or a blocker.
 - **When:** a stopping condition occurs.
 - **Then:** stop with an honest status and leave the worktree visible.
-- **Never:** loop indefinitely, auto-commit, or hide unverified edits.
+- **Never:** loop indefinitely; stage, commit, stash, reset, switch branches, or initialize Git; or hide unverified edits.
 - **Evidence:** B stopping scenarios; S prompt check.
+
+### UC-AUT-06: Candidate completion is independently validated
+
+- **Given:** Autonomous has implemented every bounded checklist item and run declared verification.
+- **When:** it prepares the human handoff.
+- **Then:** provide the PR Contract, invoke Implementation Validator with a clean context, include its full report, and make at most one bounded correction for critical or major gaps.
+- **Never:** emit a completion promise before fresh verification and a final `VALIDATED` report, or silently summarize validator findings away.
+- **Evidence:** S prompt/permission checks; B validator-handoff scenario.
 
 ## Karpathy And Review
 
@@ -223,6 +234,14 @@ Evidence classes:
 - **Then:** return a cited report ending in APPROVE or REQUEST_CHANGES.
 - **Never:** edit, execute, delegate, or determine completion alone.
 - **Evidence:** S permission/format checks; B review scenario.
+
+### UC-VAL-01: Implementation Validator remains independent
+
+- **Given:** candidate implementation, `SPEC.md`, and an Autonomous PR Contract.
+- **When:** Implementation Validator evaluates the pending codebase.
+- **Then:** return a severity-grouped report grounded in repository evidence and end with `VALIDATED` or `GAPS_FOUND`.
+- **Never:** edit, execute commands, delegate, or grant completion authority.
+- **Evidence:** U role matrix; B validator-handoff scenario.
 
 ## Ask
 
@@ -335,7 +354,7 @@ Evidence classes:
 
 - **Given:** a clean OpenCode configuration.
 - **When:** default installation runs.
-- **Then:** install six agents, `immutability.ts`, all workflow tools and their SDK, and all packaged skills.
+- **Then:** install seven agents, `immutability.ts`, all workflow tools and their SDK, and all packaged skills.
 - **Never:** install repository `AGENTS.md`, a runner, or a supervisor.
 - **Evidence:** F deployment fixture.
 
@@ -418,7 +437,10 @@ Evidence classes:
 ### UC-PUB-02: Git exclusion is constrained
 
 - **Given:** Prometheus invokes `scaffold_gitignore` without arguments.
-- **When:** `.gitignore` is absent or valid.
+- **When:** the workspace is a Git worktree and `.gitignore` is absent or valid.
 - **Then:** atomically manage only the canonical four-path block and preserve unrelated bytes/modes.
 - **Never:** follow symlinks, accept malformed markers, or alter the Git index.
 - **Evidence:** F target/marker/idempotence/index fixtures.
+
+For a non-Git workspace, the tool reports a skip and does not create `.gitignore`
+or initialize Git.

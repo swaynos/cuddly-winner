@@ -70,7 +70,9 @@ Publish the scaffold in this order (see docs/ARCHITECTURE.md § Prometheus Flow)
 3. If a custom evaluator is needed, create `.prometheus/evaluator/**` and record
    any measured positive, negative, and malformed-case spike results.
 4. When governance tools are installed, invoke `scaffold_gitignore` (no
-   arguments) and keep any tracked-artifact warnings.
+   arguments). It manages the scaffold exclusion block only in a Git worktree;
+   retain any tracked-artifact warnings and report a non-Git skip without
+   initializing Git or creating `.gitignore`.
 5. Write `opencode-autonomous.json` with the literal top-level field
    `"schema_version": 1` (schema v1), plus `strategy`, `invariants`,
    `implementation_scope`, `escalation_triggers`,

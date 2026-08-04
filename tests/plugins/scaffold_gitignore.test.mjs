@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtemp, mkdir, rm, readFile, writeFile, symlink, chmod, stat } from "node:fs/promises";
 import scaffoldTool, { applyScaffoldGitignore, MANAGED_BLOCK, __testing } from "../../tools/scaffold_gitignore.ts";
 
@@ -10,8 +12,18 @@ async function fixture(fn) {
   try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 const gi = (root) => path.join(root, ".gitignore");
+const run = promisify(execFile);
+const initGit = (root) => run("git", ["init", "--quiet"], { cwd: root });
 
-test("creates .gitignore with the exact canonical block when absent", async () => fixture(async (root) => {
+test("does not create .gitignore outside a Git worktree", async () => fixture(async (root) => {
+  const result = await applyScaffoldGitignore(root);
+  assert.equal(result.changed, false);
+  assert.equal(result.skipped, "not a Git worktree");
+  await assert.rejects(readFile(gi(root), "utf8"));
+}));
+
+test("creates .gitignore with the exact canonical block in a Git worktree", async () => fixture(async (root) => {
+  await initGit(root);
   const result = await applyScaffoldGitignore(root);
   assert.equal(result.changed, true);
   const content = await readFile(gi(root), "utf8");
@@ -20,12 +32,14 @@ test("creates .gitignore with the exact canonical block when absent", async () =
 }));
 
 test("uses the session directory when worktree is stale", async () => fixture(async (root) => {
+  await initGit(root);
   const result = JSON.parse(await scaffoldTool.execute({}, { directory: root, worktree: "/" }));
   assert.equal(result.changed, true);
   assert.equal((await readFile(gi(root), "utf8")).includes(MANAGED_BLOCK), true);
 }));
 
 test("is byte-idempotent on repeated calls", async () => fixture(async (root) => {
+  await initGit(root);
   await applyScaffoldGitignore(root);
   const first = await readFile(gi(root), "utf8");
   const second = await applyScaffoldGitignore(root);
@@ -34,6 +48,7 @@ test("is byte-idempotent on repeated calls", async () => fixture(async (root) =>
 }));
 
 test("preserves unrelated content and replaces only the managed block", async () => fixture(async (root) => {
+  await initGit(root);
   await writeFile(gi(root), "node_modules/\n*.log\n");
   await applyScaffoldGitignore(root);
   const content = await readFile(gi(root), "utf8");
@@ -47,6 +62,7 @@ test("preserves unrelated content and replaces only the managed block", async ()
 }));
 
 test("preserves CRLF and trailing whitespace outside the managed block", async () => fixture(async (root) => {
+  await initGit(root);
   const prefix = "node_modules/  \r\nkeep\t\r\n\r\n";
   const suffix = "\r\n*.log  \r\n";
   await writeFile(gi(root), `${prefix}${MANAGED_BLOCK.replace(/\n/g, "\r\n")}\r\n${suffix}`);
@@ -56,6 +72,7 @@ test("preserves CRLF and trailing whitespace outside the managed block", async (
 }));
 
 test("does not normalize trailing whitespace when appending the block", async () => fixture(async (root) => {
+  await initGit(root);
   const existing = "keep\t  ";
   await writeFile(gi(root), existing);
   await applyScaffoldGitignore(root);
@@ -63,6 +80,7 @@ test("does not normalize trailing whitespace when appending the block", async ()
 }));
 
 test("preserves file permissions", async () => fixture(async (root) => {
+  await initGit(root);
   await writeFile(gi(root), "keep\n");
   await chmod(gi(root), 0o640);
   await applyScaffoldGitignore(root);
@@ -70,12 +88,14 @@ test("preserves file permissions", async () => fixture(async (root) => {
 }));
 
 test("rejects a symlinked .gitignore", async () => fixture(async (root) => {
+  await initGit(root);
   await writeFile(path.join(root, "real"), "x");
   await symlink(path.join(root, "real"), gi(root));
   await assert.rejects(applyScaffoldGitignore(root), /symlink/);
 }));
 
 test("rejects duplicate managed markers without writing", async () => fixture(async (root) => {
+  await initGit(root);
   await writeFile(gi(root), `${MANAGED_BLOCK}\n${MANAGED_BLOCK}\n`);
   await assert.rejects(applyScaffoldGitignore(root), /duplicate or malformed/);
 }));
@@ -88,6 +108,7 @@ for (const [name, content, error] of [
   ["an unpaired end marker", "# END OpenCode Autonomous artifacts\n", /malformed/],
 ]) {
   test(`rejects ${name} without writing`, async () => fixture(async (root) => {
+    await initGit(root);
     await writeFile(gi(root), content);
     await assert.rejects(applyScaffoldGitignore(root), error);
     assert.equal(await readFile(gi(root), "utf8"), content);

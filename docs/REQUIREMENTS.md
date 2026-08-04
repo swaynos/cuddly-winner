@@ -30,7 +30,7 @@ direct ordinary planning to Prometheus or ordinary implementation to Autonomous.
 ## Managed Agents
 
 The managed identities are `ask`, `prometheus`, `autonomous`, `karpathy`,
-`reviewer`, and `grounder`. They are selected explicitly. Delegated sessions
+`reviewer`, `grounder`, and `implementation-validator`. They are selected explicitly. Delegated sessions
 inherit the topmost managed ancestor's identity so delegation cannot widen that
 agent's edit-tool boundary.
 
@@ -75,9 +75,12 @@ deterministic defaults that satisfy the scaffold. It is the only managed identit
 permitted to edit ordinary project files.
 
 Autonomous uses native Bash with `ask` permission. OpenCode auto mode may approve
-those requests automatically. Autonomous must report exact commands and results,
-must not treat prose or checklist edits as verification, and must not commit
-unless the user explicitly requests it.
+those requests automatically. Autonomous never stages, commits, stashes, resets,
+switches branches, or initializes Git. It preserves pending worktree changes as
+the human-owned aggregate review artifact, delivers a strict PR Contract with
+per-checklist evidence, forbids completion promises without fresh exit-0
+verification logs, and hands off to Implementation Validator before its final
+completion signal.
 
 ### Karpathy
 
@@ -101,6 +104,14 @@ Grounder gathers cited local and external facts. It does not mutate, execute
 commands, delegate, or make product decisions. External claims identify their
 URL or notebook source, and private repository contents or secrets must not be
 sent to third-party services.
+
+### Implementation Validator
+
+Implementation Validator is read-only and objective. It operates with a clean
+context window after Autonomous reaches candidate completion, compares codebase
+state against SPEC.md, and generates a severity-grouped gap report. A critical
+or major gap permits one bounded Autonomous correction followed by fresh
+verification and validation; unresolved gaps prohibit a completion promise.
 
 ## Permission Model
 
@@ -166,7 +177,9 @@ Every published scaffold contains:
 `validate_scaffold` performs static shape, path, inventory, section, and command
 consistency checks. It executes no project command and does not certify that
 verification passes. When governance tools are installed, Prometheus invokes
-`scaffold_gitignore` and `validate_scaffold` before completing handoff. A
+`scaffold_gitignore` and `validate_scaffold` before completing handoff.
+`scaffold_gitignore` reports a no-op outside a Git worktree and does not create
+`.gitignore` or initialize Git. A
 planning-ready Prometheus run must write `SPEC.md` and
 `opencode-autonomous.json` before its final response; only a concrete planning
 blocker or a focused, decision-changing question may end the run without a
@@ -191,11 +204,13 @@ hypothesis, command, score, decision, and relevant reviewer advice in its report
 The workflow is agent-led. There is no custom supervisor, durable run-state
 machine, protected evidence store, automatic checkpoint service, or cross-session
 resume guarantee. The worktree and current OpenCode session are the durable
-engineering context. Git commits remain user-controlled.
+engineering context. When invoked, Autonomous leaves all Git publication
+decisions to the human. Its session evidence and validator report describe the
+aggregate pending changeset.
 
 ## Deployment
 
-Default installation deploys the complete managed profile: all six agents, the
+Default installation deploys the complete managed profile: all seven agents, the
 immutability plugin, `spike`, `validate_scaffold`, `scaffold_gitignore`, the
 pinned OpenCode tool SDK, and all non-core skills. This ensures the shipped
 Prometheus agent always has its declared command and governance tools available.
