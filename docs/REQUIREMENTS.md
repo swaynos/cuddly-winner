@@ -78,10 +78,16 @@ permitted to edit ordinary project files.
 Autonomous uses native Bash with `ask` permission. OpenCode auto mode may approve
 those requests automatically. Autonomous never stages, commits, stashes, resets,
 switches branches, or initializes Git. It preserves pending worktree changes as
-the human-owned aggregate review artifact, delivers a strict PR Contract with
-per-checklist evidence, forbids completion promises without fresh exit-0
-verification logs, and hands off to Implementation Validator before its final
-completion signal.
+the human-owned aggregate review artifact, gives Implementation Validator a
+detailed PR Contract with per-checklist evidence, and retains the full validator
+report in the delegated task result. Its user-facing handoff is concise: goals
+and validated outcomes, a brief change summary, fresh command exit codes, the
+validator verdict, material gaps and risks, worktree state, and one next human
+action. It does not emit a completion promise.
+
+If Implementation Validator cannot be delegated because the task tool is
+unavailable, Autonomous reports a blocked handoff. It may report observed
+command results but must not call requested goals validated or report success.
 
 ### Karpathy
 
@@ -117,7 +123,7 @@ Implementation Validator is read-only and objective. It operates with a clean
 context window after Autonomous reaches candidate completion, compares codebase
 state against SPEC.md, and generates a severity-grouped gap report. A critical
 or major gap permits one bounded Autonomous correction followed by fresh
-verification and validation; unresolved gaps prohibit a completion promise.
+verification and validation; unresolved gaps prohibit a successful status.
 
 ## Permission Model
 

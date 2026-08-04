@@ -156,14 +156,19 @@ inside the OpenCode session. Autonomous does not stage, commit, stash, reset,
 switch branches, or initialize Git; the pending worktree is the human-owned
 aggregate review artifact. Reviewer output is advisory.
 
-Before its final handoff, Autonomous must prepare a PR Contract covering Intent,
-Implementation record, Proof of function (terminal output showing exit code 0),
-Risk assessment, Review focus, and a mandatory Coverage checklist. It delegates
-the candidate implementation to `@implementation-validator`, includes the full
-severity-grouped report in the handoff, and may make one bounded correction for a
-critical or major gap. Emitting `<promise>COMPLETE</promise>` is strictly forbidden
-without terminal output proving exit code 0 for all declared verification commands
-after the final edit and a final `VALIDATED` validator report.
+Before its final handoff, Autonomous prepares a detailed PR Contract covering
+intent, implementation record, proof of function (terminal output showing exit
+code 0), risk assessment, review focus, and every SPEC checklist item. It gives
+that packet to `@implementation-validator` and retains the full severity-grouped
+report in the delegated task result. The parent handoff lists goals and validated
+outcomes, fresh command exit codes, validator verdict and unresolved gaps, then a
+brief change summary with worktree state, risks, review focus, and one next human
+action. It may make one bounded correction for a critical or major gap. It does
+not emit `<promise>COMPLETE</promise>`.
+
+If the task tool cannot delegate to Implementation Validator, Autonomous stops
+with a concise blocked handoff. It reports command observations as evidence, not
+validation, and does not claim success or label any requested goal validated.
 
 ## Permission Semantics
 

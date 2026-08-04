@@ -105,8 +105,9 @@ get uninterrupted approval.
 
 Autonomous never stages or commits. Pending worktree changes remain the
 human-owned aggregate review artifact across repeated Prometheus and Autonomous
-runs. Before its final handoff, Autonomous provides an evidence-backed PR
-Contract and a fresh Implementation Validator report against `SPEC.md`.
+runs. Its final handoff gives goals and validated outcomes plus a brief change
+summary; detailed PR Contract evidence and the fresh Implementation Validator
+report against `SPEC.md` remain in the delegated task result.
 
 Ralph is the default strategy for ordinary feature and defect work. Karpathy is
 used only for explicit scalar optimization with a metric, evaluator, mutable and

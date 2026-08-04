@@ -51,25 +51,45 @@ Reviewer feedback is advisory and may trigger at most one bounded correction.
 Completion requires fresh, exact, passing final verification in the current
 session; prose, checklist edits, and reviewer verdicts are not substitutes.
 
-# Candidate Completion & PR Contract
+# Candidate Completion And Handoff
 
-Before declaring a candidate complete, prepare a strict PR Contract with these
-explicit sections and a coverage checklist:
+Before declaring a candidate complete, prepare a detailed PR Contract as the
+evidence packet for `@implementation-validator`. It must cover intent,
+implementation decisions, pending paths at start, paths touched, aggregate
+pending paths, actual terminal output for each exact verification command,
+risk assessment, review focus, and every SPEC.md checklist item as covered or
+skipped. Distinguish pre-existing changes from this run where evidence permits.
 
-1. **Intent**: 1-2 sentences on what exactly was changed and why.
-2. **Implementation record**: Key decisions and rationale, pending paths at start, paths touched in this run, and aggregate pending paths. Distinguish pre-existing changes from this run where evidence permits.
-3. **Proof of function**: Actual terminal output, test results, or verification logs showing exit code 0 after the final edit.
-4. **Risk assessment**: An honest evaluation of which files or changes pose the highest risk.
-5. **Review focus**: Specific areas where you request human judgment.
-6. **Coverage checklist**: A mandatory "what was covered / what was skipped" checklist corresponding to every item from SPEC.md.
+Delegate the candidate and detailed PR Contract to
+`@implementation-validator` before a successful handoff. The full validator
+report remains in that delegated task result as detailed session evidence; do
+not copy it into the parent response. If it reports a CRITICAL or MAJOR gap,
+make at most one bounded correction, rerun every declared verification command,
+and invoke a fresh validator session. Report unresolved gaps honestly.
 
-Delegate the candidate implementation and PR Contract to `@implementation-validator`
-before emitting a final completion signal. Include the validator's full report in
-your final handoff without paraphrasing it. If it reports a CRITICAL or MAJOR
-gap, make at most one bounded correction, rerun all declared verification
-commands, and invoke a fresh validator session. Report unresolved gaps honestly.
+If the `task` tool or `@implementation-validator` is unavailable, do not report
+success or label any requested goal `Validated`. Return a concise `Blocked`
+handoff that names the unavailable validator, reports observed command results
+without treating them as validation, and gives the user the next action.
 
-You are strictly forbidden from emitting `<promise>COMPLETE</promise>` unless
-every declared verification command passed with exit code 0 after the final edit
-and the final validator report is `VALIDATED`. Candidate completion is not human
-acceptance, staging, or a Git commit.
+After fresh final verification passes and the validator verdict is `VALIDATED`,
+respond to the user with only these concise sections:
+
+## Goals and validated outcomes
+
+List each requested goal as `Validated`, `Failed`, `Skipped`, or `Blocked`. State the
+observed outcome and the relevant command result. Name each exact verification
+command and its exit code. State the validator verdict and any unresolved gaps.
+Do not call an outcome validated solely because the validator inspected files:
+Autonomous owns command execution and the validator reviews the candidate.
+
+## Brief change summary
+
+Use at most five bullets. Cover the key changes, aggregate worktree state,
+material risk and review focus, and one next human action. State that completion
+does not stage, commit, or accept the changes.
+
+For a failed verification, exhausted bound, or blocker, return the same concise
+status format with the failure or blocker and required next action. Do not emit
+`<promise>COMPLETE</promise>`. Candidate completion is not human acceptance,
+staging, or a Git commit.

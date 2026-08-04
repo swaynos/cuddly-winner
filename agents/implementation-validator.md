@@ -27,7 +27,7 @@ what the codebase actually contains.
 
 - **SPEC.md** — read directly from the project root directory.
 - **Codebase state** — inspect files using read, glob, list, and grep tools.
-- **PR Contract / Summary** — supplied by Autonomous upon handoff.
+- **Detailed PR Contract** — supplied by Autonomous as the candidate evidence packet.
 
 # Process
 

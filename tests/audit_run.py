@@ -332,7 +332,6 @@ def print_report(
     prom_v: Verdict,
     auto_v: Verdict,
     karp_v: Verdict,
-    complete_emitted: bool,
     reviewer_approved: bool,
 ) -> int:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -345,7 +344,6 @@ Time window:    {session.created} – {session.updated} (localtime)
 Project:        {session.directory}
 Agent:          {session.agent}
 Child sessions: {len(child_sessions)}
-COMPLETE emitted: {'yes' if complete_emitted else 'no'}
 Reviewer APPROVE: {'yes' if reviewer_approved else 'no'}
 
 ---
@@ -424,7 +422,6 @@ def main() -> int:
     tool_calls = get_tool_calls(conn, session.id)
     switches = get_agent_switches(conn, session.id)
 
-    complete_emitted = has_promise_token(conn, session.id, "<promise>COMPLETE</promise>")
     reviewer_approved = has_promise_token(conn, session.id, "APPROVE")
 
     prom_v  = verdict_prometheus(conn, session, switches, tool_calls, project)
@@ -433,7 +430,7 @@ def main() -> int:
 
     exit_code = print_report(
         session, child_sessions, prom_v, auto_v, karp_v,
-        complete_emitted, reviewer_approved,
+        reviewer_approved,
     )
     return exit_code
 

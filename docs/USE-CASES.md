@@ -205,9 +205,17 @@ or initialize Git.
 
 - **Given:** Autonomous has implemented every bounded checklist item and run declared verification.
 - **When:** it prepares the human handoff.
-- **Then:** provide the PR Contract, invoke Implementation Validator with a clean context, include its full report, and make at most one bounded correction for critical or major gaps.
-- **Never:** emit a completion promise before fresh verification and a final `VALIDATED` report, or silently summarize validator findings away.
+- **Then:** provide Implementation Validator a detailed PR Contract with a clean context, retain its full report in the delegated task result, and make at most one bounded correction for critical or major gaps. The parent response states goals and validated outcomes, command exit codes, validator verdict, gaps, and a brief change summary.
+- **Never:** claim validation without fresh verification and a final `VALIDATED` report, silently hide material validator findings, or emit a completion promise.
 - **Evidence:** S prompt/permission checks; B validator-handoff scenario.
+
+### UC-AUT-07: Missing validator delegation blocks success
+
+- **Given:** candidate work has passed its declared commands, but the task tool or Implementation Validator is unavailable.
+- **When:** Autonomous prepares its handoff.
+- **Then:** return a concise blocked status with observed command results and the next action.
+- **Never:** call requested goals validated or claim a successful handoff.
+- **Evidence:** B validator-unavailable scenario.
 
 ## Karpathy And Review
 

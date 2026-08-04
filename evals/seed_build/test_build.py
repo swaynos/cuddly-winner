@@ -36,6 +36,7 @@ from _harness import (
 
 ORACLE    = Path(__file__).resolve().parent / "oracle"
 CANONICAL = Path(__file__).resolve().parent / "CANONICAL_SPEC.md"
+CANONICAL_MANIFEST = Path(__file__).resolve().parent / "CANONICAL_MANIFEST.json"
 ACCEPTANCE = ORACLE / "acceptance"
 REPORTS   = Path(tempfile.gettempdir()) / "opencode-seed-build-reports"
 ROOT      = Path(__file__).resolve().parents[2]
@@ -87,6 +88,13 @@ def _check_contract_compliance(workspace: Path) -> list[dict]:
         "note": "" if evidence_found else "Autonomous rewrote the published SPEC.",
     })
 
+    manifest_found = (workspace / "opencode-autonomous.json").read_text(encoding="utf-8") == CANONICAL_MANIFEST.read_text(encoding="utf-8")
+    checks.append({
+        "name": "Published Autonomous manifest remains unchanged",
+        "passed": manifest_found,
+        "note": "" if manifest_found else "Autonomous rewrote the published manifest.",
+    })
+
     return checks
 
 
@@ -96,6 +104,7 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     # Copy the canonical SPEC into the workspace
     canonical_text = CANONICAL.read_text(encoding="utf-8")
     (workspace / "SPEC.md").write_text(canonical_text, encoding="utf-8")
+    shutil.copy2(CANONICAL_MANIFEST, workspace / "opencode-autonomous.json")
     (workspace / ".python-version").write_text(
         (ROOT / ".python-version").read_text(encoding="utf-8"),
         encoding="utf-8",
@@ -114,7 +123,7 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
         prompt = (
             "Read the canonical SPEC.md in this workspace and execute it. "
             "Implement the workflow rules engine as specified. "
-            "Write tests, verify, review, and emit COMPLETE when done."
+            "Write tests, verify, review, and use the required concise final handoff."
         )
         rc, stdout, stderr = run_opencode_agent(
             agent="autonomous",

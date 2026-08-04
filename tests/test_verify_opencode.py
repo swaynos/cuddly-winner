@@ -13,6 +13,20 @@ import verify_opencode
 
 
 class BehavioralAssertionTests(unittest.TestCase):
+    def test_autonomous_uses_a_concise_final_handoff(self) -> None:
+        agent = (pathlib.Path(__file__).parents[1] / "agents" / "autonomous.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Goals and validated outcomes", agent)
+        self.assertIn("Brief change summary", agent)
+        self.assertIn("each exact verification command", agent)
+        self.assertIn("validator verdict", agent)
+        self.assertIn("detailed PR Contract", agent)
+        self.assertIn("full validator\nreport remains in that delegated task result", agent)
+        self.assertIn("do not report\nsuccess or label any requested goal `Validated`", agent)
+        self.assertIn("Do not emit\n`<promise>COMPLETE</promise>`", agent)
+
     def test_last_nonempty_line_does_not_accept_an_earlier_verdict(self) -> None:
         output = "### Verdict\nREQUEST_CHANGES\nMore explanation after the verdict\n"
 

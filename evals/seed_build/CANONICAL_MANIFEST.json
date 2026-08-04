@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "strategy": "ralph",
+  "invariants": [
+    "Evaluation remains pure and has no filesystem or network side effects",
+    "Authorization runs before condition evaluation",
+    "Only the Python standard library is used"
+  ],
+  "implementation_scope": [
+    "rules_engine.py"
+  ],
+  "escalation_triggers": [
+    "A required acceptance criterion conflicts with the frozen acceptance suite",
+    "Completing the task requires files outside the declared implementation scope"
+  ],
+  "evaluator_inventory": [],
+  "verification": {
+    "commands": [
+      "python3 -c 'import ast, pathlib; ast.parse(pathlib.Path(\"rules_engine.py\").read_text())'",
+      "PYTHONDONTWRITEBYTECODE=1 RULES_ENGINE_PATH=rules_engine.py python3 -m unittest discover -s .oracle_readonly/acceptance -p 'test_*.py' -v"
+    ],
+    "baseline": "The frozen acceptance suite defines the required rules-engine behavior."
+  }
+}
