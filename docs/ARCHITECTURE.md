@@ -184,6 +184,12 @@ resolved from the CLI, one environment variable, or OpenCode's debug output;
 it. One entry synchronizer handles files and directories in copy or symlink
 mode, including idempotence, collision backups, status, and safe removal.
 
+The installer also synchronizes two namespaced MCP entries through a narrow JSON
+helper. They provide a headless isolated research browser and headless minimal
+NotebookLM. The helper backs up before mutation, changes only its own keys, and
+preserves unrelated entries. `scripts/opencode-browser-credentials.mjs` manages
+separate opt-in ChatGPT and Gemini profiles outside project repositories.
+
 Every file under `rules/` deploys, name preserved, to `<config_dir>/rules/`
 through the same synchronizer used for agents and skills. That alone does not
 make OpenCode load the file: OpenCode only auto-loads `<config_dir>/AGENTS.md`

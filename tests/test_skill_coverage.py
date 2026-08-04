@@ -581,6 +581,8 @@ def test_playwright_image_generation_skill_content() -> list[TestFailure]:
         ("connection interrupted. waiting for the complete answer" in text, "records ChatGPT connection-interrupted stalls"),
         ("dataset release" in text and "checksums" in text, "protects datasets with releases/checksums"),
         ("gemini" in text and "chatgpt" in text, "keeps provider-neutral scope"),
+        ("ephemeral" in text and "persistent-headless" in text, "documents credential modes"),
+        ("Do not use a personal default browser profile".lower() in text, "blocks personal browser profiles"),
     ]
     for ok, desc in checks:
         if ok:

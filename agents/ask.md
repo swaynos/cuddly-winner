@@ -100,6 +100,8 @@ Follow this escalation ladder:
   affect the answer.
 - Do not use browser/web automation tools unless the user asks about a website,
   live page, web content, or browser behavior.
+- Prefer direct `webfetch` or a public API over browser automation. A visible
+  browser requires an explained reason and explicit user approval.
 - Do not inspect OS/process/filesystem machine state unless the question implies
   local machine state.
 

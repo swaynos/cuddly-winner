@@ -8,6 +8,19 @@ compatibility: opencode
 
 Browser image-generation runs are data collection, not casual UI scripting. Preserve auth, capture only verified image bytes, and leave an auditable trail.
 
+## Credential Modes
+
+- `ephemeral` is the default: use a headless isolated browser and do not retain
+  credentials after it closes.
+- `persistent-headless` is opt-in: use only the managed provider-specific profile
+  outside the project repository.
+- `auth` is a one-time, user-approved visible-browser setup state. Never enter
+  it automatically. After login, switch back to `persistent-headless`.
+
+Do not use a personal default browser profile. Do not silently fall back to CDP
+or a headed browser when headless authentication fails; report the provider
+constraint and ask for approval.
+
 ## Trigger
 
 Use this skill for ChatGPT, Gemini, or similar web UIs when the task involves:

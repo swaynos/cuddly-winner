@@ -790,12 +790,18 @@ def main() -> int:
     requirements = (ROOT / "docs/REQUIREMENTS.md").read_text()
     architecture = (ROOT / "docs/ARCHITECTURE.md").read_text()
     methodology = (ROOT / "docs/TESTING-METHODOLOGY.md").read_text()
+    resource_selection = (ROOT / "docs/RESOURCE-SELECTION.md").read_text()
     for name, text in (("README", readme), ("requirements", requirements), ("architecture", architecture), ("methodology", methodology)):
         require("Plan" in text and "Build" in text or name == "methodology", f"{name} omits native Plan/Build compatibility")
     require("does **not** replace, wrap, redirect, restrict" in readme, "README product goal is ambiguous")
     require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
     require("Standardized Verdict Definitions" in methodology, "TESTING-METHODOLOGY missing verdict definitions")
     require("before its final response" in requirements and "without waiting for a separate user request" in architecture, "durable Prometheus publication gate missing")
+    require("visible browser" in resource_selection.lower() and "approval" in resource_selection.lower(), "resource-selection visible-browser gate missing")
+    require("ephemeral" in resource_selection and "persistent" in resource_selection, "image credential modes missing")
+    require((ROOT / "rules/resource-selection.md").is_file(), "resource-selection rule missing")
+    require("--headless" in (ROOT / "scripts/opencode-mcp-config.mjs").read_text(), "managed research browser is not headless")
+    require("--confirm" in (ROOT / "scripts/opencode-browser-credentials.mjs").read_text(), "credential confirmation gate missing")
 
     require(not (ROOT / "progress.txt").exists(), "stale root progress.txt remains")
     require(not any(p.is_file() for p in (ROOT / "evals/agent_value").rglob("*")), "retired agent_value evaluation returned")

@@ -106,6 +106,11 @@ commands, delegate, or make product decisions. External claims identify their
 URL or notebook source, and private repository contents or secrets must not be
 sent to third-party services.
 
+Grounder follows the resource order in `docs/RESOURCE-SELECTION.md`. It uses a
+visible browser only after explaining the target and lower-impact failures and
+receiving explicit user approval. Unauthenticated NotebookLM is a valid reason
+to use local and web evidence, never a reason to start interactive auth.
+
 ### Implementation Validator
 
 Implementation Validator is read-only and objective. It operates with a clean
@@ -125,6 +130,11 @@ filesystem effects caused by native commands. Prometheus's `spike` command and
 Autonomous Bash can technically access host resources available to OpenCode.
 Documentation and agent prompts must state this honestly and must never describe
 their results as sandboxed, protected, or tamper-resistant.
+
+Resource selection is guidance, not a second permission system. The managed
+deployment configures its research browser headless and isolated by default, but
+users may retain unrelated MCP entries. Diagnostics report their mode without
+rewriting them.
 
 ## Prometheus Profile
 

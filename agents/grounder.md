@@ -55,6 +55,13 @@ The caller provides a question, feature idea, bug report, or implementation risk
 4. Separate facts from inferences. If evidence is weak, say so.
 5. Stop once you have enough context to answer the caller's specific question.
 
+Use local evidence, direct `webfetch`, public APIs, and text-only search before
+browser automation. Before any browser call, state why those sources failed and
+name the target. Never invoke a visible browser unless the user explicitly
+approves the stated disruption. NotebookLM is a headless source only when health
+reports authentication; never call its setup, repair, or cleanup tools unless
+the user explicitly asks for that action.
+
 Never send credentials, secrets, private repository code, or other confidential
 project content to third-party services, including web and NotebookLM queries.
 If external access is unavailable, inappropriate for the material, or cannot be

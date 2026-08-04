@@ -307,6 +307,40 @@ or initialize Git.
 - **Never:** retain claims about retired runners, supervisors, Bubblewrap, Lima, or old profile flags.
 - **Evidence:** S repository text checks; full CI.
 
+## Resource Selection
+
+### UC-RESOURCE-01: Research avoids desktop disruption by default
+
+- **Given:** local evidence, direct web pages, public APIs, or text-only search can answer a question.
+- **When:** a managed agent gathers evidence.
+- **Then:** use those sources before NotebookLM or browser automation.
+- **Never:** open a visible browser without stating the target, lower-impact failures, and user approval.
+- **Evidence:** S agent/rule contract; B resource-order scenario.
+
+### UC-RESOURCE-02: NotebookLM failure remains non-interactive
+
+- **Given:** NotebookLM is unavailable or unauthenticated.
+- **When:** Grounder needs external evidence.
+- **Then:** use local or web evidence and report the fallback.
+- **Never:** begin setup, reauthentication, cleanup, or visible-browser repair without an explicit request.
+- **Evidence:** S managed MCP configuration; B unauthenticated NotebookLM scenario.
+
+### UC-RESOURCE-03: Image credentials are opt-in and provider-scoped
+
+- **Given:** a browser image-generation request for ChatGPT or Gemini.
+- **When:** managed credential state is selected.
+- **Then:** default to ephemeral headless state; require confirmation for visible auth and keep persistent profiles provider-specific.
+- **Never:** use a personal browser profile, preserve credentials by default, or silently fall back to headed operation.
+- **Evidence:** U credential state and filesystem fixture; F managed deployment fixture.
+
+### UC-RESOURCE-04: Managed MCP configuration preserves user state
+
+- **Given:** an OpenCode configuration with unrelated MCP entries.
+- **When:** managed install, status, diagnose, or remove runs.
+- **Then:** update only Cuddly-Winner-owned entries and report unmanaged modes read-only.
+- **Never:** overwrite unrelated entries or expose profile contents.
+- **Evidence:** U configuration synchronizer fixture; F installer fixture.
+
 ## Skills Ecosystem
 
 ### UC-SKILL-01: Skill frontmatter and content structure are release-validated

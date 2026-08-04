@@ -102,6 +102,15 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 | TP-SKILL-02 | UC-SKILL-02 | B, O | Load skills through managed OpenCode agents and attempt permission and identity-boundary violations. | Effective identity, tool decisions, and filesystem state. | Skill text does not widen plugin-enforced role boundaries or command permissions. Direct-model prompt tests alone are insufficient. |
 | TP-SKILL-03 | UC-SKILL-03 | S | Compare `docs/SKILLS.md` with packaged `skills/*/SKILL.md` directories during a catalog change. | Catalog inventory and package inventory. | Each shipped package has one catalog entry, and each catalog entry names one shipped package. |
 
+## Resource Selection
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-RESOURCE-01 | UC-RESOURCE-01 | S, B | Inspect deployed resource rule and managed-agent prompts; exercise a research scenario with direct URLs and one needing rendered content. | Tool sequence and visible-browser rationale. | Direct retrieval precedes browser use; visible mode requires stated need and approval. |
+| TP-RESOURCE-02 | UC-RESOURCE-02 | U, S | Configure unauthenticated NotebookLM and inspect managed MCP entry. | MCP configuration and agent response. | Normal entry is headless/minimal; no auth or repair call occurs without explicit request. |
+| TP-RESOURCE-03 | UC-RESOURCE-03 | U, F | Exercise ephemeral, auth, persistent-headless, status, and flush against synthetic profiles for both providers. | Config snapshots, modes, profile paths, and cleanup result. | Auth needs confirmation; ephemeral state is nonpersistent; flush removes only one managed profile. |
+| TP-RESOURCE-04 | UC-RESOURCE-04 | U, F | Install, repeat, diagnose, modify one managed entry, then remove against a config containing user entries. | Backups, exact JSON, status, and final config. | User entries survive; managed entries are idempotent; modified entries remain; diagnostics do not launch a browser. |
+
 ## Mutation Testing
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |

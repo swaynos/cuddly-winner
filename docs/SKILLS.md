@@ -46,6 +46,9 @@ restart OpenCode after installing or changing a skill.
   wait indefinitely for a stalled provider, or delete raw runs before release.
 - **Evidence:** Verified image bytes, run records, and a frozen dataset release
   when outputs are retained.
+- **Credential modes:** Default to ephemeral headless state. Persistent provider
+  profiles require explicit opt-in and one approved interactive setup; never use
+  personal browser profiles or an automatic headed fallback.
 
 ### `project-agent-scaffolding`
 

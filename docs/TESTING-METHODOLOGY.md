@@ -8,6 +8,14 @@ This document defines the runtime investigation, session auditing, and evaluatio
 `docs/USE-CASES.md` define system contracts; this document defines how empirical
 compliance is measured and audited.
 
+## Resource-Selection Testing
+
+Resource-selection tests use static prompts, JSON fixtures, and synthetic browser
+profiles. They do not contact provider accounts or launch a real browser. Tests
+must assert configuration arguments and state transitions instead of treating a
+headed or authenticated live run as release evidence. Live provider checks are
+opt-in diagnostics and must use non-sensitive prompts.
+
 ---
 
 ## Standardized Verdict Definitions

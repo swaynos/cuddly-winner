@@ -233,6 +233,7 @@ SKILLS_DIR="${CONFIG_DIR}/skills"
 RULES_DIR="${CONFIG_DIR}/rules"
 OPENCODE_JSON="${CONFIG_DIR}/opencode.json"
 INSTRUCTIONS_HELPER="${SCRIPT_DIR}/opencode-instructions.mjs"
+MCP_HELPER="${SCRIPT_DIR}/opencode-mcp-config.mjs"
 
 shopt -s nullglob
 AGENT_SOURCES=("${REPO_ROOT}"/agents/*.md)
@@ -257,6 +258,7 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
   sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
+  node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
   exit 0
 fi
 
@@ -267,6 +269,7 @@ install_tool_sdk "$CONFIG_DIR"
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
 sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
+node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
 
 # Remove known retired artifacts that earlier installs may have left behind.
 for retired in \
