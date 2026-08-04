@@ -7,8 +7,9 @@ This plan defines the evidence required for every use case in
 prescribing a test harness or automation architecture.
 
 The durable behavior contracts remain `docs/REQUIREMENTS.md`,
-`docs/ARCHITECTURE.md`, and `docs/USE-CASES.md`. This plan must not introduce
-new product behavior, default limits, permission semantics, or lifecycle rules.
+`docs/ARCHITECTURE.md`, `docs/SKILLS.md`, and `docs/USE-CASES.md`. This plan
+must not introduce new product behavior, default limits, permission semantics,
+or lifecycle rules.
 
 ## Evidence Classes
 
@@ -97,8 +98,9 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
-| TP-SKILL-01 | UC-SKILL-01 | U | Validate every packaged skill and a temporary deployed copy for frontmatter and required content. | Validation report, frontmatter parsing, section inventory, and deployed-tree path. | Every packaged and deployed skill is tested; invalid or unparseable skills fail. |
+| TP-SKILL-01 | UC-SKILL-01 | U | Validate every packaged skill and a temporary deployed copy for frontmatter, path shape, and required static content. | Validation report, frontmatter parsing, section inventory, and deployed-tree path. | Every packaged and deployed skill is tested; invalid or unparseable skills fail. |
 | TP-SKILL-02 | UC-SKILL-02 | B, O | Load skills through managed OpenCode agents and attempt permission and identity-boundary violations. | Effective identity, tool decisions, and filesystem state. | Skill text does not widen plugin-enforced role boundaries or command permissions. Direct-model prompt tests alone are insufficient. |
+| TP-SKILL-03 | UC-SKILL-03 | S | Compare `docs/SKILLS.md` with packaged `skills/*/SKILL.md` directories during a catalog change. | Catalog inventory and package inventory. | Each shipped package has one catalog entry, and each catalog entry names one shipped package. |
 
 ## Mutation Testing
 

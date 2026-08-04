@@ -4,7 +4,9 @@
 
 This document defines the runtime investigation, session auditing, and evaluation procedures used to verify OpenCode specialist agent workflows. It specifies the SQLite database log inspection schema, standardized verdict definitions, evaluation harness conventions, and test suite execution protocols.
 
-`docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, and `docs/USE-CASES.md` define system contracts; this document defines how empirical compliance is measured and audited.
+`docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/SKILLS.md`, and
+`docs/USE-CASES.md` define system contracts; this document defines how empirical
+compliance is measured and audited.
 
 ---
 
@@ -146,3 +148,8 @@ and deployment validation. Direct-model pressure checks remain supplemental:
 2. **Pressure Testing (`tests/test_skill_pressure.py`)**: Sends individual
    skills as direct model context and checks selected response cues. It remains
    optional and does not replace managed-agent permission enforcement tests.
+
+The catalog in `docs/SKILLS.md` defines the behavior to evaluate. A deterministic
+check may prove package shape or a static safety rule; it does not by itself
+prove that a model follows a workflow. Conversely, a pressure test does not
+replace structural, deployment, or managed-agent permission testing.

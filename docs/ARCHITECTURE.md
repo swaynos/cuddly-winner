@@ -224,18 +224,15 @@ Lima, Docker, a VM image, or a supervisor.
 
 ## Skills Architecture
 
-Non-core skills are packaged under `skills/` and deployed by default:
+Non-core skills are packaged under `skills/` and deployed by default. The
+installer synchronizes every packaged skill directory into
+`<config_dir>/skills/`; it does not require an inventory in installer code.
 
-- `local-word-document`: Manipulate and format document files.
-- `playwright-image-generation`: Visual evaluation and DOM screenshot generation.
-- `project-agent-scaffolding`: Project layout and agent configuration generation.
-- `subagent-driven-development`: Subagent delegation patterns and isolation.
-- `systematic-debugging`: Root-cause diagnosis protocols.
-- `test-driven-development`: Red-green-refactor loop patterns.
-- `verification-before-completion`: Evidence-gathering protocols before completion claims.
-- `writing-skills`: Custom skill packaging and frontmatter formatting.
-
-Skills reside under `<config_dir>/skills/<skill_name>/SKILL.md`. OpenCode automatically discovers and loads skill packages at session startup. The immutability plugin, rather than skill text, enforces role edit-tool boundaries and command permissions.
+Skills reside under `<config_dir>/skills/<skill_name>/SKILL.md`. OpenCode
+automatically discovers and loads skill packages at session startup. The
+immutability plugin, rather than skill text, enforces role edit-tool boundaries
+and command permissions. `docs/SKILLS.md` owns the inventory, package contract,
+and behavior for each skill; `CONTRIBUTING.md` owns the authoring process.
 
 ## Mutation Testing Framework
 

@@ -12,11 +12,13 @@ optimization. Continue using native Plan and Build for ordinary work.
 
 The durable source of truth for this project lives in `docs/`:
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md): System architecture, identity inheritance, workflow tools, manifest schemas, and skills.
-- [REQUIREMENTS.md](docs/REQUIREMENTS.md): Product goals, permission models, agent profiles, skills, and validation rules.
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md): System architecture, identity inheritance, workflow tools, manifest schemas, and skill packaging.
+- [REQUIREMENTS.md](docs/REQUIREMENTS.md): Product goals, permission models, agent profiles, and validation rules.
+- [SKILLS.md](docs/SKILLS.md): Skill contracts, catalog, and shared package rules.
 - [TEST-PLAN.md](docs/TEST-PLAN.md): Evidence classes, test cases, and platform matrix.
 - [USE-CASES.md](docs/USE-CASES.md): Concrete use cases for native compatibility, identity, triage, execution, skills, and auditing.
 - [TESTING-METHODOLOGY.md](docs/TESTING-METHODOLOGY.md): Runtime investigation, SQLite log schema, verdict definitions, and harness conventions.
+- [CONTRIBUTING.md](CONTRIBUTING.md): Process for adding or changing a packaged skill.
 
 ## Design Boundary
 
@@ -34,9 +36,9 @@ Command security belongs to OpenCode's native permission model:
 
 ## Installation
 
-The default installation deploys the complete managed profile: six agent
+The default installation deploys the complete managed profile: seven agent
 definitions, the managed-agent immutability plugin, three workflow tools and
-their pinned SDK, and eight non-core skills:
+their pinned SDK, and all packaged non-core skills:
 
 ```bash
 bash scripts/deploy-opencode-agents.sh install
@@ -46,10 +48,8 @@ bash scripts/deploy-opencode-agents.sh install
 - `validate_scaffold`, a static SPEC and manifest validator
 - `scaffold_gitignore`, the constrained generated-artifact exclusion helper
 
-The eight skills are `local-word-document`, `playwright-image-generation`,
-`project-agent-scaffolding`, `subagent-driven-development`,
-`systematic-debugging`, `test-driven-development`,
-`verification-before-completion`, and `writing-skills`.
+See [SKILLS.md](docs/SKILLS.md) for the catalog and
+[CONTRIBUTING.md](CONTRIBUTING.md) for the process to add or change a skill.
 
 Use `status` to inspect all managed entries and `remove` to remove current
 byte-identical copies or repository symlinks while preserving modifications. Use

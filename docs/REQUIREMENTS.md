@@ -7,8 +7,9 @@ roles and explicit planning-to-implementation workflows without replacing native
 Plan or Build and without implementing a second command-security or orchestration
 platform.
 
-`docs/REQUIREMENTS.md` and `docs/ARCHITECTURE.md` are the durable source of
-truth. `SPEC.md` and `opencode-autonomous.json` are transient task scaffolds.
+`docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, and `docs/SKILLS.md` are the
+durable source of truth. `SPEC.md` and `opencode-autonomous.json` are transient
+task scaffolds.
 
 ## Runtime Compatibility
 
@@ -238,9 +239,9 @@ plugin are part of the default managed profile and described in
 
 ## Skills Ecosystem
 
-The installer deploys eight non-core skills: `local-word-document`, `playwright-image-generation`, `project-agent-scaffolding`, `subagent-driven-development`, `systematic-debugging`, `test-driven-development`, `verification-before-completion`, and `writing-skills`.
-
-Each skill must provide valid YAML frontmatter and markdown body guidelines.
+The installer deploys every packaged non-core skill. `docs/SKILLS.md` is the
+canonical inventory and behavioral specification. Each skill must meet its
+common package contract and its catalog entry.
 `tests/test_skill_coverage.py` validates packaged and temporarily deployed skill
 assets without model credentials. Managed-agent integration tests prove the
 immutability plugin remains the enforcement boundary for roles and permissions.

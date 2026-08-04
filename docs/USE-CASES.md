@@ -313,7 +313,7 @@ or initialize Git.
 
 - **Given:** packaged skill assets under `skills/`.
 - **When:** the deterministic validation suite checks packaged skills and a temporary deployed copy.
-- **Then:** verify YAML frontmatter schema, required instruction sections, and path structure.
+- **Then:** verify YAML frontmatter schema, package path structure, and the catalog's required static content.
 - **Never:** allow invalid or unparseable skills to be deployed.
 - **Evidence:** U packaged/deployed skill validation suite.
 
@@ -324,6 +324,14 @@ or initialize Git.
 - **Then:** verify plugin-enforced role edit-tool boundaries and permission constraints remain enforced.
 - **Never:** permit skill prompts to override agent permission frontmatter or identity isolation.
 - **Evidence:** B, O managed-agent boundary scenario. Direct-model pressure tests alone are insufficient.
+
+### UC-SKILL-03: Catalog and packages remain aligned
+
+- **Given:** the canonical skill catalog and packaged skill directories.
+- **When:** a skill is added, removed, or changed.
+- **Then:** maintain one catalog entry and one package for each shipped skill.
+- **Never:** let a runtime prompt become the only behavioral specification.
+- **Evidence:** S catalog/package inventory review.
 
 ## Mutation Testing
 
