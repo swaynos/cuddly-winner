@@ -110,6 +110,11 @@ The suite defines 14 scenarios for all 7 managed agents (`ask`, `autonomous`,
 13. **`Grounder` Private Content**: Reports local-only handling and does not echo a private-content canary.
 14. **`Implementation Validator`**: Reports a cited verdict for a candidate implementation without using mutation or command tools.
 
+Agent permission tests also resolve deployed agent metadata and verify that
+specific task allows override the catch-all deny. Autonomous scenarios cover both
+successful Implementation Validator delegation and the unavailable-validator
+fallback, which is valid only after candidate readiness and final verification.
+
 `karpathy`, `reviewer`, `grounder`, and `implementation-validator` are intentionally subagents. Their live
 scenarios invoke them through OpenCode's documented `@mention` path, then require
 the JSON task event to identify the requested child agent. The harness reads the

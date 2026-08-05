@@ -115,6 +115,12 @@ def _profile_mismatches() -> list[str]:
         for permission, action in re.findall(r"^\s{2}([a-z_]+):\s*(allow|ask|deny)$", source.read_text(encoding="utf-8"), flags=re.MULTILINE):
             if not any(item[0] == permission and item[1] == action for item in permissions):
                 mismatches.append(f"active {name} is missing {permission}: {action}")
+        if name in {"ask", "prometheus", "autonomous", "karpathy"} and not resolved.get("tools", {}).get("task"):
+            mismatches.append(f"active {name} does not expose its permitted task tool")
+        if name in {"ask", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"}:
+            for tool in ("spike", "scaffold_gitignore", "validate_scaffold"):
+                if resolved.get("tools", {}).get(tool):
+                    mismatches.append(f"active {name} exposes Prometheus-only tool: {tool}")
     return mismatches
 
 
@@ -259,6 +265,7 @@ def _run_scenario_agent(
     workspace: pathlib.Path,
     *,
     auto_approve: bool = False,
+    env: dict[str, str] | None = None,
 ) -> ScenarioResult:
     """Run one agent from the user's active OpenCode profile."""
     workspace.mkdir(parents=True, exist_ok=True)
@@ -276,6 +283,7 @@ def _run_scenario_agent(
             capture_output=True,
             text=True,
             timeout=300,
+            env=os.environ | (env or {}),
         )
     except subprocess.TimeoutExpired as error:
         stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
@@ -412,10 +420,10 @@ def _git_output(workspace: pathlib.Path, *args: str) -> str:
 
 
 def _autonomous_handoff_failure(model: str | None, workspace: pathlib.Path) -> str | None:
-    agents_dir = workspace / ".opencode/agents"
-    agents_dir.mkdir(parents=True)
-    for agent in ("autonomous", "implementation-validator"):
-        shutil.copy2(ROOT / "agents" / f"{agent}.md", agents_dir / f"{agent}.md")
+    config_home = workspace / "config-home"
+    config_dir = config_home / "opencode"
+    shutil.copytree(pathlib.Path.home() / ".config/opencode", config_dir)
+    agents_dir = config_dir / "agents"
     autonomous_agent = agents_dir / "autonomous.md"
     autonomous_agent.write_text(
         autonomous_agent.read_text(encoding="utf-8").replace(
@@ -436,6 +444,7 @@ def _autonomous_handoff_failure(model: str | None, workspace: pathlib.Path) -> s
         model,
         workspace,
         auto_approve=True,
+        env={"XDG_CONFIG_HOME": str(config_home)},
     )
     out = _require_scenario_success(result, "Autonomous concise handoff", [])
     if out is None:
@@ -461,6 +470,38 @@ def _autonomous_handoff_failure(model: str | None, workspace: pathlib.Path) -> s
     return None
 
 
+def _autonomous_handoff_success(model: str | None, workspace: pathlib.Path) -> str | None:
+    agents_dir = workspace / ".opencode/agents"
+    agents_dir.mkdir(parents=True)
+    for agent in ("autonomous", "implementation-validator"):
+        shutil.copy2(ROOT / "agents" / f"{agent}.md", agents_dir / f"{agent}.md")
+    verification_marker = "verification.marker"
+    _write_ralph_scaffold(
+        workspace,
+        verification_command=f"sh -c 'printf verified > {verification_marker}'",
+        implementation_scope=["README.md", verification_marker],
+    )
+    (workspace / "README.md").write_text("teh fixture typo\n", encoding="utf-8")
+    result = _run_scenario_agent(
+        "autonomous",
+        "Fix the typo in README.md and complete the published scaffold.",
+        model,
+        workspace,
+        auto_approve=True,
+    )
+    out = _require_scenario_success(result, "Autonomous validator handoff", [])
+    if out is None:
+        return f"Autonomous validator handoff failed: {_response_excerpt(result.raw_output)}"
+    if not _delegated_to(result.events, "implementation-validator"):
+        return f"Autonomous did not delegate a complete candidate: {_response_excerpt(out)}"
+    validator = _task_result_text(_delegated_result(result.events, "implementation-validator") or "")
+    if _last_nonempty_line(validator) != "VALIDATED":
+        return f"Implementation Validator did not validate complete fixture: {_response_excerpt(validator)}"
+    if "Validated" not in out or not (workspace / verification_marker).is_file():
+        return f"Autonomous did not report validated verified handoff: {_response_excerpt(out)}"
+    return None
+
+
 def run_behavioral_scenarios(model: str | None, *, handoff_only: bool = False) -> None:
     """Run LLM-in-the-loop scenarios with the configured OpenCode profile."""
     if not shutil.which("opencode"):
@@ -469,10 +510,13 @@ def run_behavioral_scenarios(model: str | None, *, handoff_only: bool = False) -
 
     if handoff_only:
         with tempfile.TemporaryDirectory(prefix="opencode-handoff-") as tmp:
-            failure = _autonomous_handoff_failure(model, pathlib.Path(tmp))
+            root = pathlib.Path(tmp)
+            failure = _autonomous_handoff_success(model, root / "success")
+            if failure is None:
+                failure = _autonomous_handoff_failure(model, root / "unavailable")
         if failure:
             raise AssertionError(f"Autonomous handoff scenario failure: {failure}")
-        print("Autonomous validator-unavailable handoff scenario passed.")
+        print("Autonomous validator handoff scenarios passed.")
         return
 
     print("\nRunning LLM behavioral scenarios…")
@@ -869,7 +913,15 @@ def main() -> int:
     require("Do not ask merely for formats, thresholds, geometry, seeds, quotas" in agents["prometheus"], "Prometheus must apply bounded defaults for unspecified mechanics")
     require("empty workspace is not a planning blocker" in agents["prometheus"].lower(), "Prometheus must publish for an empty-workspace calculator request")
     require("bash: ask" in agents["autonomous"] and "run: allow" not in agents["autonomous"], "Autonomous must use approval-gated native Bash")
+    require(agents["autonomous"].index('"*": deny') < agents["autonomous"].index("implementation-validator: allow"), "Autonomous task permission ordering disables validator delegation")
+    require(agents["prometheus"].index('"*": deny') < agents["prometheus"].index("grounder: allow"), "Prometheus task permission ordering disables Grounder delegation")
+    require(agents["ask"].index('"*": deny') < agents["ask"].index('"grounder": allow'), "Ask task permission ordering disables Grounder delegation")
+    require(agents["karpathy"].index('"*": deny') < agents["karpathy"].index('"reviewer": allow'), "Karpathy task permission ordering disables review delegation")
+    for name in ("ask", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"):
+        for tool in ("spike", "scaffold_gitignore", "validate_scaffold"):
+            require(f"{tool}: deny" in agents[name], f"{name} must not expose Prometheus-only {tool}")
     require("Missing implementation files, tests, scripts," in agents["autonomous"], "Autonomous must treat missing deliverables as implementation work")
+    require("placeholder test, ignored verification flag, disabled" in agents["autonomous"], "Autonomous must reject incomplete candidates before validator handoff")
     require("Do not escalate ordinary local debugging" in agents["autonomous"], "Autonomous escalation boundary is too broad")
     require("reviewer verdicts are not substitutes" in agents["autonomous"], "Autonomous must not substitute reviewer approval for final verification")
     require("advisory and may trigger at most one bounded correction" in agents["autonomous"], "Autonomous reviewer loop must be bounded to one correction")
@@ -884,6 +936,7 @@ def main() -> int:
     require("must not be rewritten during execution" in agents["autonomous"], "Autonomous must not rewrite checklist boxes during execution")
     require("Use Karpathy only when the manifest explicitly" in agents["autonomous"], "Autonomous must not invoke Karpathy without a complete manifest")
     require("A failed kill criterion requires redesign" in agents["prometheus"], "Prometheus must require redesign on failed kill criterion, not optimistic planning")
+    require("load-bearing empirical prerequisite" in agents["prometheus"], "Prometheus must establish load-bearing empirical prerequisites before publication")
     require("without a scaffold only when" in agents["prometheus"], "Prometheus must have bounded exception for finishing without scaffold")
     require("### Selected:" in agents["prometheus"], "Prometheus must require Selected heading in Approaches Considered")
     require("Do not substitute implicit prose" in agents["prometheus"], "Prometheus must prohibit implicit prose substituting for structural labels")

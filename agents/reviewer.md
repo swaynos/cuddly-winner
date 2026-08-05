@@ -10,6 +10,9 @@ tools:
 permission:
   edit: deny
   bash: deny
+  spike: deny
+  scaffold_gitignore: deny
+  validate_scaffold: deny
   task:
     "*": deny
 ---

@@ -10,6 +10,9 @@ tools:
 permission:
   edit: deny
   bash: deny
+  spike: deny
+  scaffold_gitignore: deny
+  validate_scaffold: deny
   webfetch: allow
   notebooklm_get_health: allow
   notebooklm_list_notebooks: allow

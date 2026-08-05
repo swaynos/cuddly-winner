@@ -156,6 +156,15 @@ inside the OpenCode session. Autonomous does not stage, commit, stash, reset,
 switch branches, or initialize Git; the pending worktree is the human-owned
 aggregate review artifact. Reviewer output is advisory.
 
+Before validator handoff, Autonomous checks every acceptance criterion,
+invariant, required output, and checklist item against the implementation and
+fresh verification. Missing branches, disabled required stages, placeholder
+tests, ignored verification flags, and missing outputs keep the candidate
+incomplete. Missing ordinary in-scope work requires continuation. A failed
+measured prerequisite that removes a core requested outcome is a failed
+execution requiring renewed Prometheus planning; an explicitly optional branch
+may instead be reported as skipped.
+
 Before its final handoff, Autonomous prepares a detailed PR Contract covering
 intent, implementation record, proof of function (terminal output showing exit
 code 0), risk assessment, review focus, and every SPEC checklist item. It gives
@@ -166,16 +175,19 @@ brief change summary with worktree state, risks, review focus, and one next huma
 action. It may make one bounded correction for a critical or major gap. It does
 not emit `<promise>COMPLETE</promise>`.
 
-If the task tool cannot delegate to Implementation Validator, Autonomous stops
-with a concise blocked handoff. It reports command observations as evidence, not
-validation, and does not claim success or label any requested goal validated.
+After a complete candidate passes readiness and final verification, Autonomous
+delegates to Implementation Validator. If the task tool cannot delegate then,
+Autonomous stops with a concise blocked handoff. It reports command observations
+as evidence, not validation, and does not claim success or label any requested
+goal validated.
 
 ## Permission Semantics
 
-Agent frontmatter sets `bash: ask` for both Prometheus and Autonomous. Normal
-OpenCode sessions ask the user before each command. `opencode --auto` converts
-those asks to approvals. Explicit denies, including all command access for
-read-only roles, remain denied.
+Agent frontmatter sets `bash: ask` for Autonomous. Prometheus denies direct Bash
+and uses approval-gated `spike` for contracted command-dependent research.
+Normal OpenCode sessions ask the user before each allowed command. `opencode
+--auto` converts those asks to approvals. Explicit denies, including all command
+access for read-only roles, remain denied.
 
 ## Deployment
 

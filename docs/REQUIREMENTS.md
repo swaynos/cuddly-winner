@@ -59,10 +59,16 @@ browser calculator rather than asking the user to choose a platform or basic
 operations.
 
 Prometheus may edit only `SPEC.md`, `opencode-autonomous.json`,
-`.prometheus/evaluator/**`, and `.spike/**`. It has `bash: ask` permission for
-research during deliberation; commands require user approval or are auto-approved
-with `--auto`. Governance tools (`spike`, `validate_scaffold`,
-`scaffold_gitignore`) remain available when installed.
+`.prometheus/evaluator/**`, and `.spike/**`. It denies direct Bash and uses the
+approval-gated `spike` tool for contracted command-dependent research. Governance
+tools (`spike`, `validate_scaffold`, `scaffold_gitignore`) remain available when
+installed.
+
+Before publication, Prometheus establishes every load-bearing empirical
+prerequisite used by its acceptance criteria. It uses existing evidence or a
+contracted spike. If missing evidence eliminates a core requested outcome, it
+redesigns or reports a planning blocker; it does not relabel a degraded result as
+success. Acceptance criteria must mark any allowed degraded branch as optional.
 
 ### Autonomous
 
@@ -75,6 +81,14 @@ are implementation work: Autonomous selects conservative, reversible,
 deterministic defaults that satisfy the scaffold. It is the only managed identity
 permitted to edit ordinary project files.
 
+Before candidate handoff, Autonomous verifies every acceptance criterion,
+invariant, required output, and checklist item against the implementation and
+fresh command evidence. Missing branches, disabled stages, placeholder tests,
+ignored verifier flags, or missing outputs mean the work remains incomplete.
+Autonomous continues ordinary in-scope work. A failed measured prerequisite that
+eliminates a core requested outcome is `Failed` and returns to Prometheus; an
+explicitly optional branch may be `Skipped`.
+
 Autonomous uses native Bash with `ask` permission. OpenCode auto mode may approve
 those requests automatically. Autonomous never stages, commits, stashes, resets,
 switches branches, or initializes Git. It preserves pending worktree changes as
@@ -85,9 +99,10 @@ and validated outcomes, a brief change summary, fresh command exit codes, the
 validator verdict, material gaps and risks, worktree state, and one next human
 action. It does not emit a completion promise.
 
-If Implementation Validator cannot be delegated because the task tool is
-unavailable, Autonomous reports a blocked handoff. It may report observed
-command results but must not call requested goals validated or report success.
+After a complete candidate passes final verification, Autonomous delegates to
+Implementation Validator. If delegation is unavailable then, Autonomous reports
+a blocked handoff. It may report observed command results but must not call
+requested goals validated or report success.
 
 ### Karpathy
 

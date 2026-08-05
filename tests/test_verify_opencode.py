@@ -24,8 +24,24 @@ class BehavioralAssertionTests(unittest.TestCase):
         self.assertIn("validator verdict", agent)
         self.assertIn("detailed PR Contract", agent)
         self.assertIn("full validator\nreport remains in that delegated task result", agent)
-        self.assertIn("do not report\nsuccess or label any requested goal `Validated`", agent)
+        self.assertIn("unavailable, do not report success or label any\nrequested goal `Validated`", agent)
         self.assertIn("Do not emit\n`<promise>COMPLETE</promise>`", agent)
+        self.assertIn('"*": deny\n    grounder: allow', agent)
+        self.assertIn("placeholder test, ignored verification flag, disabled", agent)
+        self.assertIn("Attempt the required validator delegation after this candidate-readiness check", agent)
+
+    def test_task_permission_specific_allows_follow_the_catch_all_deny(self) -> None:
+        root = pathlib.Path(__file__).parents[1] / "agents"
+        expected = {
+            "ask.md": '"grounder": allow',
+            "prometheus.md": "grounder: allow",
+            "autonomous.md": "implementation-validator: allow",
+            "karpathy.md": '"reviewer": allow',
+        }
+
+        for filename, specific_allow in expected.items():
+            text = (root / filename).read_text(encoding="utf-8")
+            self.assertLess(text.index('"*": deny'), text.index(specific_allow), filename)
 
     def test_last_nonempty_line_does_not_accept_an_earlier_verdict(self) -> None:
         output = "### Verdict\nREQUEST_CHANGES\nMore explanation after the verdict\n"

@@ -10,10 +10,13 @@ tools:
 permission:
   edit: deny
   bash: deny
+  spike: deny
+  scaffold_gitignore: deny
+  validate_scaffold: deny
   task:
+    "*": deny
     "reviewer": allow
     "grounder": allow
-    "*": deny
 ---
 You are the Karpathy loop strategist. You are not a user-facing primary agent;
 users interact with `@autonomous`, which delegates here only when the published

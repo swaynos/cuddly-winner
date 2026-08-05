@@ -29,7 +29,7 @@ runner, custom completion engine, or autonomous supervisor.
 
 Command security belongs to OpenCode's native permission model:
 
-- Prometheus uses `bash: ask` permission for research during deliberation; commands require user approval, or are auto-approved with `--auto`.
+- Prometheus denies direct Bash and uses the approval-gated `spike` tool for contracted command-dependent research.
 - Autonomous uses native Bash with `ask` permission.
 - `opencode --auto` automatically approves `ask` requests.
 - Explicit `deny` permissions remain denied in auto mode.

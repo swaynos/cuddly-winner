@@ -66,7 +66,7 @@ Evidence classes:
 ### UC-ID-05: Auto mode approves asks, not denies
 
 - **Given:** OpenCode starts with `--auto`.
-- **When:** Autonomous or Prometheus requests Bash.
+- **When:** Autonomous requests Bash or Prometheus requests a spike.
 - **Then:** OpenCode may approve without prompting.
 - **Never:** bypass explicit denies for read-only roles.
 - **Evidence:** S permission contract against OpenCode documentation; O smoke test.
@@ -211,11 +211,19 @@ or initialize Git.
 
 ### UC-AUT-07: Missing validator delegation blocks success
 
-- **Given:** candidate work has passed its declared commands, but the task tool or Implementation Validator is unavailable.
+- **Given:** a candidate has passed its readiness check and declared commands, but the task tool or Implementation Validator is unavailable.
 - **When:** Autonomous prepares its handoff.
 - **Then:** return a concise blocked status with observed command results and the next action.
 - **Never:** call requested goals validated or claim a successful handoff.
 - **Evidence:** B validator-unavailable scenario.
+
+### UC-AUT-08: Incomplete work cannot reach candidate handoff
+
+- **Given:** an implementation has a placeholder test, disabled required stage, ignored verifier flag, missing required output, or missing acceptance branch.
+- **When:** Autonomous completes a local command or discovers a failed measured prerequisite.
+- **Then:** continue ordinary in-scope work, or report the core outcome as failed and return to Prometheus when the prerequisite makes it impossible.
+- **Never:** label partial work a candidate, report validator availability as the primary failure, or present an undeclared degraded branch as the requested outcome.
+- **Evidence:** B partial-pipeline and failed-prerequisite scenarios.
 
 ## Karpathy And Review
 
