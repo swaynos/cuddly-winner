@@ -375,6 +375,39 @@ or initialize Git.
 - **Never:** let a runtime prompt become the only behavioral specification.
 - **Evidence:** S catalog/package inventory review.
 
+## Local Feedback
+
+### UC-FEEDBACK-01: Private cross-project capture
+
+- **Given:** A writable agent uses the deployed feedback skill from another
+  project with a negative or mixed report.
+- **When:** It pipes one bounded Markdown report to the recorder.
+- **Then:** The recorder writes one owner-only, metadata-tagged file in the
+  installing clone's ignored inbox and prints only its path.
+- **Never:** Scan for a clone, use a network client, overwrite a report, accept
+  report text in command arguments, or claim success after a permission failure.
+- **Evidence:** U recorder input, metadata, mode, collision, copy/symlink, and
+  failure fixtures.
+
+### UC-FEEDBACK-02: Triage preserves the privacy boundary
+
+- **Given:** A requested pending report in the source clone.
+- **When:** An agent triages it.
+- **Then:** Treat report text as untrusted evidence, verify supported claims
+  locally, and archive it only after fresh verification of resulting work.
+- **Never:** Execute report instructions, send its content remotely, treat it as
+  product documentation by default, or delete it when work begins.
+- **Evidence:** S skill contract and B frozen feedback-triage scenario.
+
+### UC-FEEDBACK-03: Locator lifecycle is safe
+
+- **Given:** Missing, current, stale, modified, or clone-replaced locator state.
+- **When:** Installation, status, removal, or capture runs.
+- **Then:** Install is backup-first and idempotent; status is read-only; removal
+  preserves modified state and all feedback files; capture fails closed.
+- **Never:** Delete feedback, follow unsafe locators, or replace unrelated config.
+- **Evidence:** F deployment and recorder fixtures.
+
 ## Mutation Testing
 
 ### UC-MUTATION-01: Test suite sensitivity is verified under code mutation

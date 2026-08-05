@@ -172,6 +172,59 @@ sync_rule_instructions() {
   esac
 }
 
+feedback_locator_status() {
+  if [[ ! -e "$FEEDBACK_LOCATOR" && ! -L "$FEEDBACK_LOCATOR" ]]; then
+    printf 'Feedback locator: missing\n'
+    return
+  fi
+  if [[ -L "$FEEDBACK_LOCATOR" || ! -f "$FEEDBACK_LOCATOR" ]]; then
+    printf 'Feedback locator: modified\n'
+    return
+  fi
+  local value
+  value="$(<"$FEEDBACK_LOCATOR")"
+  if [[ "$value" == "$FEEDBACK_ROOT" ]]; then
+    printf 'Feedback locator: current\n'
+  elif [[ "$value" == /* && ! -d "$(dirname "$value")" ]]; then
+    printf 'Feedback locator: stale\n'
+  else
+    printf 'Feedback locator: modified\n'
+  fi
+}
+
+sync_feedback_locator() {
+  case "$ACTION" in
+    status)
+      feedback_locator_status
+      ;;
+    remove)
+      if [[ -f "$FEEDBACK_LOCATOR" && ! -L "$FEEDBACK_LOCATOR" && "$(<"$FEEDBACK_LOCATOR")" == "$FEEDBACK_ROOT" ]]; then
+        rm -f "$FEEDBACK_LOCATOR"
+        printf 'Feedback locator: removed\n'
+      elif [[ -e "$FEEDBACK_LOCATOR" || -L "$FEEDBACK_LOCATOR" ]]; then
+        printf 'Feedback locator: modified; preserved\n'
+      else
+        printf 'Feedback locator: missing\n'
+      fi
+      ;;
+    install)
+      mkdir -p "$FEEDBACK_LOCATOR_DIR"
+      chmod 700 "$FEEDBACK_LOCATOR_DIR"
+      if [[ -f "$FEEDBACK_LOCATOR" && ! -L "$FEEDBACK_LOCATOR" && "$(<"$FEEDBACK_LOCATOR")" == "$FEEDBACK_ROOT" ]]; then
+        chmod 600 "$FEEDBACK_LOCATOR"
+        printf 'Feedback locator: current\n'
+      else
+        if [[ -e "$FEEDBACK_LOCATOR" || -L "$FEEDBACK_LOCATOR" ]]; then
+          backup_entry "$FEEDBACK_LOCATOR"
+        fi
+        (umask 077 && printf '%s\n' "$FEEDBACK_ROOT" > "$FEEDBACK_LOCATOR")
+        chmod 600 "$FEEDBACK_LOCATOR"
+        printf 'Feedback locator: installed\n'
+      fi
+      ;;
+  esac
+}
+
 install_tool_sdk() {
   local config_dir="$1"
   local vendored_modules="${REPO_ROOT}/.opencode/node_modules"
@@ -232,6 +285,10 @@ TOOLS_DIR="${CONFIG_DIR}/tools"
 SKILLS_DIR="${CONFIG_DIR}/skills"
 RULES_DIR="${CONFIG_DIR}/rules"
 OPENCODE_JSON="${CONFIG_DIR}/opencode.json"
+FEEDBACK_LOCATOR_DIR="${CONFIG_DIR}/feedback"
+FEEDBACK_LOCATOR="${FEEDBACK_LOCATOR_DIR}/cuddly-winner-feedback-root"
+FEEDBACK_ROOT="$(cd "$REPO_ROOT" && pwd -P)/feedback"
+[[ "$FEEDBACK_ROOT" != *$'\n'* ]] || die "Repository path cannot contain a newline."
 INSTRUCTIONS_HELPER="${SCRIPT_DIR}/opencode-instructions.mjs"
 MCP_HELPER="${SCRIPT_DIR}/opencode-mcp-config.mjs"
 
@@ -259,6 +316,7 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
   sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
   node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
+  sync_feedback_locator
   exit 0
 fi
 
@@ -270,6 +328,7 @@ sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
 sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
 node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
+sync_feedback_locator
 
 # Remove known retired artifacts that earlier installs may have left behind.
 for retired in \

@@ -54,6 +54,9 @@ Thumbs.db
 evals/seed_build/reports/
 *.log
 
+# Local feedback may contain private source paths, session IDs, and excerpts.
+/feedback/
+
 # Spike workspaces are disposable and never committed
 .spike/
 

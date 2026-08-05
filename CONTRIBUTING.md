@@ -2,7 +2,9 @@
 
 Read `docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, and `docs/SKILLS.md`
 before changing this distribution. The skill catalog defines the behavior a new
-package must implement.
+package must implement. Skills that retain local user reports must keep them
+outside tracked fixtures, avoid telemetry and remote upload, and document their
+privacy and removal rules.
 
 ## Adding A Skill
 

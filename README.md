@@ -59,6 +59,21 @@ byte-identical copies or repository symlinks while preserving modifications. Use
 derive from that one root. OpenCode loads agents, tools, and plugins at startup,
 so restart it after changes.
 
+## Local Feedback
+
+The deployed `cuddly-winner-feedback` skill records negative or mixed feedback
+from any project into the installing clone's local `feedback/inbox/` directory.
+This tree is Git-ignored because reports can contain private paths, session IDs,
+or excerpts. It never uploads, stages, commits, or force-adds feedback.
+
+After deployment, restart OpenCode. The skill stores a private locator beneath
+the selected OpenCode configuration root so copied and symlinked packages both
+find the intended clone. If the clone moves or the recorder reports a stale
+locator, reinstall from that clone. `status` reports locator state and `remove`
+removes only an exact current locator. Neither command reads or deletes feedback.
+Ignore rules do not prevent an explicit `git add -f`; never force-add feedback.
+See [SKILLS.md](docs/SKILLS.md#cuddly-winner-feedback).
+
 ## Optional Agents
 
 - **Prometheus** owns technical triage, planning readiness, measured spikes, and

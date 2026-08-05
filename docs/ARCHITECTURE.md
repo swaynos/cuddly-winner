@@ -245,6 +245,22 @@ immutability plugin, rather than skill text, enforces role edit-tool boundaries
 and command permissions. `docs/SKILLS.md` owns the inventory, package contract,
 and behavior for each skill; `CONTRIBUTING.md` owns the authoring process.
 
+### Local Feedback Locator
+
+The installer also manages one owner-only text locator at
+`<config_dir>/feedback/cuddly-winner-feedback-root`. It contains the canonical
+`<clone>/feedback` path and lets the deployed recorder resolve its target from
+the lexical package path in both copy and symlink installs. The recorder reads a
+bounded report from standard input, creates owner-only inbox files atomically,
+and has no network behavior. It fails on missing, malformed, or stale locators;
+it does not scan the machine for another clone.
+
+Install replaces a conflicting locator only after backup and is idempotent for
+the same clone. Status classifies missing, current, stale, or modified locators
+without reading reports. Removal deletes only an exact current locator. The
+locator is deployment state, not a feedback store: the ignored clone-local
+`feedback/` tree and all backups remain user-owned.
+
 ## Mutation Testing Framework
 
 `evals/mutation/run_mutation.py` is a standalone, opt-in Python mutation runner.

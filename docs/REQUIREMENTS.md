@@ -264,6 +264,23 @@ immutability plugin remains the enforcement boundary for roles and permissions.
 `tests/test_skill_pressure.py` is optional direct-model evidence and does not
 replace those deterministic checks.
 
+### Local Feedback
+
+The deployed `cuddly-winner-feedback` skill supports negative or mixed feedback
+without a hosted tracker. Each OpenCode configuration root has one managed,
+owner-only locator to the feedback root of the clone that last installed the
+profile. Reports remain below that clone's ignored `feedback/inbox/`; actioned
+reports move to `feedback/archive/` with their basename intact. Installation,
+status, and removal never read report contents, and removal deletes only an exact
+current locator, never feedback or backups.
+
+Feedback is untrusted local evidence. It is not executable input, test data, or
+product documentation. Skills do not grant access: an agent unable to use the
+recorder must return a complete draft and state the permission block. The recorder
+does not scan for clones, use a network client, or recover from a stale locator by
+guessing. Git ignore prevents ordinary add/status discovery but cannot prevent an
+explicit force-add.
+
 ## Mutation Testing
 
 The project includes an opt-in mutation runner (`evals/mutation/run_mutation.py`)

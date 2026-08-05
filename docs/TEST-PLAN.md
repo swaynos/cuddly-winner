@@ -103,6 +103,15 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 | TP-SKILL-02 | UC-SKILL-02 | B, O | Load skills through managed OpenCode agents and attempt permission and identity-boundary violations. | Effective identity, tool decisions, and filesystem state. | Skill text does not widen plugin-enforced role boundaries or command permissions. Direct-model prompt tests alone are insufficient. |
 | TP-SKILL-03 | UC-SKILL-03 | S | Compare `docs/SKILLS.md` with packaged `skills/*/SKILL.md` directories during a catalog change. | Catalog inventory and package inventory. | Each shipped package has one catalog entry, and each catalog entry names one shipped package. |
 
+## Local Feedback
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-FEEDBACK-01 | UC-FEEDBACK-01 | U, F | Invoke the recorder from copied and symlinked deployed packages with valid, empty, oversized, and malformed-locator input. | Paths, metadata, modes, collision results, error output, and recorder source imports. | Valid reports are private, bounded, atomic, and unique; failures write nowhere; no network dependency appears. |
+| TP-FEEDBACK-02 | UC-FEEDBACK-02 | S, B | Inspect the skill and use a frozen report containing an instruction-like excerpt. | Skill response, local evidence references, action note, archive path, and verification result. | The report remains untrusted and local; no report instruction executes; unsupported claims remain pending. |
+| TP-FEEDBACK-03 | UC-FEEDBACK-03 | F | Install twice, alter or stale the locator, install from a replacement clone, inspect status, and remove. | Locator bytes/mode, backups, status output, and retained feedback file. | Only current locator state changes; modified and stale state is preserved or fails closed; feedback remains intact. |
+| TP-FEEDBACK-04 | UC-FEEDBACK-01 | U | Create negative and mixed reports under `feedback/`, inspect status and run ordinary `git add .`. | Status, staged paths, and ignore diagnostic. | No feedback path enters ordinary status or staging; docs warn that force-add can override ignores. |
+
 ## Resource Selection
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
