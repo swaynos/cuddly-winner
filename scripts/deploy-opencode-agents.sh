@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SDK_VERSION="1.17.15"
+NOTEBOOKLM_PY_VERSION="0.8.0"
 
 usage() {
   cat <<'EOF'
@@ -242,6 +243,29 @@ install_tool_sdk() {
   fi
 }
 
+# Resolves the shared project virtualenv's bin directory without creating it.
+# Pure path computation: safe to call for status/remove, which must not
+# provision a missing environment just to inspect or delete a config entry.
+resolve_notebooklm_bin_dir() {
+  command -v pyenv >/dev/null 2>&1 || die "pyenv is required to resolve the shared Python virtualenv"
+  local version_file="${REPO_ROOT}/.python-version"
+  [[ -f "$version_file" ]] || die ".python-version not found at $version_file"
+  local venv_name
+  venv_name="$(tr -d '[:space:]' < "$version_file")"
+  [[ -n "$venv_name" ]] || die ".python-version is empty"
+  printf '%s/versions/%s/bin' "$(pyenv root)" "$venv_name"
+}
+
+# Provisions the one shared project virtualenv (creating it if absent) and
+# installs the pinned NotebookLM MCP server into it. Install-only: this is the
+# single side-effecting step that may create the environment or write packages.
+provision_notebooklm_runtime() {
+  local python_bin
+  python_bin="$(bash "${SCRIPT_DIR}/ensure-venv.sh")"
+  "$python_bin" -m pip install --quiet "notebooklm-py[mcp]==${NOTEBOOKLM_PY_VERSION}"
+  printf '%s/notebooklm-mcp' "$(dirname "$python_bin")"
+}
+
 ACTION="install"
 MODE="copy"
 CONFIG_ARG=""
@@ -315,7 +339,8 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
   sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
-  node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
+  NOTEBOOKLM_BIN="$(resolve_notebooklm_bin_dir)/notebooklm-mcp"
+  node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON" --notebooklm-bin "$NOTEBOOKLM_BIN"
   sync_feedback_locator
   exit 0
 fi
@@ -327,7 +352,8 @@ install_tool_sdk "$CONFIG_DIR"
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
 sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
-node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
+NOTEBOOKLM_BIN="$(provision_notebooklm_runtime)"
+node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON" --notebooklm-bin "$NOTEBOOKLM_BIN"
 sync_feedback_locator
 
 # Remove known retired artifacts that earlier installs may have left behind.

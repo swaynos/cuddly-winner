@@ -10,6 +10,7 @@ const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
 const mcp = path.join(repo, "scripts", "opencode-mcp-config.mjs");
 const credentials = path.join(repo, "scripts", "opencode-browser-credentials.mjs");
+const fakeNotebooklmBin = "/fake/venv/bin/notebooklm-mcp";
 
 async function fixture(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "cuddly-mcp-"));
@@ -20,27 +21,34 @@ async function config(file) { return JSON.parse(await readFile(file, "utf8")); }
 
 test("managed MCP install preserves user entries and installs headless defaults", async () => fixture(async (root, file) => {
   await writeFile(file, JSON.stringify({ mcp: { "user-browser": { type: "local", command: ["example"] } }, keep: true }));
-  await invoke(mcp, ["install", "--config", file]);
+  await invoke(mcp, ["install", "--config", file, "--notebooklm-bin", fakeNotebooklmBin]);
   const result = await config(file);
   assert.equal(result.keep, true);
   assert.deepEqual(result.mcp["user-browser"], { type: "local", command: ["example"] });
   assert.deepEqual(result.mcp["cuddly-winner-research-browser"].command.slice(-2), ["--headless", "--isolated"]);
-  assert.equal(result.mcp["cuddly-winner-notebooklm"].environment.HEADLESS, "true");
-  assert.equal(result.mcp["cuddly-winner-notebooklm"].environment.NOTEBOOKLM_PROFILE, "minimal");
-  const second = await invoke(mcp, ["install", "--config", file]);
+  assert.deepEqual(result.mcp["cuddly-winner-notebooklm"].command, [fakeNotebooklmBin]);
+  assert.equal(result.mcp["cuddly-winner-notebooklm"].environment, undefined);
+  const second = await invoke(mcp, ["install", "--config", file, "--notebooklm-bin", fakeNotebooklmBin]);
   assert.match(second.stdout, /Unchanged/);
   const diagnosis = await invoke(mcp, ["diagnose", "--config", file]);
   assert.match(diagnosis.stdout, /managed cuddly-winner-research-browser mode=headless/);
+  assert.match(diagnosis.stdout, /managed cuddly-winner-notebooklm mode=unknown/);
   assert.match(diagnosis.stdout, /unmanaged user-browser mode=unknown/);
   await stat(root);
 }));
 
+test("managed MCP install and status require a resolved notebooklm bin path", async () => fixture(async (_root, file) => {
+  await assert.rejects(invoke(mcp, ["install", "--config", file]), /--notebooklm-bin is required/);
+  await assert.rejects(invoke(mcp, ["status", "--config", file]), /--notebooklm-bin is required/);
+  await invoke(mcp, ["diagnose", "--config", file]);
+}));
+
 test("managed MCP removal preserves modified entries", async () => fixture(async (_root, file) => {
-  await invoke(mcp, ["install", "--config", file]);
+  await invoke(mcp, ["install", "--config", file, "--notebooklm-bin", fakeNotebooklmBin]);
   const value = await config(file);
   value.mcp["cuddly-winner-research-browser"].command.push("--custom");
   await writeFile(file, JSON.stringify(value));
-  const result = await invoke(mcp, ["remove", "--config", file]);
+  const result = await invoke(mcp, ["remove", "--config", file, "--notebooklm-bin", fakeNotebooklmBin]);
   assert.match(result.stdout, /Skipped modified managed entry/);
   const after = await config(file);
   assert.ok(after.mcp["cuddly-winner-research-browser"]);

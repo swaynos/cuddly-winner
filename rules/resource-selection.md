@@ -12,8 +12,10 @@ Use the least disruptive evidence source that can answer the question:
 
 Do not treat a browser as visible or headless unless its configured mode is
 known. A visible browser is a user-space disruption, not an ordinary fallback.
-Do not invoke NotebookLM setup, reauthentication, cleanup, or other interactive
-repair actions unless the user explicitly requests that action.
+The managed NotebookLM MCP server exposes no login, re-auth, or cleanup tool at
+all. Do not run `notebooklm login`, `auth refresh`, or `cleanup` yourself
+through Bash, and do not invoke any other interactive repair action, unless
+the user explicitly requests it.
 
 For browser-based image generation, use ephemeral headless state by default. Do
 not retain credentials, open a visible browser, or reuse a personal browser

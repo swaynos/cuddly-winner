@@ -35,11 +35,24 @@ scripts/opencode-browser-credentials.mjs status --config
 
 ## NotebookLM
 
-The managed NotebookLM entry is headless and minimal. It supports normal source
-queries only after health reports authentication. When unauthenticated, use local
-and web evidence. Do not start setup, reauthentication, or cleanup automatically.
-Those actions require an explicit user request because they can open a browser or
-remove local state.
+The managed NotebookLM entry runs `notebooklm-py`'s MCP server against your
+personal Google account, launched from this project's one shared Python
+virtualenv (see `docs/ARCHITECTURE.md#notebooklm-runtime`). It answers normal
+source queries only after you separately run `notebooklm login` (or
+`--browser-cookies chrome`) once, out-of-band. The server exposes no
+setup/re-auth/cleanup tool at all — unlike the prior client, there is no
+disabled-tool list to maintain, because the capability does not exist in this
+server's tool surface. When `server_info` reports no usable session, fall back
+to local and web evidence; no agent session can start or repair authentication.
+
+The server never opens a browser as part of its own process, so a `status`
+"unknown" mode on this entry does not carry the "potentially visible" risk the
+Browser Rules above describe for the research-browser entry. The tradeoff is
+that its full read/write tool surface is always present in the process; the
+per-call `confirm=true` gate on destructive and sharing-widening tools, plus
+this project's own agent permission lists (see `agents/grounder.md`), are what
+keep an agent from mutating or deleting your notebooks — not a server-side
+tool cutout.
 
 ## Image Credentials
 

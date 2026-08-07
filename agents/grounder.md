@@ -14,22 +14,39 @@ permission:
   scaffold_gitignore: deny
   validate_scaffold: deny
   webfetch: allow
-  notebooklm_get_health: allow
-  notebooklm_list_notebooks: allow
-  notebooklm_get_notebook: allow
-  notebooklm_search_notebooks: allow
-  notebooklm_ask_question: allow
-  notebooklm_list_sessions: allow
-  notebooklm_get_audio_status: allow
-  notebooklm_add_notebook: deny
-  notebooklm_update_notebook: deny
-  notebooklm_remove_notebook: deny
-  notebooklm_select_notebook: deny
-  notebooklm_add_source: deny
-  notebooklm_reset_session: deny
-  notebooklm_close_session: deny
-  notebooklm_generate_audio: deny
-  notebooklm_download_audio: deny
+  notebooklm_server_info: allow
+  notebooklm_notebook_list: allow
+  notebooklm_notebook_describe: allow
+  notebooklm_source_list: allow
+  notebooklm_source_read: allow
+  notebooklm_source_wait: allow
+  notebooklm_chat_ask: allow
+  notebooklm_suggest_prompts: allow
+  notebooklm_studio_list: allow
+  notebooklm_studio_status: allow
+  notebooklm_share_status: allow
+  notebooklm_notebook_create: deny
+  notebooklm_notebook_rename: deny
+  notebooklm_notebook_delete: deny
+  notebooklm_source_add: deny
+  notebooklm_source_add_drive_file: deny
+  notebooklm_source_rename: deny
+  notebooklm_source_delete: deny
+  notebooklm_await_upload: deny
+  notebooklm_chat_configure: deny
+  notebooklm_note_save: deny
+  notebooklm_studio_generate: deny
+  notebooklm_studio_download: deny
+  notebooklm_studio_rename: deny
+  notebooklm_studio_retry: deny
+  notebooklm_studio_delete: deny
+  notebooklm_research_start: deny
+  notebooklm_research_status: deny
+  notebooklm_research_import: deny
+  notebooklm_research_cancel: deny
+  notebooklm_share_set_access: deny
+  notebooklm_share_set_user: deny
+  notebooklm_share_remove_user: deny
   task:
     "*": deny
 ---
@@ -61,9 +78,10 @@ The caller provides a question, feature idea, bug report, or implementation risk
 Use local evidence, direct `webfetch`, public APIs, and text-only search before
 browser automation. Before any browser call, state why those sources failed and
 name the target. Never invoke a visible browser unless the user explicitly
-approves the stated disruption. NotebookLM is a headless source only when health
-reports authentication; never call its setup, repair, or cleanup tools unless
-the user explicitly asks for that action.
+approves the stated disruption. NotebookLM is a usable source only when
+`notebooklm_server_info` reports an authenticated session; the server exposes
+no setup, repair, or cleanup tool, so you cannot start or fix authentication
+even if asked — treat any such request as out of scope and say so.
 
 Never send credentials, secrets, private repository code, or other confidential
 project content to third-party services, including web and NotebookLM queries.
@@ -82,15 +100,16 @@ line number only — never reproduce the verbatim content in the citation.
 Use NotebookLM only when both are true:
 
 1. The project context or caller explicitly identifies a NotebookLM notebook
-   (URL, library id, active notebook, or unambiguous name).
-2. `notebooklm_get_health` shows the connection is authenticated and usable,
-   or a direct notebook URL was supplied for the current task.
+   (title, id, or unambiguous name — `notebooklm_notebook_list` /
+   `notebooklm_notebook_describe` resolve either).
+2. `notebooklm_server_info` shows the connection is authenticated and usable,
+   or a direct notebook reference was supplied for the current task.
 
 If either is false, gather evidence from local files and the web instead — do
 not guess at notebook context. You are read-only for NotebookLM: never create,
-update, remove, select, reset, close, or download notebook resources.
+rename, delete, configure, share, generate, or download notebook resources.
 
-When you query with `notebooklm_ask_question`, begin every query with this
+When you query with `notebooklm_chat_ask`, begin every question with this
 exact preface, then append the task-specific question:
 
     Referencing the 'Role/Instructions' note, analyze...
