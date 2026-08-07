@@ -76,9 +76,15 @@ Publish the scaffold in this order (see docs/ARCHITECTURE.md § Prometheus Flow)
 
 1. Resolve uncertainty and choose the strategy (Ralph by default; Karpathy only
    for explicit scalar-metric optimization).
-2. Define exact final verification commands. Use a contracted spike only when a
-   command-dependent planning assumption or custom evaluator behavior must be
-   measured before handoff.
+2. Define exact final verification commands. First check the target project
+   for its own declared toolchain — a version-pin file (`.python-version`,
+   `.tool-versions`, `.nvmrc`), a lockfile (`poetry.lock`, `Pipfile.lock`,
+   `package-lock.json`), or README-documented setup — and write commands that
+   invoke it (e.g. `poetry run pytest`), not a bare interpreter that only works
+   by PATH coincidence. Absent any such signal, a bare command is the correct
+   default; do not invent a toolchain the project does not declare. Use a
+   contracted spike only when a command-dependent planning assumption or
+   custom evaluator behavior must be measured before handoff.
 3. If a custom evaluator is needed, create `.prometheus/evaluator/**` and record
    any measured positive, negative, and malformed-case spike results.
 4. When governance tools are installed, invoke `scaffold_gitignore` (no

@@ -157,6 +157,19 @@ deployment configures its research browser headless and isolated by default, but
 users may retain unrelated MCP entries. Diagnostics report their mode without
 rewriting them.
 
+Prometheus and Autonomous never provision, install, or activate a runtime or
+dependency manager for a target project. Before Prometheus writes exact
+verification commands, it checks the target project for its own declared
+toolchain — a version-pin file, lockfile, or README-documented setup — and
+encodes that invocation into the command; absent such a signal, it writes the
+bare command. Whatever the command resolves to at execution time depends on
+the OpenCode session's ambient `PATH` and environment state, which neither
+agent detects or corrects further. This is a deliberate, documented limit, not
+an oversight: it applies to every target project, including this repository's
+own `.python-version` and `scripts/ensure-venv.sh`, which govern only
+cuddly-winner's own test execution and are never deployed to, or assumed for,
+any other project.
+
 ## Prometheus Profile
 
 ### Triage
