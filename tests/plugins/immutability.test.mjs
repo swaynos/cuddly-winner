@@ -87,6 +87,22 @@ test("prometheus is continued once when it idles without publishing a scaffold",
   assert.equal(publishedPrompts.length, 0);
 }));
 
+test("idle publication reminder does not fire for a managed descendant of prometheus", async () => fixture(async root => {
+  const prompts = [];
+  const guard = await hooks(root, { parent: "prometheus", child: "grounder" }, { child: "parent" }, {}, prompts);
+  await guard.event({ event: { type: "session.idle", properties: { sessionID: "child" } } });
+  await guard.event({ event: { type: "session.idle", properties: { sessionID: "child" } } });
+  assert.equal(prompts.length, 0);
+}));
+
+test("idle publication reminder ignores a cache poisoned by prior inheritance resolution", async () => fixture(async root => {
+  const prompts = [];
+  const guard = await hooks(root, { parent: "prometheus", child: "grounder" }, { child: "parent" }, {}, prompts);
+  await assert.rejects(mutate(guard, "child", path.join(root, "README.md")), /prometheus is restricted/);
+  await guard.event({ event: { type: "session.idle", properties: { sessionID: "child" } } });
+  assert.equal(prompts.length, 0);
+}));
+
 test("only prometheus may invoke workflow tools", async () => fixture(async root => {
   const invoke = (guard, agent, tool) => guard["tool.execute.before"](
     { tool, sessionID: agent, callID: "c" }, { args: tool === "spike" ? { spike_id: "probe" } : {} });

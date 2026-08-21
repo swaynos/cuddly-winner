@@ -107,12 +107,33 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
     return undefined;
   }
 
+  // Unlike resolveAgent, this never walks parentID or reads/writes the shared
+  // inheritance cache: the idle-publication reminder must fire only for a
+  // session that is itself Prometheus, not a managed descendant (e.g. a
+  // Grounder child) that merely inherits Prometheus's edit restrictions.
+  async function ownAgent(sessionID: string): Promise<string | undefined> {
+    try {
+      const result = await client?.session?.get?.({ path: { id: sessionID } });
+      const session = result?.data ?? result;
+      if (typeof session?.agent === "string" && session.agent) return session.agent;
+    } catch {}
+    try {
+      const result = await client?.session?.messages?.({ path: { id: sessionID } });
+      const messages = result?.data ?? (Array.isArray(result) ? result : []);
+      for (let index = messages.length - 1; index >= 0; index--) {
+        const info = messages[index]?.info;
+        if (info?.role === "user" && info.agent) return info.agent;
+      }
+    } catch {}
+    return undefined;
+  }
+
   return {
     event: async ({ event }: { event: { type: string; properties?: { sessionID?: string } } }) => {
       if (event.type !== "session.idle") return;
       const sessionID = event.properties?.sessionID;
       if (!sessionID || publicationReminders.has(sessionID)) return;
-      if (await resolveAgent(sessionID) !== "prometheus") return;
+      if (await ownAgent(sessionID) !== "prometheus") return;
       if (existsSync(resolve(root, "SPEC.md")) && existsSync(resolve(root, "opencode-autonomous.json"))) return;
 
       // Continue the same session once rather than allowing an unpublished plan to end silently.

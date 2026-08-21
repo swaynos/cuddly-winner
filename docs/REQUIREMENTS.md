@@ -228,10 +228,12 @@ verification passes. When governance tools are installed, Prometheus invokes
 planning-ready Prometheus run must write `SPEC.md` and
 `opencode-autonomous.json` before its final response; only a concrete planning
 blocker or a focused, decision-changing question may end the run without a
-scaffold. If a Prometheus session becomes idle without both files, the plugin
-sends one continuation prompt to the same session that restates this gate. The
-continuation does not override a concrete blocker or focused question and is
-limited to once per session to prevent a feedback loop.
+scaffold. If a root, top-level Prometheus session becomes idle without both
+files, the plugin sends one continuation prompt to that same session that
+restates this gate. The continuation does not override a concrete blocker or
+focused question and is limited to once per session to prevent a feedback
+loop. A managed descendant that only inherits Prometheus's edit restrictions
+is not itself Prometheus and never receives this reminder.
 
 ## Autonomous Profile
 
