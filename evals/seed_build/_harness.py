@@ -226,8 +226,8 @@ def dry_run_prometheus(workspace: Path) -> tuple[int, str, str]:
     )
     (workspace / "opencode-autonomous.json").write_text(
         json.dumps({
-            "schema_version": 1,
-            "strategy": "ralph",
+            "schema_version": 2,
+            "strategy": "direct",
             "invariants": ["Frozen planning fixture."],
             "implementation_scope": ["idea.md"],
             "escalation_triggers": ["Fixture mismatch."],

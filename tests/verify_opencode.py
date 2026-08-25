@@ -309,7 +309,7 @@ def _require_scenario_success(result: ScenarioResult, name: str, failures: list[
     return None
 
 
-def _write_ralph_scaffold(
+def _write_direct_scaffold(
     workspace: pathlib.Path,
     *,
     verification_command: str = "git diff --check",
@@ -349,8 +349,8 @@ Invoke @autonomous to execute SPEC.md.
     (workspace / "opencode-autonomous.json").write_text(
         json.dumps(
             {
-                "schema_version": 1,
-                "strategy": "ralph",
+                "schema_version": 2,
+                "strategy": "direct",
                 "invariants": ["No Git commits unless explicitly requested"],
                 "implementation_scope": implementation_scope,
                 "escalation_triggers": ["acceptance criteria change"],
@@ -432,7 +432,7 @@ def _autonomous_handoff_failure(model: str | None, workspace: pathlib.Path) -> s
         encoding="utf-8",
     )
     verification_marker = "verification.marker"
-    _write_ralph_scaffold(
+    _write_direct_scaffold(
         workspace,
         verification_command=f"sh -c 'printf verified > {verification_marker}'",
         implementation_scope=["README.md", verification_marker],
@@ -476,7 +476,7 @@ def _autonomous_handoff_success(model: str | None, workspace: pathlib.Path) -> s
     for agent in ("autonomous", "implementation-validator"):
         shutil.copy2(ROOT / "agents" / f"{agent}.md", agents_dir / f"{agent}.md")
     verification_marker = "verification.marker"
-    _write_ralph_scaffold(
+    _write_direct_scaffold(
         workspace,
         verification_command=f"sh -c 'printf verified > {verification_marker}'",
         implementation_scope=["README.md", verification_marker],
@@ -599,7 +599,7 @@ def run_behavioral_scenarios(model: str | None, *, handoff_only: bool = False) -
         print("  [4/14] Autonomous leaves work uncommitted…", end=" ", flush=True)
         ws4 = root / "s4"
         ws4.mkdir()
-        _write_ralph_scaffold(ws4)
+        _write_direct_scaffold(ws4)
         (ws4 / "README.md").write_text("teh fixture typo\n", encoding="utf-8")
         _git_output(ws4, "init", "--quiet")
         _git_output(ws4, "config", "user.email", "behavioral@example.test")
@@ -647,7 +647,7 @@ def run_behavioral_scenarios(model: str | None, *, handoff_only: bool = False) -
             encoding="utf-8",
         )
         verification_marker = "verification.marker"
-        _write_ralph_scaffold(
+        _write_direct_scaffold(
             ws5,
             verification_command=f"sh -c 'printf verified > {verification_marker}'",
             implementation_scope=["README.md", verification_marker],
@@ -730,7 +730,7 @@ def run_behavioral_scenarios(model: str | None, *, handoff_only: bool = False) -
         print("  [8/14] Karpathy halts on incomplete optimization scaffold…", end=" ", flush=True)
         ws7 = root / "s7"
         ws7.mkdir()
-        _write_ralph_scaffold(ws7)
+        _write_direct_scaffold(ws7)
         before = sorted(p.relative_to(ws7) for p in ws7.rglob("*") if p.is_file())
         result = _run_subagent_scenario(
             "karpathy", "The published scaffold is not a Karpathy optimization contract. Report the required blocker and make no changes.", model, ws7
@@ -796,7 +796,7 @@ def run_behavioral_scenarios(model: str | None, *, handoff_only: bool = False) -
         print("  [11/14] Reviewer approves a conforming verified fixture…", end=" ", flush=True)
         ws10 = root / "s10"
         ws10.mkdir()
-        _write_ralph_scaffold(ws10)
+        _write_direct_scaffold(ws10)
         (ws10 / "README.md").write_text("the fixture typo\n", encoding="utf-8")
         result = _run_subagent_scenario(
             "reviewer", "Review the completed fixture. Rubric: README.md satisfies the only acceptance criterion. Evidence: README.md:1 contains `the`; verification summary: `git diff --check` -> exit 0. End with the required verdict.", model, ws10
@@ -867,7 +867,7 @@ def run_behavioral_scenarios(model: str | None, *, handoff_only: bool = False) -
         print("  [14/14] Implementation Validator reports a cited verdict…", end=" ", flush=True)
         ws13 = root / "s13"
         ws13.mkdir()
-        _write_ralph_scaffold(ws13)
+        _write_direct_scaffold(ws13)
         (ws13 / "README.md").write_text("the fixture typo\n", encoding="utf-8")
         result = _run_subagent_scenario(
             "implementation-validator",
@@ -896,6 +896,194 @@ def run_behavioral_scenarios(model: str | None, *, handoff_only: bool = False) -
             f"LLM behavioral scenario failures ({len(failures)}):\n"
             + "\n".join(f"  - {m}" for m in failures)
         )
+
+
+def run_reconciliation_scenarios(model: str | None) -> None:
+    """Live scenarios for managed-scaffold-lifecycle behavior: continuation,
+    mismatch, supersession, and replacement consumption."""
+    if not shutil.which("opencode"):
+        print("opencode not on PATH — skipping reconciliation behavioral scenarios")
+        return
+
+    print("\nRunning reconciliation behavioral scenarios…")
+    failures: list[str] = []
+
+    with tempfile.TemporaryDirectory(prefix="opencode-reconcile-") as tmp:
+        root = pathlib.Path(tmp)
+        _print_profile_warnings()
+
+        # 1. Continuation: matching incomplete direct scaffold + explicit "run your loop".
+        print("  [1/4] Autonomous continues an incomplete matching scaffold…", end=" ", flush=True)
+        ws1 = root / "continuation"
+        ws1.mkdir()
+        verification_command = "python3 -c \"import greeter; assert greeter.greet('Ada') == 'Hello, Ada!'\""
+        (ws1 / "SPEC.md").write_text(
+            f"""# Write greeter.py
+
+## Grounding
+
+The workspace has no `greeter.py`.
+
+## Approaches Considered
+
+### Selected: Add a minimal greet(name) function
+
+## Acceptance Criteria
+
+1. `greeter.py` defines `greet(name)` returning `f"Hello, {{name}}!"`.
+
+## Verification
+
+- `{verification_command}`
+
+## Implementation Checklist
+
+- [ ] Write greeter.py with a greet(name) function.
+
+Invoke @autonomous to execute SPEC.md.
+""",
+            encoding="utf-8",
+        )
+        (ws1 / "opencode-autonomous.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "strategy": "direct",
+                    "invariants": [],
+                    "implementation_scope": ["greeter.py"],
+                    "escalation_triggers": ["acceptance criteria change"],
+                    "evaluator_inventory": [],
+                    "verification": {"commands": [verification_command], "baseline": "greeter.py does not exist"},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        result = _run_scenario_agent("autonomous", "Run your loop.", model, ws1, auto_approve=True)
+        out = _require_scenario_success(result, "Continuation", failures)
+        greeter = ws1 / "greeter.py"
+        if out is None:
+            print("FAIL")
+        elif not greeter.is_file():
+            failures.append("Continuation: greeter.py was not created")
+            print("FAIL")
+        elif subprocess.run(verification_command, shell=True, cwd=ws1, capture_output=True).returncode != 0:
+            failures.append("Continuation: verification command does not independently pass against the produced greeter.py")
+            print("FAIL")
+        elif any(p in out.lower() for p in ("would you like me to continue", "should i continue", "may i proceed")):
+            failures.append("Continuation: Autonomous asked for confirmation instead of continuing")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        # 2. Mismatch: valid task-A scaffold + an explicit, materially different task B.
+        print("  [2/4] Autonomous routes to the top level on a material mismatch…", end=" ", flush=True)
+        ws2 = root / "mismatch"
+        ws2.mkdir()
+        _write_direct_scaffold(ws2)
+        tracked = ["SPEC.md", "opencode-autonomous.json", "README.md"]
+        (ws2 / "README.md").write_text("teh fixture typo\n", encoding="utf-8")
+        before = {name: (ws2 / name).read_text(encoding="utf-8") for name in tracked}
+        before_listing = sorted(p.relative_to(ws2) for p in ws2.rglob("*") if p.is_file())
+        result = _run_scenario_agent(
+            "autonomous",
+            "Set up a Postgres migration script for a new `orders` table.",
+            model,
+            ws2,
+        )
+        out = _require_scenario_success(result, "Mismatch", failures)
+        after_listing = sorted(p.relative_to(ws2) for p in ws2.rglob("*") if p.is_file())
+        if out is None:
+            print("FAIL")
+        elif any((ws2 / name).read_text(encoding="utf-8") != before[name] for name in tracked):
+            failures.append("Mismatch: an existing scaffold or ordinary file was modified")
+            print("FAIL")
+        elif after_listing != before_listing:
+            failures.append(f"Mismatch: workspace file listing changed: {after_listing}")
+            print("FAIL")
+        elif "@prometheus" not in out:
+            failures.append(f"Mismatch: response did not name the top-level Prometheus supersession route: {_response_excerpt(out)}")
+            print("FAIL")
+        elif not any(m in out.lower() for m in ("build", "native")):
+            failures.append(f"Mismatch: response did not name the native Build route for ordinary work: {_response_excerpt(out)}")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        # 3. Supersession: Prometheus replaces a stale Karpathy scaffold with an explicit different request.
+        print("  [3/4] Prometheus supersedes a stale scaffold on an explicit different request…", end=" ", flush=True)
+        ws3 = root / "supersession"
+        ws3.mkdir()
+        _write_karpathy_scaffold(ws3)
+        before_spec = (ws3 / "SPEC.md").read_text(encoding="utf-8")
+        before_manifest = (ws3 / "opencode-autonomous.json").read_text(encoding="utf-8")
+        result = _run_scenario_agent(
+            "prometheus",
+            "Forget the model tuning task. Instead, write a SPEC for adding a `/health` endpoint to `server.py` that returns `200 OK`.",
+            model,
+            ws3,
+        )
+        out = _require_scenario_success(result, "Supersession", failures)
+        after_spec = (ws3 / "SPEC.md").read_text(encoding="utf-8") if (ws3 / "SPEC.md").is_file() else ""
+        after_manifest_text = (ws3 / "opencode-autonomous.json").read_text(encoding="utf-8") if (ws3 / "opencode-autonomous.json").is_file() else "{}"
+        try:
+            after_manifest = json.loads(after_manifest_text)
+        except json.JSONDecodeError:
+            after_manifest = {}
+        evaluator_reconciled = (
+            not (ws3 / ".prometheus/evaluator/score.py").is_file()
+            or ".prometheus/evaluator/score.py" not in after_manifest.get("evaluator_inventory", [])
+        )
+        if out is None:
+            print("FAIL")
+        elif after_spec == before_spec or after_manifest_text == before_manifest:
+            failures.append("Supersession: scaffold was not replaced")
+            print("FAIL")
+        elif after_manifest.get("schema_version") != 2 or after_manifest.get("strategy") != "direct" or "optimization" in after_manifest:
+            failures.append(f"Supersession: replacement manifest is not a valid schema-v2 direct manifest: {after_manifest}")
+            print("FAIL")
+        elif "health" not in after_spec.lower():
+            failures.append("Supersession: replacement SPEC does not describe the health-endpoint task")
+            print("FAIL")
+        elif not evaluator_reconciled:
+            failures.append("Supersession: obsolete evaluator asset was not reconciled")
+            print("FAIL")
+        elif (ws3 / "server.py").exists():
+            failures.append("Supersession: Prometheus edited an ordinary implementation file during planning")
+            print("FAIL")
+        elif not after_spec.rstrip().endswith("Invoke @autonomous to execute SPEC.md."):
+            failures.append("Supersession: replacement SPEC does not end with the exact Autonomous handoff line")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        # 4. Replacement consumption: Autonomous invoked after supersession consumes B, not A.
+        print("  [4/4] Autonomous consumes the superseding scaffold, not the superseded one…", end=" ", flush=True)
+        if out is None or (ws3 / "server.py").exists():
+            failures.append("Replacement consumption: skipped because the supersession scenario did not leave a valid task-B-only scaffold")
+            print("SKIP")
+        else:
+            result = _run_scenario_agent("autonomous", "Run your loop.", model, ws3, auto_approve=True)
+            out4 = _require_scenario_success(result, "Replacement consumption", failures)
+            server = ws3 / "server.py"
+            hyperparams_unchanged = (ws3 / "model/hyperparams.json").read_text(encoding="utf-8") == '{"learning_rate": 0.01}\n'
+            if out4 is None:
+                print("FAIL")
+            elif not server.is_file() or "health" not in server.read_text(encoding="utf-8").lower():
+                failures.append("Replacement consumption: server.py was not created with a /health endpoint")
+                print("FAIL")
+            elif not hyperparams_unchanged:
+                failures.append("Replacement consumption: Autonomous modified model/hyperparams.json — it consumed the superseded task A, not B")
+                print("FAIL")
+            else:
+                print("PASS")
+
+    if failures:
+        raise AssertionError(
+            f"Reconciliation behavioral scenario failures ({len(failures)}):\n"
+            + "\n".join(f"  - {m}" for m in failures)
+        )
+    print("Reconciliation behavioral scenarios passed.")
 
 
 def main() -> int:
@@ -935,11 +1123,20 @@ def main() -> int:
     require("evaluate codebase state against the published `SPEC.md`" in agents["implementation-validator"], "Implementation validator contract missing")
     require("must not be rewritten during execution" in agents["autonomous"], "Autonomous must not rewrite checklist boxes during execution")
     require("Use Karpathy only when the manifest explicitly" in agents["autonomous"], "Autonomous must not invoke Karpathy without a complete manifest")
+    require("scaffold, treat\nan explicit request to run or continue the loop as authorization to continue" in agents["autonomous"], "Autonomous must treat a matching scaffold's continue request as standing authorization")
+    require("top-level `@prometheus` for supersession" in agents["autonomous"], "Autonomous must name the top-level Prometheus supersession route on a material mismatch")
+    require("stop at that item instead of\ncompleting downstream checklist items" in agents["autonomous"], "Autonomous must stop at a structurally blocked keystone item instead of cascading into dependent work")
+    require("minimize the red, half-migrated surface left in the worktree" in agents["autonomous"], "Autonomous must minimize, not maximize, red surface left behind a blocker")
+    require("worktree is left red or half-migrated and therefore not\ncommittable as-is" in agents["autonomous"], "Autonomous must disclose a red or half-migrated worktree as not committable in a failed/blocked handoff")
+    require("does not license describing that same\nred or half-migrated tree as done, ready, or committable" in agents["autonomous"], "Autonomous must not describe a red or half-migrated tree as done, ready, or committable")
     require("A failed kill criterion requires redesign" in agents["prometheus"], "Prometheus must require redesign on failed kill criterion, not optimistic planning")
     require("load-bearing empirical prerequisite" in agents["prometheus"], "Prometheus must establish load-bearing empirical prerequisites before publication")
     require("without a scaffold only when" in agents["prometheus"], "Prometheus must have bounded exception for finishing without scaffold")
     require("### Selected:" in agents["prometheus"], "Prometheus must require Selected heading in Approaches Considered")
     require("Do not substitute implicit prose" in agents["prometheus"], "Prometheus must prohibit implicit prose substituting for structural labels")
+    require("Reuse a matching scaffold only when it still\nserves the explicit active request" in agents["prometheus"], "Prometheus must only reuse a scaffold that still serves the active request")
+    require("superseding a scaffold neither validates nor discards prior" in agents["prometheus"], "Prometheus must state that supersession neither validates nor discards prior implementation changes")
+    require("do not turn the switch into a\nconfirmation loop" in agents["prometheus"], "Prometheus must not turn an explicit material supersession into a confirmation loop")
     require("delegates here only when the published" in agents["karpathy"], "Karpathy must require explicit manifest selection — not user-invocable directly")
     require("Do not select a strategy" in agents["karpathy"], "Karpathy must not select its own strategy")
     require("do not infer missing values" in agents["karpathy"], "Karpathy must not infer missing prerequisites")
@@ -1027,6 +1224,8 @@ def main() -> int:
         parser.error("--skip-llm cannot be combined with --handoff-only")
     if not args.skip_llm:
         run_behavioral_scenarios(args.model, handoff_only=args.handoff_only)
+        if not args.handoff_only:
+            run_reconciliation_scenarios(args.model)
 
     print("Native Plan/Build compatibility and managed profile validated.")
     return 0

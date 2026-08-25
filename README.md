@@ -27,6 +27,10 @@ This project defines agent roles, edit-tool boundaries, and small workflow
 helpers. It does not provide a command sandbox, virtual machine, protected
 runner, custom completion engine, or autonomous supervisor.
 
+It supports only the current scaffold schema version. An out-of-date scaffold is
+republished by Prometheus, not migrated (see `docs/REQUIREMENTS.md` § No Legacy
+Support).
+
 Command security belongs to OpenCode's native permission model:
 
 - Prometheus denies direct Bash and uses the approval-gated `spike` tool for contracted command-dependent research.
@@ -124,7 +128,7 @@ runs. Its final handoff gives goals and validated outcomes plus a brief change
 summary; detailed PR Contract evidence and the fresh Implementation Validator
 report against `SPEC.md` remain in the delegated task result.
 
-Ralph is the default strategy for ordinary feature and defect work. Karpathy is
+Direct is the default strategy for ordinary feature and defect work. Karpathy is
 used only for explicit scalar optimization with a metric, evaluator, mutable and
 immutable targets, limits, noise policy, and stop criteria. Both strategies are
 bounded by the published manifest and agent instructions; there is no separate

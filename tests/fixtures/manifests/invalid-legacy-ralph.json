@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
-  "strategy": "direct",
+  "strategy": "ralph",
   "invariants": [],
-  "implementation_scope": ["../outside-worktree/**"],
+  "implementation_scope": ["src/**"],
   "escalation_triggers": [],
   "evaluator_inventory": [],
   "verification": {
     "commands": ["true"],
     "baseline": "n/a"
   },
-  "_note": "implementation_scope escapes the worktree; canonical-path validation must reject it."
+  "_note": "strategy=ralph is retired under schema v2; only direct/karpathy are valid."
 }

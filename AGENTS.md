@@ -64,9 +64,19 @@ Before claiming completion, verify that `docs/` still describes the resulting
 system. If behavior changed and the durable docs were not updated, the task is
 incomplete.
 
+## No legacy support
+
+This project supports only the current version of each contract it owns: the
+manifest `schema_version`, the manifest `strategy` vocabulary, and the
+feedback-report `schema_version`. Do not add backward compatibility, a migration
+path, a compatibility alias, or acceptance of a second version. An out-of-date
+artifact is rejected and republished, never migrated. If a task appears to need
+multi-version support, stop and treat it as a change to `docs/REQUIREMENTS.md`
+§ No Legacy Support, not an ordinary implementation step.
+
 ## Optional Autonomous Strategy
 
 The following default applies only after the user explicitly invokes
 `@autonomous`; it does not govern built-in Plan or Build.
-strategy: ralph
+strategy: direct
 rationale: Default — use bounded ordinary implementation unless the task explicitly requires scalar-metric optimization against a frozen evaluator.

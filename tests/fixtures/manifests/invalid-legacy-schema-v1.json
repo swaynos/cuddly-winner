@@ -1,13 +1,13 @@
 {
-  "schema_version": 2,
+  "schema_version": 1,
   "strategy": "direct",
   "invariants": [],
-  "implementation_scope": ["../outside-worktree/**"],
+  "implementation_scope": ["src/**"],
   "escalation_triggers": [],
   "evaluator_inventory": [],
   "verification": {
     "commands": ["true"],
     "baseline": "n/a"
   },
-  "_note": "implementation_scope escapes the worktree; canonical-path validation must reject it."
+  "_note": "schema_version=1 is retired; v2 is the only accepted schema."
 }

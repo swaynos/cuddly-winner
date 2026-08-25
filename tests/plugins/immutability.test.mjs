@@ -61,6 +61,23 @@ test("prometheus can write scaffold artifacts only", async () => fixture(async r
   await guard["tool.execute.before"]({ tool: "spike", sessionID: "p", callID: "spike" }, { args: { spike_id: "probe" } });
 }));
 
+test("prometheus may replace existing scaffold content, not just absent files", async () => fixture(async root => {
+  await writeFile(path.join(root, "SPEC.md"), "# Stale unrelated SPEC\n");
+  await writeFile(path.join(root, "opencode-autonomous.json"), "{\"strategy\":\"stale\"}");
+  const guard = await hooks(root, { p: "prometheus" });
+  await mutate(guard, "p", path.join(root, "SPEC.md"));
+  await mutate(guard, "p", path.join(root, "opencode-autonomous.json"));
+}));
+
+test("a prometheus-labeled child of an autonomous parent inherits the autonomous restriction", async () => fixture(async root => {
+  const guard = await hooks(root, {}, {}, {
+    parent: { agent: "autonomous" },
+    child: { agent: "prometheus", parentID: "parent" },
+  });
+  await assert.rejects(mutate(guard, "child", path.join(root, "SPEC.md")), /published scaffold/);
+  await assert.rejects(mutate(guard, "child", path.join(root, "opencode-autonomous.json")), /published scaffold/);
+}));
+
 test("session directory remains the managed root when worktree is stale", async () => fixture(async root => {
   const guard = await hooks(root, { p: "prometheus" }, {}, {}, [], "/");
   await mutate(guard, "p", path.join(root, "SPEC.md"));

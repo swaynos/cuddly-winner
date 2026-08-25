@@ -29,10 +29,12 @@ Grounded.
 
 // Expected verdicts mirror tests/fixtures/manifests/README.md.
 const EXPECT = {
-  "valid-ralph.json": true,
+  "valid-direct.json": true,
   "valid-karpathy.json": true,
+  "invalid-legacy-schema-v1.json": false,
+  "invalid-legacy-ralph.json": false,
   "invalid-unknown-version.json": false,
-  "invalid-ralph-empty-scope.json": false,
+  "invalid-direct-empty-scope.json": false,
   "invalid-karpathy-missing-optimization.json": false,
   "invalid-escaping-path.json": false,
   "invalid-unknown-limit-key.json": false,
@@ -46,7 +48,7 @@ for (const [name, expected] of Object.entries(EXPECT)) {
 }
 
 test("uninventoried evaluator file fails only with root filesystem check", () => {
-  const m = load("invalid-ralph-nonempty-evaluator-uninventoried.json");
+  const m = load("invalid-direct-nonempty-evaluator-uninventoried.json");
   // Without a root, path-only validation passes (file existence not checked).
   assert.equal(validateManifest(m).valid, true);
   // With a root, the missing inventoried file is detected.
@@ -55,9 +57,15 @@ test("uninventoried evaluator file fails only with root filesystem check", () =>
   assert.match(withRoot.errors.join("; "), /missing/);
 });
 
-test("valid ralph reports ralph strategy; valid karpathy reports karpathy", () => {
-  assert.equal(validateManifest(load("valid-ralph.json")).strategy, "ralph");
+test("valid direct reports direct strategy; valid karpathy reports karpathy strategy", () => {
+  assert.equal(validateManifest(load("valid-direct.json")).strategy, "direct");
   assert.equal(validateManifest(load("valid-karpathy.json")).strategy, "karpathy");
+});
+
+test("direct strategy rejects an optimization block", () => {
+  const withOptimization = load("valid-direct.json");
+  withOptimization.optimization = load("valid-karpathy.json").optimization;
+  assert.equal(validateManifest(withOptimization).valid, false);
 });
 
 test("non-object manifest fails closed", () => {
@@ -69,7 +77,7 @@ test("non-object manifest fails closed", () => {
 test("rejects noncanonical paths in every path field", () => {
   const invalidPaths = ["", ".", "..", "model//config.json", "model\\config.json", "/model/config.json", "C:/model/config.json", "C:model/config.json"];
   for (const invalidPath of invalidPaths) {
-    const scope = load("valid-ralph.json");
+    const scope = load("valid-direct.json");
     scope.implementation_scope = [invalidPath];
     assert.equal(validateManifest(scope).valid, false, `scope: ${JSON.stringify(invalidPath)}`);
 
@@ -84,7 +92,7 @@ test("rejects noncanonical paths in every path field", () => {
 });
 
 test("rejects unknown nested fields and invalid numeric values", () => {
-  const verification = load("valid-ralph.json");
+  const verification = load("valid-direct.json");
   verification.verification.extra = true;
   assert.equal(validateManifest(verification).valid, false);
 
@@ -100,7 +108,7 @@ test("rejects unknown nested fields and invalid numeric values", () => {
   optimizationLimits.optimization.limits.extra = true;
   assert.equal(validateManifest(optimizationLimits).valid, false);
 
-  const fractionalTopLevelCount = load("valid-ralph.json");
+  const fractionalTopLevelCount = load("valid-direct.json");
   fractionalTopLevelCount.limits = { iterations: 1.5 };
   assert.equal(validateManifest(fractionalTopLevelCount).valid, false);
 
@@ -195,7 +203,7 @@ test("validate_scaffold tool performs static SPEC and manifest consistency check
   assert.match(validateTool.description, /without executing/i);
   const root = mkdtempSync(path.join(os.tmpdir(), "scaffold-validator-"));
   try {
-    const manifest = load("valid-ralph.json");
+    const manifest = load("valid-direct.json");
     const command = manifest.verification.commands[0];
     writeFileSync(path.join(root, "SPEC.md"), spec(command));
     writeFileSync(path.join(root, "opencode-autonomous.json"), JSON.stringify(manifest));

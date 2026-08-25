@@ -1,6 +1,6 @@
 {
-  "schema_version": 2,
-  "strategy": "ralph",
+  "schema_version": 3,
+  "strategy": "direct",
   "invariants": [],
   "implementation_scope": ["src/**"],
   "escalation_triggers": [],
@@ -8,5 +8,6 @@
   "verification": {
     "commands": ["true"],
     "baseline": "n/a"
-  }
+  },
+  "_note": "schema_version=3 is an unknown future version; only 2 is accepted."
 }

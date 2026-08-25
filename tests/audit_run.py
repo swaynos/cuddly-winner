@@ -279,10 +279,10 @@ def verdict_autonomous_strategy(
         return Verdict("FAIL", evidence=evidence,
                        interpretation="Selected: karpathy but neither delegation nor canonical scaffold was found.")
 
-    # direct / instrumentation / other
+    # direct / other
     if delegated_to:
         return Verdict("PASS", evidence=evidence,
-                       interpretation=f"Selected: {declared}; strategy is direct/instrumentation (no subagent required).")
+                       interpretation=f"Selected: {declared}; strategy is direct (no subagent required).")
     return Verdict("PASS", evidence=evidence,
                    interpretation=f"Selected: {declared} — direct execution, no subagent delegation required.")
 

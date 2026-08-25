@@ -262,7 +262,7 @@ def _check_single_payload(text: str) -> PlanningCheck:
 def _check_strategy_directive(text: str) -> PlanningCheck:
     strategy_patterns = [
         r"##\s*Autonomous\s+Strategy",
-        r"strategy\s*:\s*(karpathy|direct|ralph-wiggum|octopus|instrumentation)",
+        r"strategy\s*:\s*(karpathy|direct)",
     ]
     for pat in strategy_patterns:
         if re.search(pat, text, re.I):

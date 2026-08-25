@@ -110,6 +110,16 @@ The suite defines 14 scenarios for all 7 managed agents (`ask`, `autonomous`,
 13. **`Grounder` Private Content**: Reports local-only handling and does not echo a private-content canary.
 14. **`Implementation Validator`**: Reports a cited verdict for a candidate implementation without using mutation or command tools.
 
+Three named fixtures under `tests/fixtures/agent_value/` (`autonomous-continue-incomplete.md`,
+`scaffold-task-switch.md`, `prometheus-supersede-scaffold.md`) specify four
+further live scenarios — continuation, mismatch, supersession, and replacement
+consumption — for the managed-scaffold-lifecycle behavior in
+`agents/autonomous.md` and `agents/prometheus.md`. These run as a separate
+model-gated block, `run_reconciliation_scenarios` in `tests/verify_opencode.py`,
+distinct from the 14-scenario suite above. The count above stays 14 because the
+suite and this reconciliation block are separate executable groups, not because
+the four scenarios are unimplemented.
+
 Agent permission tests also resolve deployed agent metadata and verify that
 specific task allows override the catch-all deny. Autonomous scenarios cover both
 successful Implementation Validator delegation and the unavailable-validator

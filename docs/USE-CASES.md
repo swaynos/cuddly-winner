@@ -158,14 +158,22 @@ or initialize Git.
 - **Never:** wait for a separate publication request or describe static publication as proof that final tests pass.
 - **Evidence:** S prompt/doc contract; B automatic-publication handoff scenario.
 
+### UC-PUB-04: An explicitly different request supersedes a stale scaffold
+
+- **Given:** an existing scaffold for task A, and an explicit user request for a materially different task B.
+- **When:** Prometheus inspects the existing scaffold before publishing.
+- **Then:** write a complete replacement `SPEC.md` and manifest for task B, reconcile any obsolete `.prometheus/evaluator/**` assets left by task A, and hand off normally without asking the user to confirm the switch first.
+- **Never:** silently run task A, refuse to publish because a scaffold already exists, or claim the switch validates or discards task A's prior ordinary implementation changes.
+- **Evidence:** B `prometheus-supersede-scaffold.md` fixture scenario.
+
 ## Autonomous Execution
 
 
-### UC-AUT-01: Ralph is the ordinary default
+### UC-AUT-01: Direct is the ordinary default
 
 - **Given:** feature, defect, or technical-debt work without explicit scalar optimization.
 - **When:** Autonomous reads the manifest.
-- **Then:** execute bounded right-sized Ralph iterations.
+- **Then:** execute bounded right-sized Direct iterations.
 - **Never:** select Karpathy merely because evaluator files exist.
 - **Evidence:** S prompt/schema check; B strategy scenario.
 
@@ -224,6 +232,22 @@ or initialize Git.
 - **Then:** continue ordinary in-scope work, or report the core outcome as failed and return to Prometheus when the prerequisite makes it impossible.
 - **Never:** label partial work a candidate, report validator availability as the primary failure, or present an undeclared degraded branch as the requested outcome.
 - **Evidence:** B partial-pipeline and failed-prerequisite scenarios.
+
+### UC-AUT-09: A stale scaffold either continues or routes to the top level
+
+- **Given:** a loaded scaffold and the active user request's requested outcome.
+- **When:** Autonomous compares them before any edit, command, or validation.
+- **Then:** for a matching scaffold, treat an explicit run-or-continue request as authorization to continue all in-scope work without asking again merely because work remains; for a material mismatch, edit nothing, run no stale verification, claim neither task complete, and name the top-level route (`@prometheus` for managed-loop supersession, native Build for ordinary work).
+- **Never:** silently execute a mismatched scaffold, rewrite it, or suggest Bash deletion as a reset mechanism.
+- **Evidence:** B `autonomous-continue-incomplete.md` (matching) and `scaffold-task-switch.md` (mismatch) fixture scenarios.
+
+### UC-AUT-10: A blocked keystone step halts before it cascades into red work
+
+- **Given:** a checklist item is blocked by a structural prerequisite that no available identity or permission can satisfy.
+- **When:** Autonomous reaches that item during execution.
+- **Then:** stop at that item instead of completing downstream checklist items that causally depend on it, and report the blocker naming the exact worktree state and the next action needed to reach green or revert.
+- **Never:** keep editing unrelated downstream items that cannot pass until the blocker clears, or describe the resulting red or half-migrated tree as done, ready, or committable merely because the failure was reported honestly.
+- **Evidence:** S prompt/doc contract; B keystone-blocker scenario.
 
 ## Karpathy And Review
 
@@ -312,6 +336,14 @@ or initialize Git.
 - **Then:** Autonomous delegates strategy advice to Karpathy, applies one bounded change, runs the measurement command through native Bash, and makes a KEEP or REVERT decision according to the declared policy.
 - **Never:** let Karpathy edit files or run commands; substitute strategist prose for the measured metric; or omit the KEEP/REVERT decision from the final report.
 - **Evidence:** B Karpathy loop scenario.
+
+### UC-E2E-03: Autonomous consumes the superseding scaffold, not the superseded one
+
+- **Given:** Prometheus has superseded task A's scaffold with task B's, per UC-PUB-04.
+- **When:** Autonomous is invoked afterward with an explicit run request.
+- **Then:** Autonomous reads and executes task B's scaffold; no trace of task A's implementation scope, acceptance criteria, or verification commands appears in its plan or edits.
+- **Never:** implement task A because its scaffold existed first, or blend both tasks' scope.
+- **Evidence:** B `prometheus-supersede-scaffold.md` fixture, continued into an Autonomous invocation.
 
 ## Documentation Consistency
 

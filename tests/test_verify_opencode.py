@@ -29,6 +29,10 @@ class BehavioralAssertionTests(unittest.TestCase):
         self.assertIn('"*": deny\n    grounder: allow', agent)
         self.assertIn("placeholder test, ignored verification flag, disabled", agent)
         self.assertIn("Attempt the required validator delegation after this candidate-readiness check", agent)
+        self.assertIn("stop at that item instead of\ncompleting downstream checklist items", agent)
+        self.assertIn("minimize the red, half-migrated surface left in the worktree", agent)
+        self.assertIn("worktree is left red or half-migrated and therefore not\ncommittable as-is", agent)
+        self.assertIn("does not license describing that same\nred or half-migrated tree as done, ready, or committable", agent)
 
     def test_task_permission_specific_allows_follow_the_catch_all_deny(self) -> None:
         root = pathlib.Path(__file__).parents[1] / "agents"
@@ -110,7 +114,7 @@ class BehavioralAssertionTests(unittest.TestCase):
     def test_canonical_scaffold_rejects_duplicate_sections_and_nonfinal_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
-            verify_opencode._write_ralph_scaffold(root)
+            verify_opencode._write_direct_scaffold(root)
             spec = root / "SPEC.md"
             spec.write_text(
                 spec.read_text(encoding="utf-8").replace(
@@ -127,10 +131,10 @@ class BehavioralAssertionTests(unittest.TestCase):
             self.assertIn("missing or duplicate section: ## Grounding", errors)
             self.assertIn("missing final Autonomous handoff", errors)
 
-    def test_ralph_fixture_is_a_canonical_scaffold(self) -> None:
+    def test_direct_fixture_is_a_canonical_scaffold(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
-            verify_opencode._write_ralph_scaffold(root)
+            verify_opencode._write_direct_scaffold(root)
 
             self.assertEqual(
                 verify_opencode._canonical_scaffold_errors(

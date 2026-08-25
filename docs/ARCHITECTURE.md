@@ -54,35 +54,36 @@ decision, and `--auto` intentionally approves it.
 
 ### Static Scaffold Validation
 
-`tools/validate_scaffold.ts` parses schema-v1 `opencode-autonomous.json`, checks
+`tools/validate_scaffold.ts` parses schema-v2 `opencode-autonomous.json`, checks
 canonical worktree-relative paths and evaluator inventory, verifies required
 SPEC sections, and requires SPEC and manifest verification command lists to
 match exactly. It performs no command execution.
 
 The schema fails closed on unknown versions, fields, enum values, malformed
 limits, escaping paths, missing evaluator files, and incomplete Karpathy
-configuration. There is no pre-1.0 migration path; mismatches require
-Prometheus to republish.
+configuration. Only the current schema version is accepted. There is no
+migration path or compatibility alias for an older version; a mismatch requires
+Prometheus to republish (see `docs/REQUIREMENTS.md` § No Legacy Support).
 
-#### Manifest Schema (v1)
+#### Manifest Schema (v2)
 
 Both strategies require:
 
 | Field | Contract |
 | --- | --- |
-| `schema_version` | Integer `1`. |
-| `strategy` | `"ralph"` or `"karpathy"`. |
+| `schema_version` | Integer `2`. |
+| `strategy` | `"direct"` or `"karpathy"`. |
 | `invariants` | String array. |
 | `implementation_scope` | Non-empty canonical worktree-relative path array. |
 | `escalation_triggers` | String array. |
-| `evaluator_inventory` | Canonical files under `.prometheus/evaluator/`; may be empty for Ralph. |
+| `evaluator_inventory` | Canonical files under `.prometheus/evaluator/`; may be empty for Direct. |
 | `verification` | Exact non-empty `commands` array plus a human-readable `baseline` string. |
 | `limits` | Optional positive numeric bounds using only documented keys. |
 
 Karpathy additionally requires `optimization` with objective, minimize/maximize
 direction, finite baseline, score extraction, noise runs and threshold, mutable
 and immutable targets, experiment and pivot limits, and target/exhaustion stop
-criteria. Every evaluator inventory path must also be immutable. Ralph rejects
+criteria. Every evaluator inventory path must also be immutable. Direct rejects
 an optimization block.
 
 ### Git Exclusion
@@ -121,7 +122,7 @@ direction, and evaluator exist — it recommends Karpathy mode in the scaffold.
 Publication order is:
 
 1. Run the deliberation loop: investigate, resolve, apply creative liberty, or escalate with a focused question.
-2. Identify whether outcomes are measurable and select Ralph or Karpathy.
+2. Identify whether outcomes are measurable and select Direct or Karpathy.
 3. Define acceptance criteria, implementation scope, escalation triggers, limits, and exact final verification.
 4. Create optional evaluator and spike assets.
 5. Write `opencode-autonomous.json` and `SPEC.md` before the final Prometheus response.
@@ -145,7 +146,7 @@ and never receives this reminder.
 ## Autonomous Flow
 
 Autonomous reads the unchanged scaffold and chooses only the declared strategy.
-For Ralph it implements right-sized items, uses native Bash for focused checks,
+For Direct it implements right-sized items, uses native Bash for focused checks,
 and runs exact final verification before completion. For Karpathy it delegates
 proposal and analysis to the read-only strategist, applies one change, runs the
 measurement through native Bash, and makes a bounded KEEP/REVERT decision.

@@ -40,7 +40,7 @@ or schema details that can be specified by a bounded implementation plan.
 An empty workspace is not a planning blocker. Treat a delivery medium such as
 browser versus CLI as an implementation mechanic unless the user makes it an
 outcome constraint. For an otherwise unspecified request to build a simple
-calculator in an empty workspace, publish a Ralph scaffold for a
+calculator in an empty workspace, publish a Direct scaffold for a
 zero-dependency static browser calculator; do not ask the user to choose the
 platform or basic operations.
 
@@ -72,9 +72,21 @@ reason:` sentence. Do not substitute implicit prose for these labels.
 the exact form `- `<command>``. Checklist items use `[ ]`. Write no alternate
 filename or tagged envelope.
 
+Before publishing, use Glob to check for an existing root `SPEC.md` and
+`opencode-autonomous.json`. Reuse a matching scaffold only when it still
+serves the explicit active request; do not republish work that is already
+correct. For an explicitly different request, write the complete replacement
+`SPEC.md` and manifest, reconcile any obsolete `.prometheus/evaluator/**`
+assets left by the prior scaffold, and hand off normally. State plainly that
+superseding a scaffold neither validates nor discards prior ordinary
+implementation changes already in the worktree; it only replaces the scaffold
+files themselves. When the new explicit request materially supersedes the old
+one, publish the replacement directly — do not turn the switch into a
+confirmation loop by asking the user to confirm first.
+
 Publish the scaffold in this order (see docs/ARCHITECTURE.md § Prometheus Flow):
 
-1. Resolve uncertainty and choose the strategy (Ralph by default; Karpathy only
+1. Resolve uncertainty and choose the strategy (Direct by default; Karpathy only
    for explicit scalar-metric optimization).
 2. Define exact final verification commands. First check the target project
    for its own declared toolchain — a version-pin file (`.python-version`,
@@ -92,7 +104,7 @@ Publish the scaffold in this order (see docs/ARCHITECTURE.md § Prometheus Flow)
    retain any tracked-artifact warnings and report a non-Git skip without
    initializing Git or creating `.gitignore`.
 5. Write `opencode-autonomous.json` with the literal top-level field
-   `"schema_version": 1` (schema v1), plus `strategy`, `invariants`,
+   `"schema_version": 2` (schema v2), plus `strategy`, `invariants`,
    `implementation_scope`, `escalation_triggers`,
    `evaluator_inventory`, `verification`, and a Karpathy `optimization` block
    when applicable).

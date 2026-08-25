@@ -1,6 +1,6 @@
 /**
- * Static validator for the Prometheus scaffold (schema v1).
- * Authoritative schema: docs/ARCHITECTURE.md § Manifest Schema (v1).
+ * Static validator for the Prometheus scaffold (schema v2).
+ * Authoritative schema: docs/ARCHITECTURE.md § Manifest Schema (v2).
  * Fails closed: unknown version/field/enum/limit key is a hard error.
  */
 import { tool } from "@opencode-ai/plugin";
@@ -9,7 +9,7 @@ import path from "node:path";
 
 export interface ValidationResult {
   valid: boolean;
-  strategy?: "ralph" | "karpathy";
+  strategy?: "direct" | "karpathy";
   errors: string[];
 }
 
@@ -118,11 +118,11 @@ export function validateManifest(raw: unknown, opts: { root?: string } = {}): Va
   }
   const m = raw as Record<string, unknown>;
 
-  if (m.schema_version !== 1) push(`schema_version must be 1 (got ${JSON.stringify(m.schema_version)})`);
+  if (m.schema_version !== 2) push(`schema_version must be 2 (got ${JSON.stringify(m.schema_version)})`);
 
   const strategy = m.strategy;
-  if (strategy !== "ralph" && strategy !== "karpathy") {
-    push(`strategy must be "ralph" or "karpathy" (got ${JSON.stringify(strategy)})`);
+  if (strategy !== "direct" && strategy !== "karpathy") {
+    push(`strategy must be "direct" or "karpathy" (got ${JSON.stringify(strategy)})`);
   }
 
   for (const key of Object.keys(m)) {
@@ -186,8 +186,8 @@ export function validateManifest(raw: unknown, opts: { root?: string } = {}): Va
       }
     }
   }
-  else if (strategy === "ralph" && m.optimization !== undefined) {
-    push("ralph strategy must not declare an optimization block");
+  else if (strategy === "direct" && m.optimization !== undefined) {
+    push("direct strategy must not declare an optimization block");
   }
 
   return { valid: errors.length === 0, strategy: strategy as ValidationResult["strategy"], errors };

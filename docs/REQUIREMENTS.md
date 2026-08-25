@@ -11,6 +11,23 @@ platform.
 durable source of truth. `SPEC.md` and `opencode-autonomous.json` are transient
 task scaffolds.
 
+## No Legacy Support
+
+This project supports exactly one current version of each contract it owns: the
+scaffold manifest `schema_version`, the manifest `strategy` vocabulary, and the
+feedback-report `schema_version`. Each has a single current value. An older or
+unknown value is rejected, never migrated, aliased, or auto-upgraded. There is no
+backward compatibility layer and no migration path.
+
+Consumers keep their own artifacts current. When a scaffold predates the current
+schema, Prometheus republishes it; the project never reads the old shape. Adding
+a second accepted version, reviving a retired strategy, or introducing a shim is
+a change to this policy, not an ordinary feature.
+
+Each contract versions independently, so "one current version" is per contract.
+The manifest and the feedback report do not share a version, and a
+repository-wide bump must never rewrite one to match the other.
+
 ## Runtime Compatibility
 
 The repository supports Node.js `>=22.22.2 <25`. This floor matches the
@@ -54,7 +71,7 @@ proceeds without asking.
 An empty workspace is not a planning blocker. Prometheus treats a delivery
 medium, such as browser versus CLI, as an implementation mechanic unless the
 user makes it an outcome constraint. For an otherwise unspecified simple
-calculator request, it publishes a Ralph scaffold for a zero-dependency static
+calculator request, it publishes a Direct scaffold for a zero-dependency static
 browser calculator rather than asking the user to choose a platform or basic
 operations.
 
@@ -88,6 +105,15 @@ ignored verifier flags, or missing outputs mean the work remains incomplete.
 Autonomous continues ordinary in-scope work. A failed measured prerequisite that
 eliminates a core requested outcome is `Failed` and returns to Prometheus; an
 explicitly optional branch may be `Skipped`.
+
+When a checklist item is blocked by a structural prerequisite that no
+available identity or permission can satisfy, Autonomous stops at that item
+instead of completing downstream items that causally depend on it, so one
+unresolved keystone blocker never compounds into a wider red, half-migrated
+tree. A failed or blocked handoff states plainly that the worktree is left
+non-green and not committable as-is, and names the exact next action to reach
+green or revert. Reporting a failure honestly never licenses describing that
+same red or half-migrated tree as done, ready, or committable.
 
 Autonomous uses native Bash with `ask` permission. OpenCode auto mode may approve
 those requests automatically. Autonomous never stages, commits, stashes, resets,
@@ -213,7 +239,7 @@ Every published scaffold contains:
 
 - one `SPEC.md` with Grounding, Approaches Considered, Acceptance Criteria,
   Verification, and Implementation Checklist sections;
-- one schema-v1 `opencode-autonomous.json` declaring strategy, invariants,
+- one schema-v2 `opencode-autonomous.json` declaring strategy, invariants,
   implementation scope, escalation triggers, evaluator inventory, exact
   verification commands, and optional limits;
 - an optimization block for Karpathy work;
@@ -237,7 +263,7 @@ is not itself Prometheus and never receives this reminder.
 
 ## Autonomous Profile
 
-Ralph is the default for ordinary feature, defect, and technical-debt work.
+Direct is the default for ordinary feature, defect, and technical-debt work.
 Autonomous works one right-sized item at a time, verifies relevant increments,
 runs all final commands before claiming completion, and stops on success,
 declared limits, repeated lack of progress, or a concrete blocker.
@@ -331,7 +357,7 @@ are reported without attributing them to a particular agent after a switch.
 
 Release validation separately proves native compatibility, identity inheritance,
 role permissions, Prometheus triage and deliberation behavior, Autonomous
-approval-gated Bash, Ralph/Karpathy prompt contracts, deterministic skill and
+approval-gated Bash, Direct/Karpathy prompt contracts, deterministic skill and
 audit checks, mutation-runner behavior, additive deployment and
 safe removal, and documentation consistency, following the evidence requirements
 defined in `docs/TEST-PLAN.md` and `docs/TESTING-METHODOLOGY.md`. No release check may require Bubblewrap, Lima, a
