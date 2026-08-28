@@ -249,6 +249,14 @@ or initialize Git.
 - **Never:** keep editing unrelated downstream items that cannot pass until the blocker clears, or describe the resulting red or half-migrated tree as done, ready, or committable merely because the failure was reported honestly.
 - **Evidence:** S prompt/doc contract; B blocked-step scenario.
 
+### UC-AUT-11: Missing optional tool capabilities trigger a supported fallback
+
+- **Given:** a scaffold prefers a tool operation or parameter that the current session does not expose, while another safe in-scope operation can produce the required result.
+- **When:** Autonomous reaches that tool-dependent item.
+- **Then:** inspect the available operation contract, use the supported fallback, and record the failed operation and fallback when they affect reproducibility.
+- **Never:** treat a missing convenience API as a structural blocker or stop before testing safe in-scope alternatives.
+- **Evidence:** S prompt/doc contract; B capability-fallback scenario.
+
 ## Karpathy And Review
 
 ### UC-KAR-01: Optimization requires a complete contract

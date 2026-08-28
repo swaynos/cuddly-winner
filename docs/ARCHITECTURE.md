@@ -171,6 +171,13 @@ measured prerequisite that removes a core requested outcome is a failed
 execution requiring renewed Prometheus planning; an explicitly optional branch
 may instead be reported as skipped.
 
+For tool-dependent work, Autonomous first compares the scaffold's preferred
+operation with the operations and parameters actually exposed in the current
+session. Missing optional output, export, or convenience APIs require a safe
+in-scope fallback, not a blocked handoff. It records the unavailable operation
+and fallback when they affect reproducibility. Only exhaustion of all safe paths
+available to its current identity and permissions creates a structural blocker.
+
 Before its final handoff, Autonomous prepares a detailed PR Contract covering
 intent, implementation record, proof of function (terminal output showing exit
 code 0), risk assessment, review focus, and every SPEC checklist item. It gives

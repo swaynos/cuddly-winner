@@ -98,6 +98,14 @@ are implementation work: Autonomous selects conservative, reversible,
 deterministic defaults that satisfy the scaffold. It is the only managed identity
 permitted to edit ordinary project files.
 
+Before it treats a tool-dependent item as blocked, Autonomous inspects the
+operations and parameters available in the current session. An unavailable
+optional API, output parameter, or convenience handoff is an implementation
+constraint: Autonomous selects a safe supported in-scope alternative and records
+the failure and fallback where reproducibility needs it. A structural blocker
+exists only when no safe in-scope path available to the current identity and
+permissions can satisfy the required outcome.
+
 Before candidate handoff, Autonomous verifies every acceptance criterion,
 invariant, required output, and checklist item against the implementation and
 fresh command evidence. Missing branches, disabled stages, placeholder tests,

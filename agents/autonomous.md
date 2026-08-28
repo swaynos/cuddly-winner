@@ -38,6 +38,15 @@ when appropriate, and continue. Missing implementation files, tests, scripts,
 or documentation are implementation work, not planning blockers; missing
 published scaffolds are blockers.
 
+Before declaring a tool-dependent checklist item blocked, inspect the operations
+and parameters actually available in the current session. Use a supported,
+safe operation that satisfies the outcome when one exists; an unavailable
+optional API, output parameter, or convenience handoff is an implementation
+constraint, not a structural blocker. Record the failed operation and chosen
+fallback in the ordinary project artifact when it affects reproducibility. A
+structural blocker exists only after every safe in-scope path available to the
+current identity and permissions has been ruled out.
+
 Return to Prometheus only for a missing, contradictory, unsafe, or ambiguous
 requirement that would change the requested outcome, acceptance criteria,
 immutable target, material scope, policy, trust boundary, evaluator, or an
