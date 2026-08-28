@@ -23,6 +23,10 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def normalize_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", text)
+
+
 def deploy(config: pathlib.Path, *args: str) -> None:
     env = os.environ | {"OPENCODE_DEPLOY_CONFIG_DIR": str(config)}
     subprocess.run(
@@ -1112,7 +1116,9 @@ def main() -> int:
     require("placeholder test, ignored verification flag, disabled" in agents["autonomous"], "Autonomous must reject incomplete candidates before validator handoff")
     require("Do not escalate ordinary local debugging" in agents["autonomous"], "Autonomous escalation boundary is too broad")
     require("reviewer verdicts are not substitutes" in agents["autonomous"], "Autonomous must not substitute reviewer approval for final verification")
-    require("advisory and may trigger at most one bounded correction" in agents["autonomous"], "Autonomous reviewer loop must be bounded to one correction")
+    require("Reviewer feedback is advisory" in agents["autonomous"], "Autonomous reviewer feedback must remain advisory")
+    stop_phrase = "declared verification passes or a keystone blocker that no available identity or permission can clear"
+    require(stop_phrase in normalize_whitespace(agents["autonomous"]), "Autonomous must state its stop conditions")
     require("Do not stage, commit, stash, reset, switch branches, or initialize Git" in agents["autonomous"], "Autonomous must preserve the human-owned pending changeset")
     require("detailed PR Contract" in agents["autonomous"], "Autonomous must prepare a detailed validator evidence packet")
     require("Goals and validated outcomes" in agents["autonomous"], "Autonomous must provide concise validated outcomes")
@@ -1174,9 +1180,15 @@ def main() -> int:
     requirements = (ROOT / "docs/REQUIREMENTS.md").read_text()
     architecture = (ROOT / "docs/ARCHITECTURE.md").read_text()
     methodology = (ROOT / "docs/TESTING-METHODOLOGY.md").read_text()
+    use_cases = (ROOT / "docs/USE-CASES.md").read_text()
     resource_selection = (ROOT / "docs/RESOURCE-SELECTION.md").read_text()
     for name, text in (("README", readme), ("requirements", requirements), ("architecture", architecture), ("methodology", methodology)):
         require("Plan" in text and "Build" in text or name == "methodology", f"{name} omits native Plan/Build compatibility")
+
+    require(stop_phrase in normalize_whitespace(requirements), "REQUIREMENTS must state the Autonomous stop conditions")
+    require(stop_phrase in normalize_whitespace(architecture), "ARCHITECTURE must state the Autonomous stop conditions")
+    require(stop_phrase in normalize_whitespace(use_cases), "USE-CASES UC-AUT-05 must state the Autonomous stop conditions")
+    require("### UC-AUT-10: A blocked keystone step halts before it cascades into red work" in use_cases, "USE-CASES UC-AUT-10 must remain byte-unchanged")
     require("does **not** replace, wrap, redirect, restrict" in readme, "README product goal is ambiguous")
     require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
     require("Standardized Verdict Definitions" in methodology, "TESTING-METHODOLOGY missing verdict definitions")

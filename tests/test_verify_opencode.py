@@ -28,7 +28,11 @@ class BehavioralAssertionTests(unittest.TestCase):
         self.assertIn("Do not emit\n`<promise>COMPLETE</promise>`", agent)
         self.assertIn('"*": deny\n    grounder: allow', agent)
         self.assertIn("placeholder test, ignored verification flag, disabled", agent)
-        self.assertIn("Attempt the required validator delegation after this candidate-readiness check", agent)
+        self.assertIn("Delegate to the required validator after this candidate-readiness check", agent)
+        self.assertIn(
+            "declared verification passes or a keystone blocker that no available identity or permission can clear",
+            verify_opencode.normalize_whitespace(agent),
+        )
         self.assertIn("stop at that item instead of\ncompleting downstream checklist items", agent)
         self.assertIn("minimize the red, half-migrated surface left in the worktree", agent)
         self.assertIn("worktree is left red or half-migrated and therefore not\ncommittable as-is", agent)
@@ -142,6 +146,12 @@ class BehavioralAssertionTests(unittest.TestCase):
                 ),
                 [],
             )
+
+    def test_normalize_whitespace_collapses_line_wraps(self) -> None:
+        self.assertEqual(
+            verify_opencode.normalize_whitespace("declared verification\npasses,   spent"),
+            "declared verification passes, spent",
+        )
 
 
 if __name__ == "__main__":

@@ -78,7 +78,7 @@ Both strategies require:
 | `escalation_triggers` | String array. |
 | `evaluator_inventory` | Canonical files under `.prometheus/evaluator/`; may be empty for Direct. |
 | `verification` | Exact non-empty `commands` array plus a human-readable `baseline` string. |
-| `limits` | Optional positive numeric bounds using only documented keys. |
+| `limits` | Optional positive numeric bounds. |
 
 Karpathy additionally requires `optimization` with objective, minimize/maximize
 direction, finite baseline, score extraction, noise runs and threshold, mutable
@@ -123,7 +123,7 @@ Publication order is:
 
 1. Run the deliberation loop: investigate, resolve, apply creative liberty, or escalate with a focused question.
 2. Identify whether outcomes are measurable and select Direct or Karpathy.
-3. Define acceptance criteria, implementation scope, escalation triggers, limits, and exact final verification.
+3. Define acceptance criteria, implementation scope, escalation triggers, and exact final verification.
 4. Create optional evaluator and spike assets.
 5. Write `opencode-autonomous.json` and `SPEC.md` before the final Prometheus response.
 6. Invoke governance tools (`scaffold_gitignore`, `validate_scaffold`) when installed; scaffold exclusion is a no-op outside a Git worktree.
@@ -155,10 +155,12 @@ implementation targets. Autonomous applies the scaffold's bounded defaults for
 unspecified mechanics and returns to Prometheus only for an outcome-changing
 requirement gap.
 
-The manifest provides limits and stop conditions, but enforcement is agent-led
-inside the OpenCode session. Autonomous does not stage, commit, stash, reset,
-switch branches, or initialize Git; the pending worktree is the human-owned
-aggregate review artifact. Reviewer output is advisory.
+The manifest may declare optional limits, but enforcement is agent-led inside
+the OpenCode session. Autonomous stops when declared verification passes or a
+keystone blocker that no available identity or permission can clear requires
+renewed planning. Autonomous does not stage, commit, stash, reset, switch
+branches, or initialize Git; the pending worktree is the human-owned aggregate
+review artifact. Reviewer output is advisory.
 
 Before validator handoff, Autonomous checks every acceptance criterion,
 invariant, required output, and checklist item against the implementation and

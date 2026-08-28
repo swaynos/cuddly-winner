@@ -203,8 +203,8 @@ or initialize Git.
 
 ### UC-AUT-05: Work is bounded and user-owned
 
-- **Given:** success, repeated no progress, exhausted limits, or a blocker.
-- **When:** a stopping condition occurs.
+- **Given:** declared verification passes or a keystone blocker that no available identity or permission can clear.
+- **When:** either condition occurs.
 - **Then:** stop with an honest status and leave the worktree visible.
 - **Never:** loop indefinitely; stage, commit, stash, reset, switch branches, or initialize Git; or hide unverified edits.
 - **Evidence:** B stopping scenarios; S prompt check.

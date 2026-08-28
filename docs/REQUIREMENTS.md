@@ -265,8 +265,9 @@ is not itself Prometheus and never receives this reminder.
 
 Direct is the default for ordinary feature, defect, and technical-debt work.
 Autonomous works one right-sized item at a time, verifies relevant increments,
-runs all final commands before claiming completion, and stops on success,
-declared limits, repeated lack of progress, or a concrete blocker.
+runs all final commands before claiming completion, and stops when declared
+verification passes or a keystone blocker that no available identity or
+permission can clear requires renewed planning.
 
 Karpathy applies only to explicit scalar optimization with a complete metric,
 direction, evaluator, baseline protocol, noise policy, mutable and immutable

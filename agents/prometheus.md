@@ -107,7 +107,7 @@ Publish the scaffold in this order (see docs/ARCHITECTURE.md § Prometheus Flow)
    `"schema_version": 2` (schema v2), plus `strategy`, `invariants`,
    `implementation_scope`, `escalation_triggers`,
    `evaluator_inventory`, `verification`, and a Karpathy `optimization` block
-   when applicable).
+   when applicable.
 6. Write `SPEC.md`. When `validate_scaffold` is installed, invoke it and correct
    structural errors before declaring the handoff complete. Static validation
    executes no project command and does not prove that final verification passes.
