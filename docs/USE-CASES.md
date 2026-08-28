@@ -361,21 +361,9 @@ or initialize Git.
 
 - **Given:** local evidence, direct web pages, public APIs, or text-only search can answer a question.
 - **When:** a managed agent gathers evidence.
-- **Then:** use those sources before NotebookLM or browser automation.
+- **Then:** use those sources before browser automation.
 - **Never:** open a visible browser without stating the target, lower-impact failures, and user approval.
 - **Evidence:** S agent/rule contract; B resource-order scenario.
-
-### UC-RESOURCE-02: NotebookLM failure remains non-interactive
-
-- **Given:** NotebookLM is unavailable or unauthenticated (no local
-  `notebooklm login` session yet, or an expired one).
-- **When:** Grounder needs external evidence.
-- **Then:** use local or web evidence and report the fallback.
-- **Never:** begin setup, reauthentication, cleanup, or visible-browser repair
-  without an explicit request. The MCP server exposes no tool that could do
-  this even if asked; only the out-of-band CLI (`notebooklm login`/`auth
-  refresh`), run by the user, can establish or repair a session.
-- **Evidence:** S managed MCP configuration; B unauthenticated NotebookLM scenario.
 
 ### UC-RESOURCE-03: Image credentials are opt-in and provider-scoped
 

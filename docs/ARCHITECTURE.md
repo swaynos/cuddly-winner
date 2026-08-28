@@ -207,36 +207,20 @@ resolved from the CLI, one environment variable, or OpenCode's debug output;
 it. One entry synchronizer handles files and directories in copy or symlink
 mode, including idempotence, collision backups, status, and safe removal.
 
-The installer also synchronizes two namespaced MCP entries through a narrow JSON
-helper. One provides a headless isolated research browser (`@playwright/mcp`,
-Node). The other provides authenticated access to a personal NotebookLM
-account through `notebooklm-py`'s MCP server (Python). The helper backs up
-before mutation, changes only its own keys, and preserves unrelated entries.
+The installer also synchronizes one namespaced MCP entry through a narrow JSON
+helper: a headless isolated research browser (`@playwright/mcp`, Node). It backs
+up before mutation, changes only its own keys, preserves unrelated entries, and
+prunes retired managed entries left by earlier installs.
 `scripts/opencode-browser-credentials.mjs` manages separate opt-in ChatGPT and
 Gemini profiles outside project repositories.
 
-### NotebookLM Runtime
+### Python Runtime
 
 This project runs exactly one Python virtual environment, named by
-`.python-version` and provisioned by `scripts/ensure-venv.sh`. Test execution
-and the deployed NotebookLM MCP server share that same virtualenv; there is no
-separate runtime for either. On `install`, the installer runs
-`ensure-venv.sh` (creating the virtualenv if absent), installs a pinned
-`notebooklm-py[mcp]` into it, and writes the resolved absolute
-`notebooklm-mcp` console-script path into the managed MCP entry. `status` and
-`remove` resolve that same path directly from `.python-version` and `pyenv
-root`, without creating a missing virtualenv just to inspect or remove a
-config entry. If pyenv is absent, resolution fails outright — there is no
-silent fallback to system Python, a different environment manager, or an
-attempt to install pyenv itself.
-
-The server never authenticates and exposes no auth tool: `notebooklm-py` logs
-in only through its out-of-band CLI (`notebooklm login`), run once by the user
-outside any agent session, and the MCP server binds whatever credentials that
-login already wrote to `~/.notebooklm/`. An unauthenticated server answers
-`server_info` truthfully and fails closed on every other call; nothing in this
-project's tooling can trigger login, re-auth, or credential cleanup on the
-user's behalf.
+`.python-version` and provisioned by `scripts/ensure-venv.sh` (creating it if
+absent). Test execution uses that virtualenv. If pyenv is absent, resolution
+fails outright — there is no silent fallback to system Python, a different
+environment manager, or an attempt to install pyenv itself.
 
 Every file under `rules/` deploys, name preserved, to `<config_dir>/rules/`
 through the same synchronizer used for agents and skills. That alone does not

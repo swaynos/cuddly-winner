@@ -150,13 +150,12 @@ never determines completion by itself.
 
 Grounder gathers cited local and external facts. It does not mutate, execute
 commands, delegate, or make product decisions. External claims identify their
-URL or notebook source, and private repository contents or secrets must not be
-sent to third-party services.
+URL, and private repository contents or secrets must not be sent to third-party
+services.
 
 Grounder follows the resource order in `docs/RESOURCE-SELECTION.md`. It uses a
 visible browser only after explaining the target and lower-impact failures and
-receiving explicit user approval. Unauthenticated NotebookLM is a valid reason
-to use local and web evidence, never a reason to start interactive auth.
+receiving explicit user approval.
 
 ### Implementation Validator
 

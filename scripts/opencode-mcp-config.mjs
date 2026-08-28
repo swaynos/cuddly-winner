@@ -2,23 +2,22 @@
 // Manages only Cuddly-Winner-owned MCP entries in an OpenCode config.
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
-export function buildManagedMcp(notebooklmBin) {
+export function buildManagedMcp() {
   return {
     "cuddly-winner-research-browser": {
       type: "local",
       command: ["npx", "-y", "@playwright/mcp@0.0.78", "--headless", "--isolated"],
       enabled: true,
     },
-    "cuddly-winner-notebooklm": {
-      type: "local",
-      command: [notebooklmBin],
-      enabled: true,
-    },
   };
 }
 
+// MCP entries this project used to manage. Install prunes any that linger in a
+// config from an earlier profile, so upgrading removes them without a manual edit.
+const RETIRED_MCP_KEYS = ["cuddly-winner-notebooklm"];
+
 function usage() {
-  process.stderr.write("Usage: opencode-mcp-config.mjs <install|status|remove|diagnose> --config <path> [--notebooklm-bin <path>]\n");
+  process.stderr.write("Usage: opencode-mcp-config.mjs <install|status|remove|diagnose> --config <path>\n");
 }
 
 function die(message) {
@@ -33,15 +32,12 @@ function parseArgs(argv) {
     die(`unknown action: ${action ?? "(missing)"}`);
   }
   let configPath = "";
-  let notebooklmBin = "";
   for (let index = 0; index < rest.length; index += 1) {
     if (rest[index] === "--config") configPath = rest[++index] ?? "";
-    else if (rest[index] === "--notebooklm-bin") notebooklmBin = rest[++index] ?? "";
     else die(`unknown argument: ${rest[index]}`);
   }
   if (!configPath) die("--config is required");
-  if (action !== "diagnose" && !notebooklmBin) die("--notebooklm-bin is required for install, status, and remove");
-  return { action, configPath, notebooklmBin };
+  return { action, configPath };
 }
 
 export function loadConfig(configPath) {
@@ -80,8 +76,8 @@ export function modeOf(entry) {
   return "unknown";
 }
 
-function printStatus(config, notebooklmBin) {
-  const managed = buildManagedMcp(notebooklmBin);
+function printStatus(config) {
+  const managed = buildManagedMcp();
   const entries = config.mcp ?? {};
   for (const [name, desired] of Object.entries(managed)) {
     const current = entries[name];
@@ -91,7 +87,7 @@ function printStatus(config, notebooklmBin) {
 }
 
 function diagnose(config) {
-  const managedNames = new Set(Object.keys(buildManagedMcp("")));
+  const managedNames = new Set(Object.keys(buildManagedMcp()));
   const entries = config.mcp ?? {};
   for (const [name, entry] of Object.entries(entries)) {
     const owner = managedNames.has(name) ? "managed" : "unmanaged";
@@ -99,11 +95,11 @@ function diagnose(config) {
   }
 }
 
-export function apply(action, configPath, notebooklmBin) {
+export function apply(action, configPath) {
   const config = loadConfig(configPath);
-  if (action === "status") return printStatus(config, notebooklmBin);
+  if (action === "status") return printStatus(config);
   if (action === "diagnose") return diagnose(config);
-  const managed = buildManagedMcp(notebooklmBin);
+  const managed = buildManagedMcp();
   const mcp = { ...(config.mcp ?? {}) };
   let changed = false;
   if (action === "install") {
@@ -111,6 +107,13 @@ export function apply(action, configPath, notebooklmBin) {
       if (!sameJson(mcp[name], entry)) {
         mcp[name] = entry;
         changed = true;
+      }
+    }
+    for (const name of RETIRED_MCP_KEYS) {
+      if (mcp[name] !== undefined) {
+        delete mcp[name];
+        changed = true;
+        process.stdout.write(`Removed retired managed entry: ${name}\n`);
       }
     }
   } else {
@@ -133,8 +136,8 @@ export function apply(action, configPath, notebooklmBin) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   try {
-    const { action, configPath, notebooklmBin } = parseArgs(process.argv.slice(2));
-    apply(action, configPath, notebooklmBin);
+    const { action, configPath } = parseArgs(process.argv.slice(2));
+    apply(action, configPath);
   } catch (error) {
     die(error.message);
   }
