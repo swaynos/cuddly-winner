@@ -109,7 +109,7 @@ explicitly optional branch may be `Skipped`.
 When a checklist item is blocked by a structural prerequisite that no
 available identity or permission can satisfy, Autonomous stops at that item
 instead of completing downstream items that causally depend on it, so one
-unresolved keystone blocker never compounds into a wider red, half-migrated
+blocked item never cascades into a wider red, half-migrated
 tree. A failed or blocked handoff states plainly that the worktree is left
 non-green and not committable as-is, and names the exact next action to reach
 green or revert. Reporting a failure honestly never licenses describing that
@@ -265,8 +265,8 @@ is not itself Prometheus and never receives this reminder.
 Direct is the default for ordinary feature, defect, and technical-debt work.
 Autonomous works one right-sized item at a time, verifies relevant increments,
 runs all final commands before claiming completion, and stops when declared
-verification passes or a keystone blocker that no available identity or
-permission can clear requires renewed planning.
+verification passes or a required step proves impossible to complete with any
+tool or permission available in this session.
 
 Karpathy applies only to explicit scalar optimization with a complete metric,
 direction, evaluator, baseline protocol, noise policy, mutable and immutable

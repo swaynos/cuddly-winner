@@ -1117,7 +1117,7 @@ def main() -> int:
     require("Do not escalate ordinary local debugging" in agents["autonomous"], "Autonomous escalation boundary is too broad")
     require("reviewer verdicts are not substitutes" in agents["autonomous"], "Autonomous must not substitute reviewer approval for final verification")
     require("Reviewer feedback is advisory" in agents["autonomous"], "Autonomous reviewer feedback must remain advisory")
-    stop_phrase = "declared verification passes or a keystone blocker that no available identity or permission can clear"
+    stop_phrase = "declared verification passes or a required step proves impossible to complete with any tool or permission available in this session"
     require(stop_phrase in normalize_whitespace(agents["autonomous"]), "Autonomous must state its stop conditions")
     require("Do not stage, commit, stash, reset, switch branches, or initialize Git" in agents["autonomous"], "Autonomous must preserve the human-owned pending changeset")
     require("detailed PR Contract" in agents["autonomous"], "Autonomous must prepare a detailed validator evidence packet")
@@ -1131,7 +1131,7 @@ def main() -> int:
     require("Use Karpathy only when the manifest explicitly" in agents["autonomous"], "Autonomous must not invoke Karpathy without a complete manifest")
     require("scaffold, treat\nan explicit request to run or continue the loop as authorization to continue" in agents["autonomous"], "Autonomous must treat a matching scaffold's continue request as standing authorization")
     require("top-level `@prometheus` for supersession" in agents["autonomous"], "Autonomous must name the top-level Prometheus supersession route on a material mismatch")
-    require("stop at that item instead of\ncompleting downstream checklist items" in agents["autonomous"], "Autonomous must stop at a structurally blocked keystone item instead of cascading into dependent work")
+    require("stop at that item instead of\ncompleting downstream checklist items" in agents["autonomous"], "Autonomous must stop at a structurally blocked item instead of cascading into dependent work")
     require("minimize the red, half-migrated surface left in the worktree" in agents["autonomous"], "Autonomous must minimize, not maximize, red surface left behind a blocker")
     require("worktree is left red or half-migrated and therefore not\ncommittable as-is" in agents["autonomous"], "Autonomous must disclose a red or half-migrated worktree as not committable in a failed/blocked handoff")
     require("does not license describing that same\nred or half-migrated tree as done, ready, or committable" in agents["autonomous"], "Autonomous must not describe a red or half-migrated tree as done, ready, or committable")
@@ -1188,7 +1188,7 @@ def main() -> int:
     require(stop_phrase in normalize_whitespace(requirements), "REQUIREMENTS must state the Autonomous stop conditions")
     require(stop_phrase in normalize_whitespace(architecture), "ARCHITECTURE must state the Autonomous stop conditions")
     require(stop_phrase in normalize_whitespace(use_cases), "USE-CASES UC-AUT-05 must state the Autonomous stop conditions")
-    require("### UC-AUT-10: A blocked keystone step halts before it cascades into red work" in use_cases, "USE-CASES UC-AUT-10 must remain byte-unchanged")
+    require("### UC-AUT-10: A blocked step halts before it cascades into red work" in use_cases, "USE-CASES UC-AUT-10 must remain byte-unchanged")
     require("does **not** replace, wrap, redirect, restrict" in readme, "README product goal is ambiguous")
     require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
     require("Standardized Verdict Definitions" in methodology, "TESTING-METHODOLOGY missing verdict definitions")

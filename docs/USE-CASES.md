@@ -203,7 +203,7 @@ or initialize Git.
 
 ### UC-AUT-05: Work is bounded and user-owned
 
-- **Given:** declared verification passes or a keystone blocker that no available identity or permission can clear.
+- **Given:** declared verification passes or a required step proves impossible to complete with any tool or permission available in this session.
 - **When:** either condition occurs.
 - **Then:** stop with an honest status and leave the worktree visible.
 - **Never:** loop indefinitely; stage, commit, stash, reset, switch branches, or initialize Git; or hide unverified edits.
@@ -241,13 +241,13 @@ or initialize Git.
 - **Never:** silently execute a mismatched scaffold, rewrite it, or suggest Bash deletion as a reset mechanism.
 - **Evidence:** B `autonomous-continue-incomplete.md` (matching) and `scaffold-task-switch.md` (mismatch) fixture scenarios.
 
-### UC-AUT-10: A blocked keystone step halts before it cascades into red work
+### UC-AUT-10: A blocked step halts before it cascades into red work
 
 - **Given:** a checklist item is blocked by a structural prerequisite that no available identity or permission can satisfy.
 - **When:** Autonomous reaches that item during execution.
 - **Then:** stop at that item instead of completing downstream checklist items that causally depend on it, and report the blocker naming the exact worktree state and the next action needed to reach green or revert.
 - **Never:** keep editing unrelated downstream items that cannot pass until the blocker clears, or describe the resulting red or half-migrated tree as done, ready, or committable merely because the failure was reported honestly.
-- **Evidence:** S prompt/doc contract; B keystone-blocker scenario.
+- **Evidence:** S prompt/doc contract; B blocked-step scenario.
 
 ## Karpathy And Review
 

@@ -30,7 +30,7 @@ class BehavioralAssertionTests(unittest.TestCase):
         self.assertIn("placeholder test, ignored verification flag, disabled", agent)
         self.assertIn("Delegate to the required validator after this candidate-readiness check", agent)
         self.assertIn(
-            "declared verification passes or a keystone blocker that no available identity or permission can clear",
+            "declared verification passes or a required step proves impossible to complete with any tool or permission available in this session",
             verify_opencode.normalize_whitespace(agent),
         )
         self.assertIn("stop at that item instead of\ncompleting downstream checklist items", agent)

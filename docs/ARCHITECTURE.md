@@ -157,8 +157,8 @@ requirement gap.
 
 The manifest may declare optional limits, but enforcement is agent-led inside
 the OpenCode session. Autonomous stops when declared verification passes or a
-keystone blocker that no available identity or permission can clear requires
-renewed planning. Autonomous does not stage, commit, stash, reset, switch
+required step proves impossible to complete with any tool or permission
+available in this session. Autonomous does not stage, commit, stash, reset, switch
 branches, or initialize Git; the pending worktree is the human-owned aggregate
 review artifact. Reviewer output is advisory.
 

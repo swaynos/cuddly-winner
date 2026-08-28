@@ -69,14 +69,14 @@ branch as `Skipped` only when the published scaffold explicitly permits it.
 When a checklist item is blocked by a structural prerequisite that no
 available identity or permission can satisfy, stop at that item instead of
 completing downstream checklist items that causally depend on it. A blocked
-keystone step is a reason to halt and report, not a reason to keep editing:
+step is a reason to halt and report, not a reason to keep editing:
 minimize the red, half-migrated surface left in the worktree, never maximize
 it by finishing unrelated items that cannot pass verification until the
 blocker clears.
 
 Use Direct for ordinary feature and defect work. Stop when declared
-verification passes or a keystone blocker that no available identity or
-permission can clear requires renewed planning.
+verification passes or a required step proves impossible to complete with any
+tool or permission available in this session.
 
 Use Karpathy only when the manifest explicitly declares a scalar objective,
 frozen evaluator, targets, limits, and stop criteria. Delegate experiment
