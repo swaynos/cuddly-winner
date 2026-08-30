@@ -32,7 +32,7 @@ async function exists(file) {
 test("default copy install is idempotent and includes the complete managed profile", async () => fixture(async root => {
   const config = path.join(root, "config");
   await deployFixture(root);
-  assert.equal((await readdir(path.join(config, "agents"))).filter(name => name.endsWith(".md")).length, 7);
+  assert.equal((await readdir(path.join(config, "agents"))).filter(name => name.endsWith(".md")).length, 8);
   await stat(path.join(config, "plugins", "immutability.ts"));
   for (const name of ["spike.ts", "scaffold_gitignore.ts", "validate_scaffold.ts"]) {
     await stat(path.join(config, "tools", name));
@@ -72,7 +72,7 @@ test("symlink install and mode-independent remove cover all managed groups", asy
   const config = path.join(root, "config");
   await deployFixture(root, "install", ["--mode", "symlink"]);
   assert.equal((await lstat(path.join(config, "agents", "prometheus.md"))).isSymbolicLink(), true);
-  assert.equal((await lstat(path.join(config, "plugins", "immutability.ts"))).isSymbolicLink(), true);
+  assert.equal((await lstat(path.join(config, "plugins", "immutability.ts"))).isSymbolicLink(), false);
   assert.equal((await lstat(path.join(config, "tools", "spike.ts"))).isSymbolicLink(), true);
   assert.equal((await lstat(path.join(config, "skills", "playwright-image-generation"))).isSymbolicLink(), true);
 

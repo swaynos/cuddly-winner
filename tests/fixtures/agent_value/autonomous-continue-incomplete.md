@@ -9,8 +9,9 @@
 In an isolated temporary workspace (not this repository's own worktree):
 
 1. Write a schema-v2 `direct` `opencode-autonomous.json` with
-   `implementation_scope: ["greeter.py"]`, `verification.commands: ["python3
-   -c \"import greeter; assert greeter.greet('Ada') == 'Hello, Ada!'\""]`, and
+    `implementation_scope: ["greeter.py"]`, `verification.commands: ["grep -qx
+    'def greet(name):' greeter.py && grep -qx '    return f\"Hello, {name}!\"'
+    greeter.py"]`, and
    `verification.baseline: "greeter.py does not exist"`.
 2. Write a matching `SPEC.md` (`## Grounding`, `## Approaches Considered`,
    `## Acceptance Criteria`, `## Verification`, `## Implementation Checklist`

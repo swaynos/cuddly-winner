@@ -89,6 +89,8 @@ See [SKILLS.md](docs/SKILLS.md#cuddly-winner-feedback).
   and measurement runner.
 - **Reviewer** provides read-only rubric-based review.
 - **Grounder** gathers cited local and external evidence.
+- **Out-of-the-box-thinker** gives Autonomous one read-only recovery analysis
+  before a confirmed terminal block.
 - **Ask** answers focused questions without starting a workflow.
 
 These agents are entered explicitly. They are not aliases for Plan or Build.
@@ -121,6 +123,13 @@ Autonomous reads the frozen planning scaffold, implements right-sized items,
 and runs exact final verification through native Bash. Normal sessions ask
 before each Bash invocation; users who intentionally choose `opencode --auto`
 get uninterrupted approval.
+
+After each bounded step or focused check, Autonomous rechecks every acceptance
+criterion, invariant, required output, and checklist item and continues with the
+next incomplete in-scope item. A passing focused, fixture, synthetic,
+phase-local, or batch check is a phase gate, not completion evidence while
+required work remains. It stops successfully only after all requested outcomes
+are complete and every exact final verification command passes freshly.
 
 Autonomous never stages or commits. Pending worktree changes remain the
 human-owned aggregate review artifact across repeated Prometheus and Autonomous

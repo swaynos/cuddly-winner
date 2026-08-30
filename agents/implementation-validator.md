@@ -66,4 +66,4 @@ Use this exact structure:
 <VALIDATED | GAPS_FOUND>
 ```
 
-The final non-empty line must be exactly `VALIDATED` or `GAPS_FOUND — <one-line summary of top gap>`.
+The final non-empty line must be exactly `VALIDATED` or `GAPS_FOUND — <one-line summary of top gap>`. Write no text, Markdown, or punctuation after that line.

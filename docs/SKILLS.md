@@ -62,7 +62,12 @@ restart OpenCode after installing or changing a skill.
   scan for a clone, upload feedback, widen permissions, stage or force-add a
   report, or delete it when work merely begins.
 - **Evidence:** Private report metadata and modes, locator lifecycle checks,
-  recorder/deployment tests, and a documented local action note after work.
+  recorder/deployment tests, strict terminal-record deduplication, and a
+  documented local action note after work.
+
+Terminal records come only from the trusted local plugin after an Autonomous
+`CONFIRMED_BLOCKED` recovery result. They contain fixed identifiers rather than
+model prose and cannot contain commands, output, source text, paths, or secrets.
 
 ### `project-agent-scaffolding`
 

@@ -114,6 +114,15 @@ Autonomous continues ordinary in-scope work. A failed measured prerequisite that
 eliminates a core requested outcome is `Failed` and returns to Prometheus; an
 explicitly optional branch may be `Skipped`.
 
+After each bounded step or focused check, Autonomous repeats that complete-scope
+inspection and selects the next incomplete in-scope item without a user-facing
+progress handoff. A passing focused, fixture, synthetic, phase-local, or batch
+check is a phase gate, not completion evidence while required work remains.
+Metadata-only leads and intermediate records do not satisfy a required full
+result. A normal successful stop requires complete requested outcomes plus fresh
+passage of every exact final verification command; declared escalation
+conditions, failed core prerequisites, and structural blockers remain halt paths.
+
 When a checklist item is blocked by a structural prerequisite that no
 available identity or permission can satisfy, Autonomous stops at that item
 instead of completing downstream items that causally depend on it, so one
@@ -122,6 +131,23 @@ tree. A failed or blocked handoff states plainly that the worktree is left
 non-green and not committable as-is, and names the exact next action to reach
 green or revert. Reporting a failure honestly never licenses describing that
 same red or half-migrated tree as done, ready, or committable.
+
+After exhausting ordinary safe in-scope paths for a terminal block, failed core
+outcome, or escalation, Autonomous delegates one bounded blocker packet to the
+hidden read-only `out-of-the-box-thinker`. The packet contains only the requested
+outcome, unchanged acceptance boundary, blocker code, and safe paths already
+tried. The thinker returns one safe recovery proposal or `CONFIRMED_BLOCKED`.
+Autonomous alone may edit and tries a valid proposal once. It does not invoke
+recovery for missing scaffolds, normal approval requests, or planning decisions.
+It never loops, widens scope, weakens acceptance criteria, or bypasses controls.
+
+After confirmed recovery failure, Autonomous emits one strict terminal record
+with a session ID, episode, and uppercase blocker code. The trusted local plugin
+captures only that record, after the session is idle, as a sanitized local report.
+It copies no transcript, command, tool output, source text, path, or credential.
+Capture applies only to confirmed blocks, uses an atomic deterministic filename
+for durable deduplication, and skips the Cuddly Winner source clone to prevent
+recursion.
 
 Autonomous uses native Bash with `ask` permission. OpenCode auto mode may approve
 those requests automatically. Autonomous never stages, commits, stashes, resets,
@@ -344,6 +370,11 @@ recorder must return a complete draft and state the permission block. The record
 does not scan for clones, use a network client, or recover from a stale locator by
 guessing. Git ignore prevents ordinary add/status discovery but cannot prevent an
 explicit force-add.
+
+Terminal capture uses a separate strict JSON record accepted only from the trusted
+plugin. It records no free-form model text and deduplicates by session and blocker
+episode. The plugin and terminal recorder are trusted control-plane paths that
+Autonomous cannot edit.
 
 ## Mutation Testing
 

@@ -1,18 +1,96 @@
-import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { constants, existsSync, lstatSync, realpathSync } from "node:fs";
+import { chmod, lstat, mkdir, open, readFile, realpath } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 const SHELL_TOOLS = new Set(["bash"]);
 const PROMETHEUS_ONLY_TOOLS = new Set(["spike", "scaffold_gitignore", "validate_scaffold"]);
-const MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"]);
-const READ_ONLY_AGENTS = new Set(["ask", "karpathy", "reviewer", "grounder", "implementation-validator"]);
+const MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator", "out-of-the-box-thinker"]);
+const READ_ONLY_AGENTS = new Set(["ask", "karpathy", "reviewer", "grounder", "implementation-validator", "out-of-the-box-thinker"]);
 const PROMETHEUS_WRITABLE = ["SPEC.md", "opencode-autonomous.json", ".prometheus/evaluator/**", ".spike/**"];
 const TRUSTED_PATHS = [
   "tools/spike.ts",
   "tools/validate_scaffold.ts",
   "tools/scaffold_gitignore.ts",
   "plugins/immutability.ts",
+  "skills/cuddly-winner-feedback/record-feedback.mjs",
 ];
+
+type TerminalRecord = {
+  schema_version: 1;
+  terminal: "confirmed_blocked";
+  session_id: string;
+  episode: string;
+  blocker_code: string;
+};
+
+function strictTerminalRecord(value: unknown): TerminalRecord | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  const expected = ["blocker_code", "episode", "schema_version", "session_id", "terminal"];
+  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) return;
+  if (
+    record.schema_version !== 1 || record.terminal !== "confirmed_blocked"
+    || typeof record.session_id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(record.session_id)
+    || typeof record.episode !== "string" || !/^[1-9][0-9]{0,8}$/.test(record.episode)
+    || typeof record.blocker_code !== "string" || !/^[A-Z][A-Z0-9_]{2,63}$/.test(record.blocker_code)
+  ) return;
+  return record as TerminalRecord;
+}
+
+async function feedbackRoot(locator: string): Promise<string> {
+  const locatorStat = await lstat(locator);
+  if (!locatorStat.isFile() || locatorStat.isSymbolicLink()) throw new Error("terminal feedback locator is unsafe");
+  const raw = await readFile(locator, "utf8");
+  if (!raw.endsWith("\n") || raw.slice(0, -1).includes("\n") || !isAbsolute(raw.slice(0, -1))) throw new Error("terminal feedback locator is malformed");
+  const root = raw.slice(0, -1);
+  if (root.split(sep).pop() !== "feedback") throw new Error("terminal feedback locator is malformed");
+  const rootStat = await lstat(root);
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error("terminal feedback locator is stale");
+  return realpath(root);
+}
+
+export async function captureTerminalFeedback(value: unknown, locator: string, projectRoot: string): Promise<string | undefined> {
+  const record = strictTerminalRecord(value);
+  if (!record) throw new Error("strict terminal record required");
+  let root: string;
+  try { root = await feedbackRoot(locator); } catch { return; }
+  if (await realpath(projectRoot) === dirname(root)) return;
+  const inbox = resolve(root, "inbox");
+  await mkdir(inbox, { recursive: true, mode: 0o700 });
+  await chmod(root, 0o700);
+  await chmod(inbox, 0o700);
+  const digest = createHash("sha256").update(`${record.session_id}\0${record.episode}`).digest("hex");
+  const target = resolve(inbox, `terminal-${digest}.md`);
+  const body = `---\nschema_version: 1\nstatus: new\ncaptured_at: ${new Date().toISOString()}\n---\n\n# Summary\n\nConfirmed Autonomous block.\n\n# Terminal record\n\n- Session: ${record.session_id}\n- Episode: ${record.episode}\n- Blocker code: ${record.blocker_code}\n`;
+  try {
+    const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    try { await handle.writeFile(body, "utf8"); } finally { await handle.close(); }
+    await chmod(target, 0o600);
+  } catch (error: any) {
+    if (error?.code !== "EEXIST") throw error;
+  }
+  return target;
+}
+
+function terminalRecordFromMessage(messages: any[]): TerminalRecord | undefined {
+  const latest = messages.at(-1);
+  if (latest?.info?.role !== "assistant" || !latest?.info?.time?.completed) return;
+  const text = (latest.parts ?? [])
+    .filter((part: any) => part?.type === "text" && typeof part.text === "string")
+    .map((part: any) => part.text)
+    .join("\n");
+  const match = text.match(/^CUDDLY_WINNER_TERMINAL_RECORD: ([^\n]+)$/m);
+  if (!match) return;
+  try { return strictTerminalRecord(JSON.parse(match[1])); } catch { return; }
+}
+
+function deployedFeedbackLocator(): string {
+  return resolve(dirname(dirname(fileURLToPath(import.meta.url))), "feedback", "cuddly-winner-feedback-root");
+}
 
 function matchesPattern(relPath: string, pattern: string): boolean {
   const escaped = pattern
@@ -133,7 +211,20 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       if (event.type !== "session.idle") return;
       const sessionID = event.properties?.sessionID;
       if (!sessionID || publicationReminders.has(sessionID)) return;
-      if (await ownAgent(sessionID) !== "prometheus") return;
+      const agent = await ownAgent(sessionID);
+      if (agent === "autonomous") {
+        try {
+          const sessionResult = await client?.session?.get?.({ path: { id: sessionID } });
+          const session = sessionResult?.data ?? sessionResult;
+          if (session?.parentID) return;
+          const result = await client?.session?.messages?.({ path: { id: sessionID } });
+          const messages = result?.data ?? (Array.isArray(result) ? result : []);
+          const record = terminalRecordFromMessage(messages);
+          if (record) await captureTerminalFeedback(record, deployedFeedbackLocator(), root);
+        } catch {}
+        return;
+      }
+      if (agent !== "prometheus") return;
       if (existsSync(resolve(root, "SPEC.md")) && existsSync(resolve(root, "opencode-autonomous.json"))) return;
 
       // Continue the same session once rather than allowing an unpublished plan to end silently.

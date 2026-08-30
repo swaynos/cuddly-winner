@@ -298,6 +298,7 @@ SKILL_SOURCES=("${REPO_ROOT}"/skills/*)
 RULE_SOURCES=("${REPO_ROOT}"/rules/*.md)
 shopt -u nullglob
 PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts")
+PLUGIN_MODE="copy"
 TOOL_SOURCES=(
   "${REPO_ROOT}/tools/scaffold_gitignore.ts"
   "${REPO_ROOT}/tools/spike.ts"
@@ -310,7 +311,7 @@ printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
 
 if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
-  sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$MODE" "${PLUGIN_SOURCES[@]}"
+  sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
   sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
   sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
@@ -321,7 +322,7 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
 fi
 
 sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
-sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$MODE" "${PLUGIN_SOURCES[@]}"
+sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
 sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"

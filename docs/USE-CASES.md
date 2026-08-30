@@ -193,6 +193,20 @@ or initialize Git.
 - **Never:** substitute prose, checklist edits, or Reviewer verdicts.
 - **Evidence:** B pass/fail verification scenarios; seed build evaluation.
 
+### UC-AUT-03A: Passing a phase gate continues the loop
+
+- **Given:** a focused, fixture, synthetic, phase-local, or batch check passes
+  while required outputs remain absent.
+- **When:** Autonomous finishes that bounded step.
+- **Then:** inspect every acceptance criterion, invariant, required output, and
+  checklist item, then continue with the next incomplete in-scope item without a
+  progress handoff. The check is a phase gate, not completion evidence.
+- **Never:** present metadata-only leads or intermediate records as a required
+  full result, or stop before every requested outcome and exact final command
+  pass are complete.
+- **Evidence:** B `autonomous-multiphase-continuation.md` live scenario; S
+  contract checks.
+
 ### UC-AUT-04: Material ambiguity returns to planning
 
 - **Given:** execution would change outcome, acceptance, evaluator, immutable targets, material scope, trust boundary, policy, or an irreversible tradeoff.
@@ -205,7 +219,10 @@ or initialize Git.
 
 - **Given:** declared verification passes or a required step proves impossible to complete with any tool or permission available in this session.
 - **When:** either condition occurs.
-- **Then:** stop with an honest status and leave the worktree visible.
+- **Then:** stop successfully only when every requested outcome, acceptance
+  criterion, invariant, required output, and checklist item is complete and each
+  exact final verification command passes freshly; otherwise use the applicable
+  honest failed or blocked status and leave the worktree visible.
 - **Never:** loop indefinitely; stage, commit, stash, reset, switch branches, or initialize Git; or hide unverified edits.
 - **Evidence:** B stopping scenarios; S prompt check.
 
@@ -256,6 +273,19 @@ or initialize Git.
 - **Then:** inspect the available operation contract, use the supported fallback, and record the failed operation and fallback when they affect reproducibility.
 - **Never:** treat a missing convenience API as a structural blocker or stop before testing safe in-scope alternatives.
 - **Evidence:** S prompt/doc contract; B capability-fallback scenario.
+
+### UC-AUT-12: Confirmed blocks receive one safe recovery attempt
+
+- **Given:** Autonomous exhausts safe in-scope paths for a terminal negative outcome.
+- **When:** it reaches the terminal handoff.
+- **Then:** delegate one bounded packet to the read-only thinker, try one valid
+  recovery proposal, and emit a strict terminal record only if recovery remains
+  `CONFIRMED_BLOCKED`.
+- **Never:** loop, widen scope, relax acceptance criteria, bypass permissions,
+  capture ordinary approval or planning handoffs, or include private material in
+  the terminal record.
+- **Evidence:** S agent, plugin, and recorder contracts; U terminal-capture tests;
+  B blocked recovery scenario.
 
 ## Karpathy And Review
 

@@ -17,9 +17,9 @@ async function fixture(fn) {
   try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
-async function runRecorder(script, input) {
+async function runRecorder(script, input, args = []) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [script], { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [script, ...args], { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", chunk => { stdout += chunk; });
@@ -134,4 +134,28 @@ test("recorder has no network dependency and rejects malformed locators", async 
   await writeFile(path.join(config, "feedback", "cuddly-winner-feedback-root"), "relative/path\n");
   await symlink(sourceSkill, deployed);
   await assert.rejects(runRecorder(path.join(deployed, "record-feedback.mjs"), "# Summary\nBroken\n"), /malformed.*reinstall/i);
+}));
+
+test("terminal recorder accepts only strict confirmed-block records and deduplicates by session episode", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  const clone = path.join(root, "clone");
+  const deployed = path.join(config, "skills", "cuddly-winner-feedback");
+  await mkdir(path.join(clone, "feedback"), { recursive: true });
+  await mkdir(path.join(config, "feedback"), { recursive: true });
+  await writeFile(path.join(config, "feedback", "cuddly-winner-feedback-root"), `${path.join(clone, "feedback")}\n`);
+  await mkdir(path.dirname(deployed), { recursive: true });
+  await symlink(sourceSkill, deployed);
+  const record = JSON.stringify({ schema_version: 1, terminal: "confirmed_blocked", session_id: "session-123", episode: "1", blocker_code: "NO_SAFE_PATH" });
+
+  const first = await runRecorder(path.join(deployed, "record-feedback.mjs"), record, ["--terminal-record"]);
+  const second = await runRecorder(path.join(deployed, "record-feedback.mjs"), record, ["--terminal-record"]);
+  assert.equal(first.stdout, second.stdout);
+  const body = await readFile(first.stdout.trim(), "utf8");
+  assert.match(body, /Confirmed Autonomous block/);
+  assert.match(body, /session-123/);
+  assert.doesNotMatch(body, /source text|tool output|command/i);
+  await assert.rejects(
+    runRecorder(path.join(deployed, "record-feedback.mjs"), JSON.stringify({ ...JSON.parse(record), reason: "arbitrary prose" }), ["--terminal-record"]),
+    /strict terminal record/i,
+  );
 }));

@@ -158,9 +158,19 @@ requirement gap.
 The manifest may declare optional limits, but enforcement is agent-led inside
 the OpenCode session. Autonomous stops when declared verification passes or a
 required step proves impossible to complete with any tool or permission
-available in this session. Autonomous does not stage, commit, stash, reset, switch
-branches, or initialize Git; the pending worktree is the human-owned aggregate
-review artifact. Reviewer output is advisory.
+available in this session. A successful stop additionally requires all requested
+outcomes, acceptance criteria, invariants, required outputs, and checklist items
+to be complete and every exact final command to pass freshly. Autonomous does
+not stage, commit, stash, reset, switch branches, or initialize Git; the pending
+worktree is the human-owned aggregate review artifact. Reviewer output is advisory.
+
+After each bounded step or focused check, Autonomous inspects the complete scope
+again and advances to the next incomplete in-scope item without a progress
+handoff. A passing focused, fixture, synthetic, phase-local, or batch check is a
+phase gate, not completion evidence while required work remains. Intermediate
+metadata and leads cannot replace a required full result. Declared escalation
+conditions, failed core prerequisites, and structural blockers remain valid halt
+paths.
 
 Before validator handoff, Autonomous checks every acceptance criterion,
 invariant, required output, and checklist item against the implementation and
@@ -194,6 +204,21 @@ Autonomous stops with a concise blocked handoff. It reports command observations
 as evidence, not validation, and does not claim success or label any requested
 goal validated.
 
+When exhausted safe paths would otherwise cause a terminal negative handoff,
+Autonomous delegates once to the hidden `out-of-the-box-thinker`. It supplies a
+small blocker packet and receives either one safe recovery proposal or
+`CONFIRMED_BLOCKED`; Autonomous remains the sole editor and may try the proposal
+once. Missing scaffolds, ordinary user approval, and planning decisions do not
+enter this recovery flow.
+
+On a confirmed block, the final Autonomous message carries a strict terminal
+record containing only schema version, terminal state, session ID, episode, and
+blocker code. At idle, the immutability plugin validates that exact record from a
+root Autonomous session and writes a minimal report through an owner-only
+feedback locator. Its deterministic session-and-episode filename makes capture
+idempotent. It neither reads nor stores transcript material and skips writes when
+the active project is the Cuddly Winner source clone.
+
 ## Permission Semantics
 
 Agent frontmatter sets `bash: ask` for Autonomous. Prometheus denies direct Bash
@@ -212,7 +237,9 @@ Install sources are fixed repository paths. A single configuration root is
 resolved from the CLI, one environment variable, or OpenCode's debug output;
 `agents/`, `plugins/`, `tools/`, `skills/`, and `rules/` are derived beneath
 it. One entry synchronizer handles files and directories in copy or symlink
-mode, including idempotence, collision backups, status, and safe removal.
+mode, including idempotence, collision backups, status, and safe removal. The
+immutability plugin always installs as a copy, even in symlink mode, so its local
+terminal-feedback locator resolves from the selected configuration root.
 
 The installer also synchronizes one namespaced MCP entry through a narrow JSON
 helper: a headless isolated research browser (`@playwright/mcp`, Node). It backs
