@@ -131,11 +131,24 @@ the JSON task event to identify the requested child agent. The harness reads the
 child session's recorded tool calls for read-only and private-content checks; a
 fallback to the parent agent is a failure, not a skip.
 
-Deterministic unit tests in `tests/test_verify_opencode.py` cover the scenario
-assertion helpers, including missing scaffolds, duplicate sections, non-final
+Deterministic unit tests in `tests/test_verify_opencode.py` and `tests/test_audit_run.py`
+cover scenario assertion helpers, missing scaffolds, duplicate sections, non-final
 handoffs, and verdict-last parsing. They run in ordinary CI; live-model checks
 remain supplemental because they require the user's configured provider and
 consume model tokens.
+
+### Python Test Framework: `unittest` Over `pytest`
+
+Deterministic Python test suites standardize exclusively on Python's built-in
+`unittest` framework rather than third-party test runners such as `pytest`.
+The core rationale is the **zero-dependency benefit**:
+1. **Self-contained execution**: `unittest` is part of Python's standard library,
+   requiring no external package installations or virtualenv dependency overhead.
+2. **Environment isolation**: Eliminates runner version drift, configuration file
+   conflicts (e.g. `pytest.ini`), and discovery collisions with standalone CLI
+   evaluation scripts (`test_skill_coverage.py`, `evals/seed_build/`).
+3. **Reproducibility**: Guarantees deterministic tests run identically across any
+   supported Python runtime environment without third-party test runner assumptions.
 
 ---
 
