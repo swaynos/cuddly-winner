@@ -53,6 +53,21 @@ test("managed MCP install prunes the retired notebooklm entry", async () => fixt
   assert.deepEqual(after.mcp["user-x"], { type: "local", command: ["x"] });
 }));
 
+test("retired MCP cleanup removes only the legacy notebooklm entry", async () => fixture(async (_root, file) => {
+  await writeFile(file, JSON.stringify({
+    mcp: {
+      notebooklm: { type: "local", command: ["npx", "-y", "notebooklm-mcp@latest"], enabled: true },
+      playwright: { type: "local", command: ["npx", "-y", "@playwright/mcp@latest"], enabled: true },
+    },
+  }));
+  const result = await invoke(mcp, ["cleanup-retired", "--config", file]);
+  assert.match(result.stdout, /Removed retired managed entry: notebooklm/);
+  assert.match(result.stdout, /Removed retired MCP entries\./);
+  const after = await config(file);
+  assert.equal(after.mcp.notebooklm, undefined);
+  assert.deepEqual(after.mcp.playwright, { type: "local", command: ["npx", "-y", "@playwright/mcp@latest"], enabled: true });
+}));
+
 test("managed MCP removal preserves modified entries", async () => fixture(async (_root, file) => {
   await invoke(mcp, ["install", "--config", file]);
   const value = await config(file);

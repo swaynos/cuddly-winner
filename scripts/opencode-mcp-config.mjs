@@ -14,10 +14,11 @@ export function buildManagedMcp() {
 
 // MCP entries this project used to manage. Install prunes any that linger in a
 // config from an earlier profile, so upgrading removes them without a manual edit.
-const RETIRED_MCP_KEYS = ["cuddly-winner-notebooklm"];
+const RETIRED_MANAGED_MCP_KEYS = ["cuddly-winner-notebooklm"];
+const RETIRED_LEGACY_MCP_KEYS = ["notebooklm"];
 
 function usage() {
-  process.stderr.write("Usage: opencode-mcp-config.mjs <install|status|remove|diagnose> --config <path>\n");
+  process.stderr.write("Usage: opencode-mcp-config.mjs <install|status|remove|diagnose|cleanup-retired> --config <path>\n");
 }
 
 function die(message) {
@@ -27,7 +28,7 @@ function die(message) {
 
 function parseArgs(argv) {
   const [action, ...rest] = argv;
-  if (!new Set(["install", "status", "remove", "diagnose"]).has(action)) {
+  if (!new Set(["install", "status", "remove", "diagnose", "cleanup-retired"]).has(action)) {
     usage();
     die(`unknown action: ${action ?? "(missing)"}`);
   }
@@ -109,7 +110,15 @@ export function apply(action, configPath) {
         changed = true;
       }
     }
-    for (const name of RETIRED_MCP_KEYS) {
+    for (const name of RETIRED_MANAGED_MCP_KEYS) {
+      if (mcp[name] !== undefined) {
+        delete mcp[name];
+        changed = true;
+        process.stdout.write(`Removed retired managed entry: ${name}\n`);
+      }
+    }
+  } else if (action === "cleanup-retired") {
+    for (const name of RETIRED_LEGACY_MCP_KEYS) {
       if (mcp[name] !== undefined) {
         delete mcp[name];
         changed = true;
@@ -126,12 +135,13 @@ export function apply(action, configPath) {
       }
     }
   }
-  if (!changed) return process.stdout.write("Unchanged managed MCP entries.\n");
+  if (!changed) return process.stdout.write(`${action === "cleanup-retired" ? "No retired MCP entries found." : "Unchanged managed MCP entries."}\n`);
   backup(configPath);
   if (Object.keys(mcp).length) config.mcp = mcp;
   else delete config.mcp;
   save(configPath, config);
-  process.stdout.write(`${action === "install" ? "Installed" : "Removed"} managed MCP entries.\n`);
+  const result = action === "install" ? "Installed managed MCP entries." : action === "cleanup-retired" ? "Removed retired MCP entries." : "Removed managed MCP entries.";
+  process.stdout.write(`${result}\n`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

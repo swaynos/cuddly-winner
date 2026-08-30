@@ -285,6 +285,7 @@ TOOLS_DIR="${CONFIG_DIR}/tools"
 SKILLS_DIR="${CONFIG_DIR}/skills"
 RULES_DIR="${CONFIG_DIR}/rules"
 OPENCODE_JSON="${CONFIG_DIR}/opencode.json"
+LEGACY_OPENCODE_JSON="${CONFIG_DIR}/config.json"
 FEEDBACK_LOCATOR_DIR="${CONFIG_DIR}/feedback"
 FEEDBACK_LOCATOR="${FEEDBACK_LOCATOR_DIR}/cuddly-winner-feedback-root"
 FEEDBACK_ROOT="$(cd "$REPO_ROOT" && pwd -P)/feedback"
@@ -329,6 +330,9 @@ sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
 sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
 node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
+if [[ "$ACTION" == "install" && -f "$LEGACY_OPENCODE_JSON" ]]; then
+  node "$MCP_HELPER" cleanup-retired --config "$LEGACY_OPENCODE_JSON"
+fi
 sync_feedback_locator
 
 # Remove known retired artifacts that earlier installs may have left behind.
