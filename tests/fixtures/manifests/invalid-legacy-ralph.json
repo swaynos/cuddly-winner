@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "strategy": "ralph",
   "invariants": [],
   "implementation_scope": ["src/**"],
@@ -9,5 +9,5 @@
     "commands": ["true"],
     "baseline": "n/a"
   },
-  "_note": "strategy=ralph is retired under schema v2; only direct/karpathy are valid."
+  "_note": "strategy=ralph is retired under schema v3; only direct/karpathy are valid."
 }

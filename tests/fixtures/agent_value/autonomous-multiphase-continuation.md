@@ -6,7 +6,7 @@
 
 ## Setup
 
-In an isolated temporary workspace, write a schema-v2 `direct` scaffold that
+In an isolated temporary workspace, write a schema-v3 `direct` scaffold that
 permits `discovery.json`, `analysis.json`, and `report.md`. Create only
 `phase-one.marker`, which records a passing synthetic phase-one check. The
 matching `SPEC.md` requires discovery, analysis, a report, and an exact final

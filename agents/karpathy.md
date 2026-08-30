@@ -44,8 +44,9 @@ create an evaluator, or proceed on assumptions.
 ## Stop criteria
 
 This loop is bounded by the manifest's limits, noise policy, pivot policy, and
-stop criteria. Do not impose a fixed number of pivots, experiments, noise runs,
-or improvement threshold.
+stop criteria. A schema-v3 hard `run_kpis` token budget also ends new work. Do
+not impose a fixed number of pivots, experiments, noise runs, or improvement
+threshold.
 
 ## Escalation
 

@@ -9,5 +9,5 @@
     "commands": ["true"],
     "baseline": "n/a"
   },
-  "_note": "schema_version=1 is retired; v2 is the only accepted schema."
+  "_note": "schema_version=1 is retired; v3 is the only accepted schema."
 }

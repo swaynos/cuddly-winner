@@ -15,6 +15,7 @@ const TRUSTED_PATHS = [
   "tools/validate_scaffold.ts",
   "tools/scaffold_gitignore.ts",
   "plugins/immutability.ts",
+  "plugins/autonomous-kpis.ts",
   "skills/cuddly-winner-feedback/record-feedback.mjs",
 ];
 

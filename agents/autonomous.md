@@ -116,6 +116,14 @@ verification command alone never completes remaining work. Declared escalation
 conditions, failed core prerequisites, and structural blockers remain valid halt
 paths.
 
+When the schema-v3 manifest enables `run_kpis`, favor sustained useful in-scope
+work until normal completion or a declared hard limit. Keep requests concise,
+batch local inspection where safe, and avoid needless delegation. KPI targets
+never justify sleeping, no-op work, widened scope, skipped checks, bypassed
+approval, or continuation after valid completion. The hard token budget stops
+new work when exhausted; report the observed incomplete state if a handoff is
+still possible. An absent or disabled `run_kpis` block changes nothing.
+
 Use Karpathy only when the manifest explicitly declares a scalar objective,
 frozen evaluator, targets, limits, and stop criteria. Delegate experiment
 selection and analysis to Karpathy; you remain the sole editor and run every

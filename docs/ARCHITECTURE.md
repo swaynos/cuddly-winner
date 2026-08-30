@@ -54,7 +54,7 @@ decision, and `--auto` intentionally approves it.
 
 ### Static Scaffold Validation
 
-`tools/validate_scaffold.ts` parses schema-v2 `opencode-autonomous.json`, checks
+`tools/validate_scaffold.ts` parses schema-v3 `opencode-autonomous.json`, checks
 canonical worktree-relative paths and evaluator inventory, verifies required
 SPEC sections, and requires SPEC and manifest verification command lists to
 match exactly. It performs no command execution.
@@ -65,13 +65,13 @@ configuration. Only the current schema version is accepted. There is no
 migration path or compatibility alias for an older version; a mismatch requires
 Prometheus to republish (see `docs/REQUIREMENTS.md` § No Legacy Support).
 
-#### Manifest Schema (v2)
+#### Manifest Schema (v3)
 
 Both strategies require:
 
 | Field | Contract |
 | --- | --- |
-| `schema_version` | Integer `2`. |
+| `schema_version` | Integer `3`. |
 | `strategy` | `"direct"` or `"karpathy"`. |
 | `invariants` | String array. |
 | `implementation_scope` | Non-empty canonical worktree-relative path array. |
@@ -79,12 +79,20 @@ Both strategies require:
 | `evaluator_inventory` | Canonical files under `.prometheus/evaluator/`; may be empty for Direct. |
 | `verification` | Exact non-empty `commands` array plus a human-readable `baseline` string. |
 | `limits` | Optional positive numeric bounds. |
+| `run_kpis` | Optional disabled-by-default unattended-runtime and token-burn policy. |
 
 Karpathy additionally requires `optimization` with objective, minimize/maximize
 direction, finite baseline, score extraction, noise runs and threshold, mutable
 and immutable targets, experiment and pivot limits, and target/exhaustion stop
 criteria. Every evaluator inventory path must also be immutable. Direct rejects
 an optimization block.
+
+`run_kpis` is optional. When `enabled` is `true`, it requires
+`unattended_runtime.target_seconds` plus
+`token_burn.target_tokens_per_active_minute` and
+`token_burn.hard_budget_tokens`, all positive finite numbers. When `enabled` is
+`false`, it declares no targets. The validator rejects unknown nested keys and
+every retired schema version.
 
 ### Git Exclusion
 
@@ -163,6 +171,14 @@ outcomes, acceptance criteria, invariants, required outputs, and checklist items
 to be complete and every exact final command to pass freshly. Autonomous does
 not stage, commit, stash, reset, switch branches, or initialize Git; the pending
 worktree is the human-owned aggregate review artifact. Reviewer output is advisory.
+
+When an enabled `run_kpis` block is present, the deployed KPI plugin records
+completed assistant-message usage for the Autonomous root and its descendants.
+It deduplicates message updates, unions overlapping assistant activity intervals,
+adds compact enabled-only guidance, and caps each new response to the remaining
+hard token budget. It does not auto-approve tools, create progress state, prompt
+idle sessions, or extend a completed task. Missing or disabled `run_kpis` leaves
+the plugin inert.
 
 After each bounded step or focused check, Autonomous inspects the complete scope
 again and advances to the next incomplete in-scope item without a progress
@@ -335,7 +351,8 @@ source files and classifies mutants.
 
 `tests/audit_run.py` inspects selected historical session telemetry in OpenCode's
 SQLite database (`~/.local/share/opencode/opencode.db`). It reports observed
-agent switches, non-attributable root-session Bash observations, direct child-session agents, current
-scaffold-file presence, and completion/review tokens. It is an investigative
+agent switches, non-attributable root-session Bash observations, recursive
+descendant agents, current scaffold-file presence, completion/review tokens, and
+enabled run-KPI activity duration, token totals, and token rate. It is an investigative
 reporting aid, not proof of ancestry enforcement, tool-boundary compliance,
 scaffold validity, or fresh verification-command execution.

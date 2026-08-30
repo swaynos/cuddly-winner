@@ -1,6 +1,6 @@
 /**
- * Static validator for the Prometheus scaffold (schema v2).
- * Authoritative schema: docs/ARCHITECTURE.md § Manifest Schema (v2).
+ * Static validator for the Prometheus scaffold (schema v3).
+ * Authoritative schema: docs/ARCHITECTURE.md § Manifest Schema (v3).
  * Fails closed: unknown version/field/enum/limit key is a hard error.
  */
 import { tool } from "@opencode-ai/plugin";
@@ -24,6 +24,7 @@ const COMMON_KEYS = new Set([
   "verification",
   "limits",
   "optimization",
+  "run_kpis",
 ]);
 const KNOWN_LIMIT_KEYS = new Set([
   "iterations",
@@ -59,6 +60,9 @@ const OPTIMIZATION_KEYS = new Set([
 const NOISE_PROBE_KEYS = new Set(["runs", "threshold"]);
 const OPTIMIZATION_LIMIT_KEYS = new Set(["experiments", "failure_pivot"]);
 const STOP_KEYS = new Set(["target", "exhaustion"]);
+const RUN_KPI_KEYS = new Set(["enabled", "unattended_runtime", "token_burn"]);
+const UNATTENDED_RUNTIME_KEYS = new Set(["target_seconds"]);
+const TOKEN_BURN_KEYS = new Set(["target_tokens_per_active_minute", "hard_budget_tokens"]);
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((x) => typeof x === "string");
@@ -118,7 +122,7 @@ export function validateManifest(raw: unknown, opts: { root?: string } = {}): Va
   }
   const m = raw as Record<string, unknown>;
 
-  if (m.schema_version !== 2) push(`schema_version must be 2 (got ${JSON.stringify(m.schema_version)})`);
+  if (m.schema_version !== 3) push(`schema_version must be 3 (got ${JSON.stringify(m.schema_version)})`);
 
   const strategy = m.strategy;
   if (strategy !== "direct" && strategy !== "karpathy") {
@@ -176,6 +180,8 @@ export function validateManifest(raw: unknown, opts: { root?: string } = {}): Va
     }
   }
 
+  validateRunKpis(m.run_kpis, push);
+
   if (strategy === "karpathy") {
     validateOptimization(m.optimization, push);
     if (isStringArray(m.evaluator_inventory) && isRecord(m.optimization) && isStringArray(m.optimization.immutable_targets)) {
@@ -191,6 +197,47 @@ export function validateManifest(raw: unknown, opts: { root?: string } = {}): Va
   }
 
   return { valid: errors.length === 0, strategy: strategy as ValidationResult["strategy"], errors };
+}
+
+function validateRunKpis(runKpis: unknown, push: (m: string) => void): void {
+  if (runKpis === undefined) return;
+  if (!isRecord(runKpis)) {
+    push("run_kpis must be an object");
+    return;
+  }
+  rejectUnknownKeys(runKpis, RUN_KPI_KEYS, "run_kpis", push);
+  if (typeof runKpis.enabled !== "boolean") {
+    push("run_kpis.enabled must be a boolean");
+    return;
+  }
+  if (!runKpis.enabled) {
+    if (runKpis.unattended_runtime !== undefined || runKpis.token_burn !== undefined) {
+      push("disabled run_kpis must not declare KPI targets");
+    }
+    return;
+  }
+
+  const unattended = runKpis.unattended_runtime;
+  if (!isRecord(unattended)) {
+    push("enabled run_kpis requires unattended_runtime");
+  } else {
+    rejectUnknownKeys(unattended, UNATTENDED_RUNTIME_KEYS, "run_kpis.unattended_runtime", push);
+    if (!isFiniteNumber(unattended.target_seconds) || !(unattended.target_seconds > 0)) {
+      push("run_kpis.unattended_runtime.target_seconds must be a positive finite number");
+    }
+  }
+
+  const tokenBurn = runKpis.token_burn;
+  if (!isRecord(tokenBurn)) {
+    push("enabled run_kpis requires token_burn");
+  } else {
+    rejectUnknownKeys(tokenBurn, TOKEN_BURN_KEYS, "run_kpis.token_burn", push);
+    for (const key of TOKEN_BURN_KEYS) {
+      if (!isFiniteNumber(tokenBurn[key]) || !(tokenBurn[key] > 0)) {
+        push(`run_kpis.token_burn.${key} must be a positive finite number`);
+      }
+    }
+  }
 }
 
 const REQUIRED_SPEC_SECTIONS = [

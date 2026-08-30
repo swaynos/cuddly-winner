@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "strategy": "direct",
   "invariants": [
     "Evaluation remains pure and has no filesystem or network side effects",

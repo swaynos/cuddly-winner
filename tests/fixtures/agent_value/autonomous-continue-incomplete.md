@@ -8,7 +8,7 @@
 
 In an isolated temporary workspace (not this repository's own worktree):
 
-1. Write a schema-v2 `direct` `opencode-autonomous.json` with
+1. Write a schema-v3 `direct` `opencode-autonomous.json` with
     `implementation_scope: ["greeter.py"]`, `verification.commands: ["grep -qx
     'def greet(name):' greeter.py && grep -qx '    return f\"Hello, {name}!\"'
     greeter.py"]`, and

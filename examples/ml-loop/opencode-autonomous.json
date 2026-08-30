@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "strategy": "karpathy",
   "invariants": [
     "prepare.py and the evaluator remain unchanged",
@@ -23,7 +23,7 @@
     "objective": "validation_accuracy",
     "direction": "maximize",
     "baseline": 0.72,
-    "score_extraction": "single float emitted by .prometheus/evaluator/score.py",
+    "score_extraction": "last float on stdout",
     "noise_probe": {"runs": 3, "threshold": 0.03},
     "mutable_targets": ["train.py"],
     "immutable_targets": ["prepare.py", ".prometheus/evaluator/score.py"],

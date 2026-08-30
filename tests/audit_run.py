@@ -77,6 +77,29 @@ class Verdict:
     interpretation: str = ""
 
 
+@dataclass
+class AssistantUsage:
+    message_id: str
+    session_id: str
+    created: int
+    completed: int
+    tokens: int
+
+
+@dataclass
+class KpiSummary:
+    tokens: int
+    active_milliseconds: int
+    tokens_per_active_minute: float
+
+
+@dataclass
+class RunKpiPolicy:
+    target_seconds: float
+    target_tokens_per_active_minute: float
+    hard_budget_tokens: float
+
+
 # ---------------------------------------------------------------------------
 # DB helpers
 # ---------------------------------------------------------------------------
@@ -128,6 +151,54 @@ def get_child_sessions(conn: sqlite3.Connection, session_id: str) -> list[Sessio
         (session_id,),
     ).fetchall()
     return [SessionRow(*r) for r in rows]
+
+
+def get_descendant_sessions(conn: sqlite3.Connection, session_id: str) -> list[SessionRow]:
+    descendants: list[SessionRow] = []
+    seen = {session_id}
+    pending = [session_id]
+    while pending:
+        parent = pending.pop()
+        for child in get_child_sessions(conn, parent):
+            if child.id in seen:
+                continue
+            seen.add(child.id)
+            descendants.append(child)
+            pending.append(child.id)
+    return descendants
+
+
+def get_assistant_usage(conn: sqlite3.Connection, session_ids: list[str]) -> list[AssistantUsage]:
+    if not session_ids:
+        return []
+    placeholders = ",".join("?" for _ in session_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, session_id,
+               json_extract(data, '$.time.created'),
+               json_extract(data, '$.time.completed'),
+               json_extract(data, '$.tokens.input'),
+               json_extract(data, '$.tokens.output'),
+               json_extract(data, '$.tokens.reasoning'),
+               json_extract(data, '$.tokens.cache.read'),
+               json_extract(data, '$.tokens.cache.write')
+        FROM message
+        WHERE session_id IN ({placeholders})
+          AND json_valid(data)
+          AND json_extract(data, '$.role') = 'assistant'
+          AND json_extract(data, '$.time.completed') IS NOT NULL
+        """,
+        session_ids,
+    ).fetchall()
+    usages: list[AssistantUsage] = []
+    for row in rows:
+        message_id, session_id, created, completed, *tokens = row
+        if not isinstance(created, (int, float)) or not isinstance(completed, (int, float)):
+            continue
+        if completed < created or not all(isinstance(token, (int, float)) and token >= 0 for token in tokens):
+            continue
+        usages.append(AssistantUsage(message_id, session_id, int(created), int(completed), int(sum(tokens))))
+    return usages
 
 
 def get_tool_calls(conn: sqlite3.Connection, session_id: str) -> list[PartRow]:
@@ -209,9 +280,69 @@ def karpathy_artifacts_present(project: str) -> dict[str, bool]:
     return {a: (Path(project) / a).exists() for a in KARPATHY_ARTIFACTS}
 
 
+def read_run_kpis(project: str) -> Optional[RunKpiPolicy]:
+    try:
+        manifest = json.loads((Path(project) / "opencode-autonomous.json").read_text(encoding="utf-8"))
+        run_kpis = manifest.get("run_kpis")
+        if not isinstance(run_kpis, dict) or run_kpis.get("enabled") is not True:
+            return None
+        unattended = run_kpis["unattended_runtime"]
+        token_burn = run_kpis["token_burn"]
+        values = (
+            unattended["target_seconds"],
+            token_burn["target_tokens_per_active_minute"],
+            token_burn["hard_budget_tokens"],
+        )
+        if not all(isinstance(value, (int, float)) and value > 0 for value in values):
+            return None
+        return RunKpiPolicy(*map(float, values))
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Verdict builders
 # ---------------------------------------------------------------------------
+
+def summarize_kpi_usage(usages: list[AssistantUsage]) -> KpiSummary:
+    tokens = sum(usage.tokens for usage in usages)
+    intervals = sorted((usage.created, usage.completed) for usage in usages)
+    active = 0
+    start: Optional[int] = None
+    end: Optional[int] = None
+    for next_start, next_end in intervals:
+        if start is None or end is None:
+            start, end = next_start, next_end
+        elif next_start <= end:
+            end = max(end, next_end)
+        else:
+            active += end - start
+            start, end = next_start, next_end
+    if start is not None and end is not None:
+        active += end - start
+    rate = tokens / (active / 60_000) if active else 0
+    return KpiSummary(tokens, active, rate)
+
+
+def verdict_run_kpis(policy: Optional[RunKpiPolicy], summary: KpiSummary) -> Verdict:
+    if policy is None:
+        return Verdict("NOT_APPLICABLE", evidence=["run_kpis is absent or disabled"])
+    if summary.active_milliseconds == 0:
+        return Verdict("PARTIAL", evidence=["No completed assistant-message telemetry was available"], interpretation="KPI policy is enabled but runtime use cannot be measured.")
+    active_seconds = summary.active_milliseconds / 1000
+    duration_met = active_seconds >= policy.target_seconds
+    rate_met = summary.tokens_per_active_minute <= policy.target_tokens_per_active_minute
+    budget_met = summary.tokens <= policy.hard_budget_tokens
+    label = "PASS" if duration_met and rate_met and budget_met else "PARTIAL"
+    return Verdict(
+        label,
+        evidence=[
+            f"Useful active duration: {active_seconds:.1f}/{policy.target_seconds:.1f}s",
+            f"Token rate: {summary.tokens_per_active_minute:.1f}/{policy.target_tokens_per_active_minute:.1f} tokens/min",
+            f"Token budget: {summary.tokens}/{policy.hard_budget_tokens:.0f}",
+        ],
+        interpretation="KPI observations do not replace completion, verification, or safety requirements.",
+    )
 
 def verdict_prometheus(
     conn: sqlite3.Connection,
@@ -333,6 +464,7 @@ def print_report(
     auto_v: Verdict,
     karp_v: Verdict,
     reviewer_approved: bool,
+    run_kpis_v: Verdict,
 ) -> int:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     print(f"""
@@ -356,6 +488,9 @@ Autonomous strategy verdict:
 
 Karpathy verdict:
 {_fmt_verdict(karp_v)}
+
+Run KPI verdict:
+{_fmt_verdict(run_kpis_v)}
 
 Material difference verdict: {'YES' if child_sessions else 'NO'}
   Evidence: {'Child sessions present: ' + ', '.join(c.agent or '?' for c in child_sessions) if child_sessions else 'No child sessions found.'}
@@ -418,7 +553,7 @@ def main() -> int:
         autonomous = [s for s in sessions if (s.agent or "").lower() == "autonomous"]
         session = autonomous[0] if autonomous else sessions[0]
 
-    child_sessions = get_child_sessions(conn, session.id)
+    child_sessions = get_descendant_sessions(conn, session.id)
     tool_calls = get_tool_calls(conn, session.id)
     switches = get_agent_switches(conn, session.id)
 
@@ -427,10 +562,15 @@ def main() -> int:
     prom_v  = verdict_prometheus(conn, session, switches, tool_calls, project)
     auto_v  = verdict_autonomous_strategy(conn, session, switches, child_sessions, project)
     karp_v  = verdict_karpathy(conn, child_sessions, project)
+    run_kpis_v = verdict_run_kpis(
+        read_run_kpis(project),
+        summarize_kpi_usage(get_assistant_usage(conn, [session.id, *[child.id for child in child_sessions]])),
+    )
 
     exit_code = print_report(
         session, child_sessions, prom_v, auto_v, karp_v,
         reviewer_approved,
+        run_kpis_v,
     )
     return exit_code
 

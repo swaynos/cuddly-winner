@@ -104,10 +104,14 @@ Publish the scaffold in this order (see docs/ARCHITECTURE.md § Prometheus Flow)
    retain any tracked-artifact warnings and report a non-Git skip without
    initializing Git or creating `.gitignore`.
 5. Write `opencode-autonomous.json` with the literal top-level field
-   `"schema_version": 2` (schema v2), plus `strategy`, `invariants`,
+   `"schema_version": 3` (schema v3), plus `strategy`, `invariants`,
    `implementation_scope`, `escalation_triggers`,
    `evaluator_inventory`, `verification`, and a Karpathy `optimization` block
-   when applicable.
+   when applicable. Omit `run_kpis` unless the user explicitly requests
+   unattended-runtime and token-burn optimization. When requested, require the
+   user's target active seconds, target tokens per active minute, and hard token
+   budget; do not invent numeric defaults. A disabled or absent block has no
+   runtime effect.
 6. Write `SPEC.md`. When `validate_scaffold` is installed, invoke it and correct
    structural errors before declaring the handoff complete. Static validation
    executes no project command and does not prove that final verification passes.

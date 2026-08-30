@@ -101,7 +101,7 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
         commands = re.findall(r"^- `([^`\n]+)`\s*$", spec_text, re.M)
         manifest_commands = manifest["verification"]["commands"]
         valid_manifest = (
-            manifest.get("schema_version") == 2
+            manifest.get("schema_version") == 3
             and manifest.get("strategy") in {"direct", "karpathy"}
             and commands == manifest_commands
         )
@@ -110,7 +110,7 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     report.checks.append({
         "name": "Manifest produced by @prometheus",
         "passed": valid_manifest,
-        "note": "Manifest must be schema-v2 and match SPEC verification commands.",
+        "note": "Manifest must be schema-v3 and match SPEC verification commands.",
     })
 
     # Score with planning_checks

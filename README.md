@@ -143,6 +143,14 @@ immutable targets, limits, noise policy, and stop criteria. Both strategies are
 bounded by the published manifest and agent instructions; there is no separate
 host coordinator or durable workflow state machine.
 
+Schema-v3 manifests may also opt into `run_kpis` for useful unattended duration
+and token burn. The block is absent by default. An enabled block requires an
+explicit active-duration target, token-rate target, and hard token budget; it
+never supplies package defaults. The KPI plugin observes completed-message usage
+for Autonomous and its descendants, favors concise useful work, and stops a new
+turn at the hard budget. It never pads work, bypasses approval, or delays valid
+completion to reach a duration target.
+
 ## Managed-Agent Immutability
 
 The plugin applies fixed edit-tool boundaries only to the seven managed agents:

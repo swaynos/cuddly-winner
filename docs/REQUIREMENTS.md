@@ -280,7 +280,7 @@ Every published scaffold contains:
 
 - one `SPEC.md` with Grounding, Approaches Considered, Acceptance Criteria,
   Verification, and Implementation Checklist sections;
-- one schema-v2 `opencode-autonomous.json` declaring strategy, invariants,
+- one schema-v3 `opencode-autonomous.json` declaring strategy, invariants,
   implementation scope, escalation triggers, evaluator inventory, exact
   verification commands, and optional limits;
 - an optimization block for Karpathy work;
@@ -315,6 +315,21 @@ direction, evaluator, baseline protocol, noise policy, mutable and immutable
 targets, experiment limits, and stop criteria. Karpathy proposes; Autonomous
 edits and measures. One experiment changes one lever. Autonomous records each
 hypothesis, command, score, decision, and relevant reviewer advice in its report.
+
+### Optional Run KPIs
+
+The schema-v3 manifest may omit `run_kpis`; omission and `enabled: false` leave
+Autonomous unchanged. Prometheus adds an enabled policy only after an explicit
+user request and requires explicit active-duration, token-rate, and hard-token-
+budget values. There are no package defaults.
+
+Enabled KPIs favor sustained useful unattended work and a token rate at or below
+the declared target. Completion, verification, scope, permissions, safety,
+strategy stops, and existing hard limits take precedence. Autonomous must not
+sleep, pad work, widen scope, skip checks, or continue after valid completion to
+improve a KPI. The hard token budget stops new work at the next observable
+completed-message boundary. Token-rate and duration results remain operational
+observations, not delivery acceptance gates.
 
 The workflow is agent-led. There is no custom supervisor, durable run-state
 machine, protected evidence store, automatic checkpoint service, or cross-session

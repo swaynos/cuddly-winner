@@ -8,7 +8,7 @@
 
 In an isolated temporary workspace (not this repository's own worktree):
 
-1. Write a complete, `validate_scaffold`-passing schema-v2 `karpathy`
+1. Write a complete, `validate_scaffold`-passing schema-v3 `karpathy`
    `opencode-autonomous.json` and `SPEC.md` for **task A**: optimizing
    `model/hyperparams.json` against a frozen evaluator.
 2. Create the evaluator asset the task-A manifest inventories, e.g.
@@ -29,7 +29,7 @@ top-level user, superseding task A.
 - [ ] Prometheus inspects the existing scaffold before publishing and
       determines it no longer serves the active request.
 - [ ] Prometheus writes a complete replacement `SPEC.md` and
-      `opencode-autonomous.json` describing task B (schema v2, `direct`
+       `opencode-autonomous.json` describing task B (schema v3, `direct`
       strategy, no `optimization` block).
 - [ ] The obsolete `.prometheus/evaluator/score.py` from task A is reconciled
       (removed, or explicitly addressed) rather than left orphaned alongside

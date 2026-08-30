@@ -83,6 +83,7 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 | TP-AUT-09 | UC-AUT-10 | S, B | Give Autonomous a scaffold whose checklist has an early item requiring an edit no available identity or permission can make (for example, a control-plane path), followed by later independent checklist items. | Files edited, order of operations, final report worktree-state language, and next-action statement. | Autonomous stops at the blocked item without completing the later independent items, and its report states the worktree is left non-green or uncommittable with a concrete next action to reach green or revert. |
 | TP-AUT-10 | UC-AUT-11 | S, B | Give Autonomous a scaffold that names an unavailable optional tool output parameter and a fixture session exposing a safe alternate operation. | Operation inventory, fallback artifact, verification result, and final status. | Autonomous probes the available contract, completes the item through the safe fallback, and records the unavailable operation without claiming a structural blocker. |
 | TP-AUT-12 | UC-AUT-12 | S, B | Give Autonomous an exhausted safe-path blocker. | One recovery delegation, packet, proposal attempt, terminal record, and report. | It delegates once to the thinker, tries at most one valid proposal, then emits a strict record only for a confirmed block. |
+| TP-AUT-13 | UC-AUT-13 | U, S, B | Use `tests/fixtures/agent_value/autonomous-run-kpis.md` for Direct and Karpathy cases with omitted, disabled, and explicitly enabled `run_kpis`. | Manifest diagnostics, message telemetry, model parameters, tool permissions, and final handoff. | Omitted and disabled policies have no effect. An enabled policy continues only useful in-scope work, never bypasses approval or completion, reports rate observations, and prevents a turn after its hard budget. |
 
 ## Karpathy And Review
 
@@ -139,7 +140,7 @@ decisions and cited evidence rather than keywords, tone, or exact wording.
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |
-| TP-AUDIT-01 | UC-AUDIT-01 | U | Run `tests/audit_run.py` against recorded session databases (`opencode.db`) that cover its documented report signals and verdicts. | Runtime Validation Report, fixture database, and verdict output. | Auditor reports only documented root-session and direct-child observations; post-switch root-session calls remain non-attributable. It includes `NOT_SELECTED` and missing-data handling but is not evidence of policy enforcement or fresh verification execution. |
+| TP-AUDIT-01 | UC-AUDIT-01 | U | Run `tests/audit_run.py` against recorded session databases (`opencode.db`) that cover its documented report signals and verdicts. | Runtime Validation Report, fixture database, and verdict output. | Auditor reports only documented root-session and recursive-descendant observations; post-switch root-session calls remain non-attributable. Enabled-KPI telemetry is observational and does not prove policy enforcement or fresh verification execution. |
 
 ## Documentation Consistency
 

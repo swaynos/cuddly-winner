@@ -170,6 +170,7 @@ test("autonomous edits source but not trusted extension paths", async () => fixt
   const guard = await hooks(root, { a: "autonomous" });
   await mutate(guard, "a", path.join(root, "src", "app.ts"));
   await assert.rejects(mutate(guard, "a", path.join(root, "plugins", "immutability.ts")), /trusted control-plane/);
+  await assert.rejects(mutate(guard, "a", path.join(root, "plugins", "autonomous-kpis.ts")), /trusted control-plane/);
   await assert.rejects(mutate(guard, "a", path.join(root, "tools", "spike.ts")), /trusted control-plane/);
   await assert.rejects(mutate(guard, "a", path.join(root, "tools", "validate_scaffold.ts")), /trusted control-plane/);
   await assert.rejects(mutate(guard, "a", path.join(root, "tools", "scaffold_gitignore.ts")), /trusted control-plane/);

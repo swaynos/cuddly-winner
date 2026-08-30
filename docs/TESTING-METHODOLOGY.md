@@ -36,17 +36,17 @@ own exit codes unless they explicitly adopt this vocabulary:
 
 ## Session Audit Procedure (`tests/audit_run.py`)
 
-Session auditing is an investigative report over one selected session, its direct
-children, and the current project worktree. It does not reconstruct a complete
-run or prove policy enforcement.
+Session auditing is an investigative report over one selected session, its
+recursive descendants, and the current project worktree. It does not prove
+policy enforcement or fresh verification.
 
 ### SQLite Log Schema
 
 OpenCode persists session telemetry to `~/.local/share/opencode/opencode.db` (or a custom path provided via `--db`). The auditor inspects:
 
-1. **`session` Table**: Lists the selected session and its direct children (`id`, `parent_id`, `agent`, `slug`, `directory`, `time_created`, `time_updated`).
+1. **`session` Table**: Lists the selected session and its recursive descendants (`id`, `parent_id`, `agent`, `slug`, `directory`, `time_created`, `time_updated`).
 2. **`part` Table**: Lists tool calls for the selected root session only.
-3. **`session_message` and `message` Tables**: Supply agent-switch events and completion/review token searches for the selected root session.
+3. **`session_message` and `message` Tables**: Supply agent-switch events, completion/review token searches, and completed assistant-message token telemetry.
 
 ### Audit Invariants
 
@@ -54,10 +54,12 @@ When auditing a session, `tests/audit_run.py` reports:
 
 * whether the selected root session recorded switches to Prometheus or Autonomous, and whether its current `SPEC.md` includes `## Approaches Considered`;
 * whether the selected root session recorded Bash calls, without attributing them to Prometheus or another agent after a switch;
-* direct child-session agent names, including Karpathy, and whether current `SPEC.md` and `opencode-autonomous.json` files exist; and
+* recursive descendant agent names, including Karpathy, and whether current `SPEC.md` and `opencode-autonomous.json` files exist;
 * whether the selected root session contains completion or reviewer-approval tokens.
+* when current `run_kpis` is enabled, the union of completed assistant-message
+  activity intervals, token totals, active token rate, and policy comparison.
 
-The auditor does not recursively inspect descendants, validate scaffold content,
+The auditor does not validate scaffold content, recover a superseded manifest,
 or determine whether declared verification commands ran freshly. Use the
 deterministic plugin, scaffold, and behavioral tests for those contracts.
 

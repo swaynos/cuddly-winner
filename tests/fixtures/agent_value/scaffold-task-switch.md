@@ -8,7 +8,7 @@
 
 In an isolated temporary workspace (not this repository's own worktree):
 
-1. Write a complete, `validate_scaffold`-passing schema-v2 `direct`
+1. Write a complete, `validate_scaffold`-passing schema-v3 `direct`
    `opencode-autonomous.json` and `SPEC.md` for **task A**: "Fix the typo in
    `README.md` (`teh` -> `the`)", with `implementation_scope: ["README.md"]`
    and `verification.commands: ["grep -c teh README.md || true"]`.

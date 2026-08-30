@@ -74,6 +74,46 @@ test("non-object manifest fails closed", () => {
   assert.equal(validateManifest("nope").valid, false);
 });
 
+test("schema v3 keeps run KPIs disabled when the optional block is absent", () => {
+  assert.equal(validateManifest(load("valid-direct.json")).valid, true);
+});
+
+test("run KPIs require every explicit enabled value and reject unknown fields", () => {
+  const enabled = load("valid-direct.json");
+  enabled.run_kpis = {
+    enabled: true,
+    unattended_runtime: { target_seconds: 3600 },
+    token_burn: { target_tokens_per_active_minute: 8000, hard_budget_tokens: 500000 },
+  };
+  assert.equal(validateManifest(enabled).valid, true);
+
+  const disabled = load("valid-direct.json");
+  disabled.run_kpis = { enabled: false };
+  assert.equal(validateManifest(disabled).valid, true);
+
+  const missingBudget = structuredClone(enabled);
+  delete missingBudget.run_kpis.token_burn.hard_budget_tokens;
+  assert.equal(validateManifest(missingBudget).valid, false);
+
+  const zeroRate = structuredClone(enabled);
+  zeroRate.run_kpis.token_burn.target_tokens_per_active_minute = 0;
+  assert.equal(validateManifest(zeroRate).valid, false);
+
+  const disabledWithFields = structuredClone(disabled);
+  disabledWithFields.run_kpis.unattended_runtime = { target_seconds: 60 };
+  assert.equal(validateManifest(disabledWithFields).valid, false);
+
+  const unknown = structuredClone(enabled);
+  unknown.run_kpis.token_burn.unbounded = true;
+  assert.equal(validateManifest(unknown).valid, false);
+});
+
+test("schema v2 is rejected under the no-legacy policy", () => {
+  const retired = load("valid-direct.json");
+  retired.schema_version = 2;
+  assert.equal(validateManifest(retired).valid, false);
+});
+
 test("rejects noncanonical paths in every path field", () => {
   const invalidPaths = ["", ".", "..", "model//config.json", "model\\config.json", "/model/config.json", "C:/model/config.json", "C:model/config.json"];
   for (const invalidPath of invalidPaths) {

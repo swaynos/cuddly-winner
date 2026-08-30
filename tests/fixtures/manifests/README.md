@@ -1,7 +1,7 @@
-# Manifest Fixtures (schema v2)
+# Manifest Fixtures (schema v3)
 
 Acceptance fixtures for the static `opencode-autonomous.json` validator.
-Authoritative schema: `docs/ARCHITECTURE.md` § Manifest Schema (v2).
+Authoritative schema: `docs/ARCHITECTURE.md` § Manifest Schema (v3).
 
 Each fixture has one expected verdict. The validator test asserts exactly these.
 
@@ -11,7 +11,7 @@ Each fixture has one expected verdict. The validator test asserts exactly these.
 | `valid-karpathy.json` | ACCEPT | Karpathy with complete `optimization` block |
 | `invalid-legacy-schema-v1.json` | REJECT | `schema_version` = 1 (retired) |
 | `invalid-legacy-ralph.json` | REJECT | `strategy` = `ralph` (retired) |
-| `invalid-unknown-version.json` | REJECT | `schema_version` = 3 (unknown future version) |
+| `invalid-unknown-version.json` | REJECT | `schema_version` = 4 (unknown future version) |
 | `invalid-direct-empty-scope.json` | REJECT | `implementation_scope` must be non-empty |
 | `invalid-karpathy-missing-optimization.json` | REJECT | `strategy=karpathy` without `optimization` |
 | `invalid-direct-nonempty-evaluator-uninventoried.json` | REJECT | inventoried evaluator file absent on disk |
@@ -19,9 +19,9 @@ Each fixture has one expected verdict. The validator test asserts exactly these.
 | `invalid-unknown-limit-key.json` | REJECT | unknown key inside `limits` |
 
 Two standalone tests (not table-driven, since they mutate a loaded fixture
-rather than load a dedicated file) cover the remaining schema-v2 rules:
+rather than load a dedicated file) cover the remaining schema-v3 rules:
 `direct` strategy rejects an `optimization` block, and Karpathy's existing
-complete-optimization requirements are unchanged by the v2 cutover.
+complete-optimization requirements are unchanged by the v3 cutover.
 
 Fixtures carrying a `_note` field also verify that unknown top-level keys are
 tolerated only where the schema says so; `_note`/`_comment` are reserved

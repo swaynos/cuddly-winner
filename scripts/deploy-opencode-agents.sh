@@ -298,7 +298,7 @@ AGENT_SOURCES=("${REPO_ROOT}"/agents/*.md)
 SKILL_SOURCES=("${REPO_ROOT}"/skills/*)
 RULE_SOURCES=("${REPO_ROOT}"/rules/*.md)
 shopt -u nullglob
-PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts")
+PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/autonomous-kpis.ts")
 PLUGIN_MODE="copy"
 TOOL_SOURCES=(
   "${REPO_ROOT}/tools/scaffold_gitignore.ts"

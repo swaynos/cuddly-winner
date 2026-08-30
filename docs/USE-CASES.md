@@ -287,6 +287,19 @@ or initialize Git.
 - **Evidence:** S agent, plugin, and recorder contracts; U terminal-capture tests;
   B blocked recovery scenario.
 
+### UC-AUT-13: Optional run KPIs preserve delivery rules
+
+- **Given:** a schema-v3 manifest omits, disables, or explicitly enables
+  `run_kpis` with duration, token-rate, and hard-token-budget values.
+- **When:** Autonomous executes the scaffold.
+- **Then:** omitted or disabled policies change nothing; an enabled policy favors
+  useful in-scope work, reports operational telemetry, and stops a new turn when
+  the hard budget is exhausted.
+- **Never:** use hidden KPI defaults, auto-approve tools, sleep, pad work, widen
+  scope, skip verification, or continue after valid completion to meet a KPI.
+- **Evidence:** U schema/plugin/audit tests; S prompt and deployment checks; B
+  enabled-policy fixture.
+
 ## Karpathy And Review
 
 ### UC-KAR-01: Optimization requires a complete contract
@@ -494,7 +507,10 @@ or initialize Git.
 
 - **Given:** an executed OpenCode session recorded in `~/.local/share/opencode/opencode.db`.
 - **When:** `tests/audit_run.py` inspects the session.
-- **Then:** report documented root-session and direct-child signals, including agent switches, non-attributable root-session Bash observations, current scaffold-file presence, and completion/review tokens.
+- **Then:** report documented root-session and recursive-descendant signals,
+  including agent switches, non-attributable root-session Bash observations,
+  current scaffold-file presence, completion/review tokens, and enabled-KPI
+  activity and token telemetry.
 - **Never:** attribute a post-switch root-session tool call to a specific agent or represent the report as proof of ancestry enforcement, scaffold validity, or fresh verification-command execution.
 - **Evidence:** U auditor fixtures and report output, including `PASS`, `PARTIAL`, `FAIL`, `NOT_APPLICABLE`, `NOT_SELECTED`, and missing-data errors where applicable.
 

@@ -33,6 +33,26 @@ class AuditVerdictTests(unittest.TestCase):
         )
         self.assertEqual(verdict.label, "NOT_APPLICABLE")
 
+    def test_kpi_summary_merges_overlapping_active_intervals(self) -> None:
+        summary = audit.summarize_kpi_usage([
+            audit.AssistantUsage("m1", "root", 0, 60_000, 20),
+            audit.AssistantUsage("m2", "child", 30_000, 90_000, 10),
+            audit.AssistantUsage("m3", "root", 120_000, 180_000, 30),
+        ])
+        self.assertEqual(summary.tokens, 60)
+        self.assertEqual(summary.active_milliseconds, 150_000)
+        self.assertEqual(summary.tokens_per_active_minute, 24)
+
+    def test_kpi_verdict_is_observational_and_disabled_by_default(self) -> None:
+        summary = audit.KpiSummary(tokens=120, active_milliseconds=60_000, tokens_per_active_minute=120)
+        self.assertEqual(audit.verdict_run_kpis(None, summary).label, "NOT_APPLICABLE")
+        verdict = audit.verdict_run_kpis(
+            audit.RunKpiPolicy(target_seconds=30, target_tokens_per_active_minute=100, hard_budget_tokens=200),
+            summary,
+        )
+        self.assertEqual(verdict.label, "PARTIAL")
+        self.assertIn("active duration", "\n".join(verdict.evidence))
+
 
 if __name__ == "__main__":
     unittest.main()

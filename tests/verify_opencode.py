@@ -366,7 +366,7 @@ Invoke @autonomous to execute SPEC.md.
     (workspace / "opencode-autonomous.json").write_text(
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": 3,
                 "strategy": "direct",
                 "invariants": ["No Git commits unless explicitly requested"],
                 "implementation_scope": implementation_scope,
@@ -967,7 +967,7 @@ Invoke @autonomous to execute SPEC.md.
         (ws1 / "opencode-autonomous.json").write_text(
             json.dumps(
                 {
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "strategy": "direct",
                     "invariants": [],
                     "implementation_scope": ["greeter.py"],
@@ -1043,7 +1043,7 @@ Invoke @autonomous to execute SPEC.md.
         (ws_phase / "opencode-autonomous.json").write_text(
             json.dumps(
                 {
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "strategy": "direct",
                     "invariants": ["A passing synthetic phase is not completion while required outputs remain"],
                     "implementation_scope": ["discovery.json", "analysis.json", "report.md"],
@@ -1135,8 +1135,8 @@ Invoke @autonomous to execute SPEC.md.
         elif after_spec == before_spec or after_manifest_text == before_manifest:
             failures.append("Supersession: scaffold was not replaced")
             print("FAIL")
-        elif after_manifest.get("schema_version") != 2 or after_manifest.get("strategy") != "direct" or "optimization" in after_manifest:
-            failures.append(f"Supersession: replacement manifest is not a valid schema-v2 direct manifest: {after_manifest}")
+        elif after_manifest.get("schema_version") != 3 or after_manifest.get("strategy") != "direct" or "optimization" in after_manifest:
+            failures.append(f"Supersession: replacement manifest is not a valid schema-v3 direct manifest: {after_manifest}")
             print("FAIL")
         elif "health" not in after_spec.lower():
             failures.append("Supersession: replacement SPEC does not describe the health-endpoint task")
@@ -1291,6 +1291,7 @@ def main() -> int:
     require("phase gate, not completion evidence" in architecture, "ARCHITECTURE must define nonterminal phase checks")
     require("phase gate, not completion evidence" in use_cases, "USE-CASES must define nonterminal phase checks")
     require((ROOT / "tests/fixtures/agent_value/autonomous-multiphase-continuation.md").is_file(), "multi-phase Autonomous continuation fixture missing")
+    require((ROOT / "tests/fixtures/agent_value/autonomous-run-kpis.md").is_file(), "Autonomous run KPI fixture missing")
     require("### UC-AUT-10: A blocked step halts before it cascades into red work" in use_cases, "USE-CASES UC-AUT-10 must remain byte-unchanged")
     require("does **not** replace, wrap, redirect, restrict" in readme, "README product goal is ambiguous")
     require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
@@ -1313,6 +1314,7 @@ def main() -> int:
         require(not (config / "AGENTS.md").exists(), "repository rules were installed globally")
         require({p.stem for p in (config / "agents").glob("*.md")} == MANAGED_AGENTS, "specialist agents not deployed")
         require((config / "plugins/immutability.ts").is_file(), "managed-agent immutability plugin missing")
+        require((config / "plugins/autonomous-kpis.ts").is_file(), "Autonomous KPI plugin missing")
         require(not (config / "plugins/opencode-autonomous-supervisor.js").exists(), "obsolete supervisor installed in default profile")
         require((config / "tools/spike.ts").is_file(), "spike tool missing from default profile")
         require((config / "tools/scaffold_gitignore.ts").is_file(), "scaffold_gitignore missing from default profile")
