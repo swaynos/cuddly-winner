@@ -25,7 +25,7 @@ identity is found, it returns before inspecting tools or paths.
 
 Prometheus can edit only the four scaffold path families. Autonomous can edit
 ordinary files but cannot edit the published scaffold or this extension's tool
-and plugin sources. Ask, Karpathy, Reviewer, Grounder, and Implementation-Validator are read-only.
+and plugin sources. Ask, Karpathy, Reviewer, Grounder, Implementation-Validator, and Out-of-the-box-thinker are read-only.
 
 The plugin intercepts OpenCode mutation tools. It is not a filesystem sandbox.
 Native subprocess effects are outside path interception. Prometheus and Autonomous

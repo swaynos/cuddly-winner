@@ -41,15 +41,16 @@ class BehavioralAssertionTests(unittest.TestCase):
     def test_task_permission_specific_allows_follow_the_catch_all_deny(self) -> None:
         root = pathlib.Path(__file__).parents[1] / "agents"
         expected = {
-            "ask.md": '"grounder": allow',
-            "prometheus.md": "grounder: allow",
-            "autonomous.md": "implementation-validator: allow",
-            "karpathy.md": '"reviewer": allow',
+            "ask.md": ['"grounder": allow'],
+            "prometheus.md": ["grounder: allow"],
+            "autonomous.md": ["implementation-validator: allow", "out-of-the-box-thinker: allow"],
+            "karpathy.md": ['"reviewer": allow'],
         }
 
-        for filename, specific_allow in expected.items():
+        for filename, specific_allows in expected.items():
             text = (root / filename).read_text(encoding="utf-8")
-            self.assertLess(text.index('"*": deny'), text.index(specific_allow), filename)
+            for specific_allow in specific_allows:
+                self.assertLess(text.index('"*": deny'), text.index(specific_allow), f"{filename}: {specific_allow}")
 
     def test_last_nonempty_line_does_not_accept_an_earlier_verdict(self) -> None:
         output = "### Verdict\nREQUEST_CHANGES\nMore explanation after the verdict\n"

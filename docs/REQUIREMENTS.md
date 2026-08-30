@@ -48,7 +48,7 @@ direct ordinary planning to Prometheus or ordinary implementation to Autonomous.
 ## Managed Agents
 
 The managed identities are `ask`, `prometheus`, `autonomous`, `karpathy`,
-`reviewer`, `grounder`, and `implementation-validator`. They are selected explicitly. Delegated sessions
+`reviewer`, `grounder`, `implementation-validator`, and `out-of-the-box-thinker`. They are selected explicitly or delegated internally. Delegated sessions
 inherit the topmost managed ancestor's identity so delegation cannot widen that
 agent's edit-tool boundary.
 
@@ -198,6 +198,14 @@ context window after Autonomous reaches candidate completion, compares codebase
 state against SPEC.md, and generates a severity-grouped gap report. A critical
 or major gap permits one bounded Autonomous correction followed by fresh
 verification and validation; unresolved gaps prohibit a successful status.
+
+### Out-of-the-box Thinker
+
+Out-of-the-box Thinker is a hidden, read-only recovery analyst. When Autonomous
+exhausts ordinary safe in-scope paths before a terminal block, it delegates one
+bounded blocker packet to the thinker. The thinker returns one safe recovery
+proposal or `CONFIRMED_BLOCKED`. It cannot edit, execute commands, delegate, or
+contact external services.
 
 ## Permission Model
 
