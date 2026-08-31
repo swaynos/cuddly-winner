@@ -85,3 +85,14 @@ test("close removes the opaque session", async () => {
   await service.close({ handle, sessionID: "one" });
   await assert.rejects(service.complete({ handle, sessionID: "one" }), /Unknown session/);
 });
+
+test("expired sessions free capacity before a new bootstrap", async () => {
+  let now = 0;
+  const service = new SessionFetchService({ browser: browser(), now: () => now, idleMs: 10, fetch: async () => new Response("ok") });
+  await service.bootstrap({ profile, sessionID: "one", interactive_approved: true });
+  await service.bootstrap({ profile, sessionID: "two", interactive_approved: true });
+  await service.bootstrap({ profile, sessionID: "three", interactive_approved: true });
+  now = 11;
+  const fresh = await service.bootstrap({ profile, sessionID: "four", interactive_approved: true });
+  assert.match(fresh.handle, /^[a-f0-9]{32}$/);
+});

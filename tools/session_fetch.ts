@@ -82,6 +82,7 @@ function mergeSetCookies(cookies: Cookie[], response: Response, origin: URL): Co
       else if (/^secure$/i.test(name)) cookie.secure = true;
       else if (/^max-age$/i.test(name) && Number.isFinite(Number(raw))) cookie.expires = Math.floor(Date.now() / 1000) + Number(raw);
     }
+    if (origin.hostname !== cookie.domain && !origin.hostname.endsWith(`.${cookie.domain}`)) continue;
     const index = cookies.findIndex(existing => existing.name === cookie.name && existing.domain === cookie.domain && existing.path === cookie.path);
     if (index >= 0) cookies[index] = cookie; else cookies.push(cookie);
   }
@@ -121,6 +122,7 @@ export class SessionFetchService {
 
   async bootstrap(input: { profile: SiteProfile; sessionID: string; interactive_approved: boolean }): Promise<{ handle: string; state: "awaiting_login" }> {
     if (!input.interactive_approved) throw new Error("interactive browser approval is required before bootstrap");
+    await this.pruneExpired();
     if (this.sessions.size >= MAX_SESSIONS) throw new Error(`too many active sessions (max ${MAX_SESSIONS})`);
     const profile = validateProfile(input.profile);
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "cuddly-winner-session-fetch-"));
@@ -181,17 +183,30 @@ export class SessionFetchService {
 
   async close(input: { handle: string; sessionID: string }): Promise<{ closed: true }> {
     const session = this.access(input.handle, input.sessionID);
-    this.sessions.delete(input.handle);
-    await session.context.close();
-    await fs.rm(session.directory, { recursive: true, force: true });
+    await this.dispose(input.handle, session);
     return { closed: true };
+  }
+
+  private async pruneExpired(): Promise<void> {
+    const expired = [...this.sessions.entries()].filter(([, session]) => this.now() - session.lastUsed > this.idleMs);
+    await Promise.all(expired.map(async ([handle, session]) => {
+      try { await this.dispose(handle, session); } catch { /* Expiry must not keep a dead slot. */ }
+    }));
+  }
+
+  private async dispose(handle: string, session: StoredSession): Promise<void> {
+    this.sessions.delete(handle);
+    let closeError: unknown;
+    try { await session.context.close(); } catch (error) { closeError = error; }
+    try { await fs.rm(session.directory, { recursive: true, force: true }); } catch (error) { if (!closeError) closeError = error; }
+    if (closeError) throw closeError;
   }
 
   private access(handle: string, sessionID: string): StoredSession {
     const session = this.sessions.get(handle);
     if (!session) throw new Error("Unknown session handle");
     if (session.sessionID !== sessionID) throw new Error("session handle belongs to another OpenCode session");
-    if (this.now() - session.lastUsed > this.idleMs) { this.sessions.delete(handle); void session.context.close(); void fs.rm(session.directory, { recursive: true, force: true }); throw new Error("session has expired; bootstrap again"); }
+    if (this.now() - session.lastUsed > this.idleMs) { void this.dispose(handle, session); throw new Error("session has expired; bootstrap again"); }
     return session;
   }
 }
