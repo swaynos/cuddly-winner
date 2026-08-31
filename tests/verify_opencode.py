@@ -77,7 +77,11 @@ def _profile_mismatches() -> list[str]:
         return ["could not resolve the active OpenCode configuration directory"]
 
     mismatches: list[str] = []
-    expected_paths = [*(ROOT / "agents").glob("*.md"), ROOT / "plugins" / "immutability.ts"]
+    expected_paths = [
+        *(ROOT / "agents").glob("*.md"),
+        ROOT / "plugins" / "immutability.ts",
+        ROOT / "plugins" / "autonomous-kpis.ts",
+    ]
     for source in expected_paths:
         destination = config / source.relative_to(ROOT)
         if not destination.is_file():

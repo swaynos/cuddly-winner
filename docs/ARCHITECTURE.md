@@ -245,17 +245,17 @@ access for read-only roles, remain denied.
 
 ## Deployment
 
-The installer deploys one complete managed profile: agents, `immutability.ts`,
-the three workflow tools and pinned SDK dependency, non-core skills, and
-global rule files.
+The installer deploys one complete managed profile: agents, plugins
+(`immutability.ts`, `autonomous-kpis.ts`), the three workflow tools and pinned SDK
+dependency, non-core skills, and global rule files.
 
 Install sources are fixed repository paths. A single configuration root is
 resolved from the CLI, one environment variable, or OpenCode's debug output;
 `agents/`, `plugins/`, `tools/`, `skills/`, and `rules/` are derived beneath
 it. One entry synchronizer handles files and directories in copy or symlink
 mode, including idempotence, collision backups, status, and safe removal. The
-immutability plugin always installs as a copy, even in symlink mode, so its local
-terminal-feedback locator resolves from the selected configuration root.
+plugins always install as copies, even in symlink mode, so the immutability
+plugin's local terminal-feedback locator resolves from the selected configuration root.
 
 The installer also synchronizes one namespaced MCP entry through a narrow JSON
 helper: a headless isolated research browser (`@playwright/mcp`, Node). It backs

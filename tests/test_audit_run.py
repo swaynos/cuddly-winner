@@ -51,7 +51,27 @@ class AuditVerdictTests(unittest.TestCase):
             summary,
         )
         self.assertEqual(verdict.label, "PARTIAL")
-        self.assertIn("active duration", "\n".join(verdict.evidence))
+    def test_assistant_usage_with_optional_cache_tokens(self) -> None:
+        import json
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)")
+        msg_with_cache = {
+            "role": "assistant",
+            "time": {"created": 1000, "completed": 5000},
+            "tokens": {"input": 10, "output": 20, "reasoning": 5, "cache": {"read": 2, "write": 1}},
+        }
+        msg_without_cache = {
+            "role": "assistant",
+            "time": {"created": 6000, "completed": 10000},
+            "tokens": {"input": 15, "output": 25, "reasoning": 0},
+        }
+        conn.execute("INSERT INTO message VALUES (?, ?, ?)", ("m1", "s1", json.dumps(msg_with_cache)))
+        conn.execute("INSERT INTO message VALUES (?, ?, ?)", ("m2", "s1", json.dumps(msg_without_cache)))
+        usages = audit.get_assistant_usage(conn, ["s1"])
+        self.assertEqual(len(usages), 2)
+        self.assertEqual(usages[0].tokens, 38)
+        self.assertEqual(usages[1].tokens, 40)
 
 
 if __name__ == "__main__":

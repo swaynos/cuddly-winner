@@ -73,3 +73,31 @@ test("enabled KPI guidance is injected only for autonomous sessions", async () =
   assert.equal(managed.system.length, 1);
   assert.match(managed.system[0], /Do not sleep, pad/);
 }));
+
+test("handles optional cache fields, malformed events, and discovers agent from session.get", async () => fixture(async root => {
+  await writeFile(path.join(root, "opencode-autonomous.json"), manifest({
+    enabled: true,
+    unattended_runtime: { target_seconds: 600 },
+    token_burn: { target_tokens_per_active_minute: 100, hard_budget_tokens: 100 },
+  }));
+  const guard = await AutonomousKpis({
+    directory: root,
+    worktree: root,
+    client: { session: { get: async () => ({ data: { agent: "autonomous" } }) } },
+  });
+
+  // Malformed / incomplete message events fail closed without error
+  await guard.event({ event: { type: "message.updated", properties: { info: null } } });
+  await guard.event({ event: { type: "message.updated", properties: { info: { role: "assistant" } } } });
+
+  // Message without explicit cache object is accepted with zero cache fallback
+  await guard.event({ event: { type: "message.updated", properties: { info: {
+    id: "m1", sessionID: "root", role: "assistant", time: { created: 0, completed: 10_000 },
+    tokens: { input: 10, output: 10, reasoning: 5 },
+  } } } });
+
+  const managed = { system: [] };
+  await guard["experimental.chat.system.transform"]({ sessionID: "root" }, managed);
+  assert.equal(managed.system.length, 1);
+  assert.match(managed.system[0], /Token usage: 25\/100/);
+}));

@@ -180,8 +180,8 @@ def get_assistant_usage(conn: sqlite3.Connection, session_ids: list[str]) -> lis
                json_extract(data, '$.tokens.input'),
                json_extract(data, '$.tokens.output'),
                json_extract(data, '$.tokens.reasoning'),
-               json_extract(data, '$.tokens.cache.read'),
-               json_extract(data, '$.tokens.cache.write')
+               coalesce(json_extract(data, '$.tokens.cache.read'), 0),
+               coalesce(json_extract(data, '$.tokens.cache.write'), 0)
         FROM message
         WHERE session_id IN ({placeholders})
           AND json_valid(data)

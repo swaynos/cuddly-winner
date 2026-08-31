@@ -48,12 +48,21 @@ export function parseRunKpis(manifest: unknown): RunKpiPolicy | undefined {
 }
 
 function usageFor(message: AssistantMessage): Usage | undefined {
-  if (!message.time.completed) return;
+  if (
+    typeof message?.time?.created !== "number" ||
+    typeof message?.time?.completed !== "number" ||
+    !Number.isFinite(message.time.created) ||
+    !Number.isFinite(message.time.completed) ||
+    message.time.completed < message.time.created
+  ) return;
+  if (!message.tokens || typeof message.tokens !== "object") return;
   const { input, output, reasoning, cache } = message.tokens;
-  const values = [input, output, reasoning, cache?.read, cache?.write];
+  const cacheRead = cache?.read ?? 0;
+  const cacheWrite = cache?.write ?? 0;
+  const values = [input, output, reasoning, cacheRead, cacheWrite];
   if (!values.every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0)) return;
   return {
-    tokens: input + output + reasoning + cache.read + cache.write,
+    tokens: input + output + reasoning + cacheRead + cacheWrite,
     created: message.time.created,
     completed: message.time.completed,
   };
@@ -103,6 +112,9 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
     try {
       const result = await client?.session?.get?.({ path: { id: sessionID } });
       const session = result?.data ?? result;
+      if (typeof session?.agent === "string" && session.agent && !rootAgents.has(sessionID)) {
+        rootAgents.set(sessionID, session.agent);
+      }
       if (typeof session?.parentID === "string" && session.parentID) {
         const root = await rootFor(session.parentID, visited);
         roots.set(sessionID, root);
@@ -125,6 +137,15 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
 
   async function enabledPolicy(sessionID: string): Promise<{ root: string; policy: RunKpiPolicy } | undefined> {
     const root = await rootFor(sessionID);
+    if (!rootAgents.has(root)) {
+      try {
+        const result = await client?.session?.get?.({ path: { id: root } });
+        const session = result?.data ?? result;
+        if (typeof session?.agent === "string" && session.agent) {
+          rootAgents.set(root, session.agent);
+        }
+      } catch {}
+    }
     if (rootAgents.get(root) !== "autonomous") return;
     const policy = await policyFor(root);
     return policy ? { root, policy } : undefined;

@@ -9,5 +9,5 @@
     "commands": ["true"],
     "baseline": "n/a"
   },
-  "_note": "schema_version=3 is an unknown future version; only 2 is accepted."
+  "_note": "schema_version=4 is an unknown future version; only 3 is accepted."
 }
