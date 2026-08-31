@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SDK_VERSION="1.17.15"
+PLAYWRIGHT_VERSION="1.58.2"
 
 usage() {
   cat <<'EOF'
@@ -229,16 +230,21 @@ install_tool_sdk() {
   local config_dir="$1"
   local vendored_modules="${REPO_ROOT}/.opencode/node_modules"
   local vendored_package="${vendored_modules}/@opencode-ai/plugin/package.json"
+  local vendored_playwright="${vendored_modules}/playwright/package.json"
   local vendored_version=""
+  local vendored_playwright_version=""
   if [[ -f "$vendored_package" ]]; then
     vendored_version="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$vendored_package")"
   fi
-  if [[ "$vendored_version" == "$SDK_VERSION" ]]; then
+  if [[ -f "$vendored_playwright" ]]; then
+    vendored_playwright_version="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$vendored_playwright")"
+  fi
+  if [[ "$vendored_version" == "$SDK_VERSION" && "$vendored_playwright_version" == "$PLAYWRIGHT_VERSION" ]]; then
     mkdir -p "${config_dir}/node_modules"
     cp -R "${vendored_modules}/." "${config_dir}/node_modules/"
   else
     command -v npm >/dev/null 2>&1 || die "npm is required to install the OpenCode tool runtime"
-    npm install --prefix "$config_dir" --no-save --no-audit --no-fund "@opencode-ai/plugin@${SDK_VERSION}" >/dev/null
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix "$config_dir" --no-save --no-audit --no-fund "@opencode-ai/plugin@${SDK_VERSION}" "playwright@${PLAYWRIGHT_VERSION}" >/dev/null
   fi
 }
 
@@ -300,6 +306,8 @@ RULE_SOURCES=("${REPO_ROOT}"/rules/*.md)
 shopt -u nullglob
 PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/autonomous-kpis.ts")
 PLUGIN_MODE="copy"
+SESSION_FETCH_SOURCE="${REPO_ROOT}/tools/session_fetch.ts"
+SESSION_FETCH_MODE="copy"
 TOOL_SOURCES=(
   "${REPO_ROOT}/tools/scaffold_gitignore.ts"
   "${REPO_ROOT}/tools/spike.ts"
@@ -313,6 +321,7 @@ printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
 if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
   sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
+  sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"
   sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
   sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
@@ -324,6 +333,7 @@ fi
 
 sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
 sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
+sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"
 sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"

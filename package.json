@@ -8,6 +8,7 @@
     "test": "node --test tests/plugins/*.test.mjs tests/integration/*.test.mjs"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.17.15"
+    "@opencode-ai/plugin": "1.17.15",
+    "playwright": "1.58.2"
   }
 }

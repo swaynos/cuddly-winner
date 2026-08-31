@@ -366,6 +366,16 @@ The governance tools — `spike` (contracted investigation helper),
 plugin are part of the default managed profile and described in
 `docs/ARCHITECTURE.md`. Native Plan and Build workflows do not require them.
 
+### Session Fetch
+
+The managed `session_fetch` workflow tool supports an explicit interactive
+browser bootstrap, completion, read-only request, and close lifecycle for a
+named site profile. A profile declares allowed HTTPS origins, a login URL, and
+a completion URL or selector outside project repositories. The tool returns an
+opaque handle, never session material, and accepts only `GET` and `HEAD` to the
+profile's origins. Interactive bootstrap requires explicit user approval before
+the visible browser opens. The tool promises authenticated session continuity.
+
 ## Skills Ecosystem
 
 The installer deploys every packaged non-core skill. `docs/SKILLS.md` is the

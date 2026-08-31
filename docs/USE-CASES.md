@@ -432,6 +432,17 @@ or initialize Git.
 - **Never:** overwrite unrelated entries or expose profile contents.
 - **Evidence:** U configuration synchronizer fixture; F installer fixture.
 
+### UC-RESOURCE-05: Owned-site session fetch remains private and read-only
+
+- **Given:** a configured owned site requires an interactive login before an
+  authenticated retrieval.
+- **When:** the user approves the named visible-browser bootstrap.
+- **Then:** the tool returns an opaque session handle and allows only `GET` or
+  `HEAD` to the profile's configured origins until close or expiry.
+- **Never:** return session material, use an unconfigured origin, or make a
+  write request.
+- **Evidence:** U session lifecycle fixture; F profile and deployment fixture.
+
 ## Skills Ecosystem
 
 ### UC-SKILL-01: Skill frontmatter and content structure are release-validated

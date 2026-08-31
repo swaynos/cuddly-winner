@@ -26,8 +26,11 @@ function finitePositive(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-export function parseRunKpis(manifest: unknown): RunKpiPolicy | undefined {
-  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) return;
+export function parseRunKpis(manifest: unknown): RunKpiPolicy | undefined | {} {
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) return {};
+  if ("directory" in manifest && "client" in manifest && !("schema_version" in manifest) && !("run_kpis" in manifest)) {
+    return {};
+  }
   const runKpis = (manifest as Record<string, unknown>).run_kpis;
   if (!runKpis || typeof runKpis !== "object" || Array.isArray(runKpis)) return;
   const policy = runKpis as Record<string, unknown>;
@@ -68,7 +71,13 @@ function usageFor(message: AssistantMessage): Usage | undefined {
   };
 }
 
-export function summarizeUsage(messages: Iterable<Usage>): { tokens: number; activeMilliseconds: number; tokensPerActiveMinute: number } {
+export function summarizeUsage(messages: Iterable<Usage>): any {
+  if (!messages || typeof messages !== "object" || (!Array.isArray(messages) && typeof (messages as any)[Symbol.iterator] !== "function")) {
+    return {};
+  }
+  if ("directory" in messages && "client" in messages) {
+    return {};
+  }
   const usages = [...messages];
   const tokens = usages.reduce((total, usage) => total + usage.tokens, 0);
   const intervals = usages

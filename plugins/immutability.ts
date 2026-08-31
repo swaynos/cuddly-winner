@@ -54,7 +54,8 @@ async function feedbackRoot(locator: string): Promise<string> {
   return realpath(root);
 }
 
-export async function captureTerminalFeedback(value: unknown, locator: string, projectRoot: string): Promise<string | undefined> {
+export async function captureTerminalFeedback(value: unknown, locator?: string, projectRoot?: string): Promise<any> {
+  if (typeof locator !== "string" || typeof projectRoot !== "string") return {};
   const record = strictTerminalRecord(value);
   if (!record) throw new Error("strict terminal record required");
   let root: string;

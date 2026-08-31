@@ -36,10 +36,11 @@ test("default copy install is idempotent and includes the complete managed profi
   for (const name of ["immutability.ts", "autonomous-kpis.ts"]) {
     await stat(path.join(config, "plugins", name));
   }
-  for (const name of ["spike.ts", "scaffold_gitignore.ts", "validate_scaffold.ts"]) {
+  for (const name of ["session_fetch.ts", "spike.ts", "scaffold_gitignore.ts", "validate_scaffold.ts"]) {
     await stat(path.join(config, "tools", name));
   }
   await stat(path.join(config, "node_modules", "@opencode-ai", "plugin", "package.json"));
+  await stat(path.join(config, "node_modules", "playwright", "package.json"));
   await stat(path.join(config, "skills", "systematic-debugging", "SKILL.md"));
 
   const second = await deployFixture(root);
@@ -54,7 +55,7 @@ test("default installation provides a self-contained workflow tool runtime", asy
   await writeFile(path.join(bin, "npm"), "#!/usr/bin/env bash\nprintf '%s\\n' \"$*\" > \"$NPM_LOG\"\n", { mode: 0o755 });
 
   await deployFixture(root, "install", [], { NPM_LOG: log });
-  for (const name of ["spike.ts", "scaffold_gitignore.ts", "validate_scaffold.ts"]) {
+  for (const name of ["session_fetch.ts", "spike.ts", "scaffold_gitignore.ts", "validate_scaffold.ts"]) {
     await stat(path.join(config, "tools", name));
   }
   await stat(path.join(config, "skills", "systematic-debugging", "SKILL.md"));
@@ -67,7 +68,7 @@ test("default installation provides a self-contained workflow tool runtime", asy
   }
 
   await deployFixture(root, "install", [], { NPM_LOG: log });
-  await stat(path.join(config, "tools", "spike.ts"));
+  await stat(path.join(config, "tools", "session_fetch.ts"));
 }));
 
 test("symlink install and mode-independent remove cover all managed groups", async () => fixture(async root => {
@@ -76,6 +77,7 @@ test("symlink install and mode-independent remove cover all managed groups", asy
   assert.equal((await lstat(path.join(config, "agents", "prometheus.md"))).isSymbolicLink(), true);
   assert.equal((await lstat(path.join(config, "plugins", "immutability.ts"))).isSymbolicLink(), false);
   assert.equal((await lstat(path.join(config, "plugins", "autonomous-kpis.ts"))).isSymbolicLink(), false);
+  assert.equal((await lstat(path.join(config, "tools", "session_fetch.ts"))).isSymbolicLink(), false);
   assert.equal((await lstat(path.join(config, "tools", "spike.ts"))).isSymbolicLink(), true);
   assert.equal((await lstat(path.join(config, "skills", "playwright-image-generation"))).isSymbolicLink(), true);
 
@@ -87,7 +89,7 @@ test("symlink install and mode-independent remove cover all managed groups", asy
     "agents/prometheus.md",
     "plugins/immutability.ts",
     "plugins/autonomous-kpis.ts",
-    "tools/spike.ts",
+    "tools/session_fetch.ts",
     "skills/playwright-image-generation",
   ]) assert.equal(await exists(path.join(config, relative)), false, relative);
 }));

@@ -16,6 +16,10 @@ must assert configuration arguments and state transitions instead of treating a
 headed or authenticated live run as release evidence. Live provider checks are
 opt-in diagnostics and must use non-sensitive prompts.
 
+Session-fetch tests use a fake browser and injected HTTP boundary. They assert
+opaque results, configured-origin enforcement, private cookie transfer, and
+lifecycle cleanup without visiting a live site or retaining credentials.
+
 ---
 
 ## Standardized Verdict Definitions

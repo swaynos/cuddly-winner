@@ -46,3 +46,14 @@ a browser themselves.
 ChatGPT and Gemini profiles remain separate. If either provider cannot reuse a
 managed profile headlessly, report that limit. Do not silently switch to headed
 CDP or a personal browser profile.
+
+## Session Fetch
+
+Use `session_fetch` only for a configured owned site after direct retrieval is
+insufficient. Before `bootstrap`, state the site and why a visible browser is
+needed, then obtain user approval. Configure a site outside project repositories
+with `node scripts/opencode-session-fetch-sites.mjs set --config-dir
+<config-root> --name <site> --origin <https-origin> --login-url <https-url>
+--complete-url <https-url>`. Call `complete` after login, use `request` for
+`GET` or `HEAD`, and call `close` when finished. The tool promises authenticated
+session continuity.

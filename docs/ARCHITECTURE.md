@@ -52,6 +52,17 @@ Every result includes `sandboxed: false`. The command may read or mutate any
 resource available to the OpenCode process. OpenCode approval is the trust
 decision, and `--auto` intentionally approves it.
 
+### Session Fetch
+
+`tools/session_fetch.ts` establishes a configured site's interactive browser
+session, then provides private read-only HTTP retrieval through an opaque
+session handle. Site profiles live in `session-fetch-sites.json` beneath the
+managed OpenCode configuration root and are maintained by
+`scripts/opencode-session-fetch-sites.mjs`. The tool requires an explicit
+interactive-approval argument before it opens a visible browser, accepts only
+configured HTTPS origins and `GET` or `HEAD`, and removes private session state
+on close or idle expiry. The tool promises authenticated session continuity.
+
 ### Static Scaffold Validation
 
 `tools/validate_scaffold.ts` parses schema-v3 `opencode-autonomous.json`, checks
@@ -246,7 +257,7 @@ access for read-only roles, remain denied.
 ## Deployment
 
 The installer deploys one complete managed profile: agents, plugins
-(`immutability.ts`, `autonomous-kpis.ts`), the three workflow tools and pinned SDK
+(`immutability.ts`, `autonomous-kpis.ts`), the four workflow tools and pinned SDK
 dependency, non-core skills, and global rule files.
 
 Install sources are fixed repository paths. A single configuration root is
@@ -254,8 +265,8 @@ resolved from the CLI, one environment variable, or OpenCode's debug output;
 `agents/`, `plugins/`, `tools/`, `skills/`, and `rules/` are derived beneath
 it. One entry synchronizer handles files and directories in copy or symlink
 mode, including idempotence, collision backups, status, and safe removal. The
-plugins always install as copies, even in symlink mode, so the immutability
-plugin's local terminal-feedback locator resolves from the selected configuration root.
+plugins and session-fetch tool always install as copies, even in symlink mode,
+so their local state resolves from the selected configuration root.
 
 The installer also synchronizes one namespaced MCP entry through a narrow JSON
 helper: a headless isolated research browser (`@playwright/mcp`, Node). It backs
@@ -263,6 +274,9 @@ up before mutation, changes only its own keys, preserves unrelated entries, and
 prunes retired managed entries left by earlier installs.
 `scripts/opencode-browser-credentials.mjs` manages separate opt-in ChatGPT and
 Gemini profiles outside project repositories.
+
+The installer installs the pinned Playwright library with browser download
+disabled. It does not launch a browser.
 
 ### Python Runtime
 

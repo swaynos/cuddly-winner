@@ -42,7 +42,7 @@ Command security belongs to OpenCode's native permission model:
 ## Installation
 
 The default installation deploys the complete managed profile: seven agent
-definitions, the managed-agent immutability plugin, three workflow tools and
+definitions, the managed-agent immutability plugin, four workflow tools and
 their pinned SDK, and all packaged non-core skills:
 
 ```bash
@@ -52,6 +52,8 @@ bash scripts/deploy-opencode-agents.sh install
 - `spike`, an approval-gated native command helper for contracted investigations
 - `validate_scaffold`, a static SPEC and manifest validator
 - `scaffold_gitignore`, the constrained generated-artifact exclusion helper
+- `session_fetch`, an approved interactive session bridge for configured owned
+  sites. The tool promises authenticated session continuity.
 
 See [SKILLS.md](docs/SKILLS.md) for the catalog and
 [CONTRIBUTING.md](CONTRIBUTING.md) for the process to add or change a skill.
