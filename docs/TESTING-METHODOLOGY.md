@@ -90,10 +90,13 @@ default. Callers may select a configured model explicitly with `--model`.
 
 Before live scenarios run, `tests/verify_opencode.py` read-only compares the
 active OpenCode profile resolved by `opencode debug paths` and `opencode debug
-agent` with the repository's managed agents, immutability plugin, and any
-installed workflow tools. Drift is reported as a warning, not a test failure:
-live scenarios intentionally exercise the active profile and never install,
-overwrite, or repair it.
+agent` with the repository's complete managed inventory: source bytes, effective
+agent metadata, plugins, tools, skills, rules and instruction wiring, pinned
+runtime packages, managed research-browser configuration, and feedback locator.
+Default repository-profile validation exits before model invocation on drift and
+prints install-and-restart guidance. `--active-profile-diagnostics` intentionally
+exercises drift but labels the result as active-profile-only and never validates
+the repository profile.
 
 Each live scenario runs in a disposable workspace and fails on a nonzero agent
 exit status. Fixture assertions inspect files and Git state where applicable,
@@ -116,15 +119,26 @@ The suite defines 14 scenarios for the managed agents (`ask`, `autonomous`,
 13. **`Grounder` Private Content**: Reports local-only handling and does not echo a private-content canary.
 14. **`Implementation Validator`**: Reports a cited verdict for a candidate implementation without using mutation or command tools.
 
-Three named fixtures under `tests/fixtures/agent_value/` (`autonomous-continue-incomplete.md`,
-`scaffold-task-switch.md`, `prometheus-supersede-scaffold.md`) specify four
-further live scenarios — continuation, mismatch, supersession, and replacement
+Four named fixtures under `tests/fixtures/agent_value/`
+(`autonomous-continue-incomplete.md`,
+`autonomous-multiphase-continuation.md`, `scaffold-task-switch.md`, and
+`prometheus-supersede-scaffold.md`) specify five further live scenarios — basic
+continuation, multi-phase continuation, mismatch, supersession, and replacement
 consumption — for the managed-scaffold-lifecycle behavior in
 `agents/autonomous.md` and `agents/prometheus.md`. These run as a separate
 model-gated block, `run_reconciliation_scenarios` in `tests/verify_opencode.py`,
 distinct from the 14-scenario suite above. The count above stays 14 because the
-suite and this reconciliation block are separate executable groups, not because
-the four scenarios are unimplemented.
+suite and this reconciliation block are separate executable groups.
+
+Five feedback-derived fixtures add runtime-entrypoint completion, safe capability
+fallback, blocked-step containment, one confirmed-block recovery attempt, and a
+failed load-bearing prerequisite. `run_feedback_regression_scenarios` executes
+them as a separate block, or alone with `--feedback-regressions-only`. Before any
+of those five model calls, the harness copies the active profile to a temporary
+configuration root, rewrites its feedback locator to a temporary inbox, and
+requires `opencode debug agent` to resolve a sentinel from that custom directory.
+Failure to prove isolation stops the block before model invocation. The harness
+snapshots the real inbox and fails if it changes.
 
 Agent permission tests also resolve deployed agent metadata and verify that
 specific task allows override the catch-all deny. Autonomous scenarios cover both
@@ -142,6 +156,12 @@ cover scenario assertion helpers, missing scaffolds, duplicate sections, non-fin
 handoffs, and verdict-last parsing. They run in ordinary CI; live-model checks
 remain supplemental because they require the user's configured provider and
 consume model tokens.
+
+Behavioral evidence records its operating system. Missing macOS execution means
+macOS and cross-platform behavior remain unproven; it does not negate completed
+Linux implementation or Linux evidence. A macOS maintainer can install and
+restart the current profile, provision the project pyenv, and run only the five
+feedback regressions before recording that platform result.
 
 ### Python Test Framework: `unittest` Over `pytest`
 

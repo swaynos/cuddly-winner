@@ -129,6 +129,17 @@ Evidence classes:
 - **Never:** require the user to explicitly invoke Karpathy when Prometheus has identified measurable outcomes.
 - **Evidence:** B measurable-outcome scenario; S prompt/schema check.
 
+### UC-PRO-08: Load-bearing empirical prerequisites must hold
+
+- **Given:** a required core outcome depends on a measured acquisition, corpus,
+  calibration, or scale prerequisite.
+- **When:** local evidence or a contracted spike disproves that prerequisite.
+- **Then:** redesign or report a concrete planning blocker.
+- **Never:** publish the disproven scale or an undeclared degraded result as the
+  required outcome.
+- **Evidence:** B `prometheus-load-bearing-prerequisite.md` fixture scenario; S
+  prompt contract.
+
 ## Scaffold Publication
 
 ### UC-PUB-01: Scaffold shape is exact
@@ -204,8 +215,9 @@ or initialize Git.
 - **Never:** present metadata-only leads or intermediate records as a required
   full result, or stop before every requested outcome and exact final command
   pass are complete.
-- **Evidence:** B `autonomous-multiphase-continuation.md` live scenario; S
-  contract checks.
+- **Evidence:** B `autonomous-multiphase-continuation.md` and
+  `autonomous-runtime-entrypoint-completion.md` live scenarios; S contract
+  checks.
 
 ### UC-AUT-04: Material ambiguity returns to planning
 
@@ -264,7 +276,7 @@ or initialize Git.
 - **When:** Autonomous reaches that item during execution.
 - **Then:** stop at that item instead of completing downstream checklist items that causally depend on it, and report the blocker naming the exact worktree state and the next action needed to reach green or revert.
 - **Never:** keep editing unrelated downstream items that cannot pass until the blocker clears, or describe the resulting red or half-migrated tree as done, ready, or committable merely because the failure was reported honestly.
-- **Evidence:** S prompt/doc contract; B blocked-step scenario.
+- **Evidence:** S prompt/doc contract; B `autonomous-blocked-step.md` scenario.
 
 ### UC-AUT-11: Missing optional tool capabilities trigger a supported fallback
 
@@ -272,7 +284,8 @@ or initialize Git.
 - **When:** Autonomous reaches that tool-dependent item.
 - **Then:** inspect the available operation contract, use the supported fallback, and record the failed operation and fallback when they affect reproducibility.
 - **Never:** treat a missing convenience API as a structural blocker or stop before testing safe in-scope alternatives.
-- **Evidence:** S prompt/doc contract; B capability-fallback scenario.
+- **Evidence:** S prompt/doc contract; B `autonomous-capability-fallback.md`
+  scenario.
 
 ### UC-AUT-12: Confirmed blocks receive one safe recovery attempt
 
@@ -284,7 +297,8 @@ or initialize Git.
   next human action.
 - **Never:** loop, widen scope, relax acceptance criteria, bypass permissions, or
   treat an ordinary approval or planning handoff as a confirmed block.
-- **Evidence:** S agent prompt contract; B blocked recovery scenario.
+- **Evidence:** S agent prompt contract; B
+  `autonomous-confirmed-block-recovery.md` scenario.
 
 ### UC-AUT-13: Optional run KPIs preserve delivery rules
 
@@ -557,9 +571,11 @@ or initialize Git.
 
 - **Given:** current managed copies, repository symlinks, modifications, and unrelated entries.
 - **When:** status or remove runs without profile flags.
-- **Then:** inspect every group, record managed-agent ownership, and remove only
-  current matching copies or links plus a recorded retired agent during install
-  when its copy or symlink remains unchanged.
+- **Then:** inspect every group; distinguish current copies, stale or modified
+  copies, current links, foreign links, and missing entries; record managed-agent
+  ownership; flag and relocate discoverable managed-skill backups outside runtime
+  discovery; and remove only current matching copies or links plus a recorded
+  retired agent during install when its copy or symlink remains unchanged.
 - **Never:** remove modified or unrelated entries or migrate retired artifacts.
 - **Evidence:** F status/removal fixture.
 
@@ -578,6 +594,15 @@ or initialize Git.
 - **Then:** documentation instructs the user to restart.
 - **Never:** claim hot reload.
 - **Evidence:** S documentation check.
+
+### UC-DEP-07: Live validation refuses stale repository-profile claims
+
+- **Given:** the active managed profile differs from the source clone.
+- **When:** repository-profile live validation starts.
+- **Then:** stop before model invocation with install-and-restart guidance; an
+  explicit diagnostic mode may run but labels the result as active-profile-only.
+- **Never:** claim repository-profile validation from a drifting installation.
+- **Evidence:** U preflight/mode tests; B live profile run.
 
 ## Measured Spikes
 

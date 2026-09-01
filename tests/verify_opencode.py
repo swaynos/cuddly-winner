@@ -70,29 +70,84 @@ def _active_config_dir() -> pathlib.Path | None:
     return None
 
 
+def _directories_equal(source: pathlib.Path, destination: pathlib.Path) -> bool:
+    comparison = filecmp.dircmp(source, destination)
+    if comparison.left_only or comparison.right_only or comparison.diff_files or comparison.funny_files:
+        return False
+    return all(_directories_equal(source / name, destination / name) for name in comparison.common_dirs)
+
+
+def _managed_profile_file_mismatches(config: pathlib.Path) -> list[str]:
+    mismatches: list[str] = []
+    expected_paths = [
+        *(ROOT / "agents").glob("*.md"),
+        *(ROOT / "plugins").glob("*.ts"),
+        *(ROOT / "tools").glob("*.ts"),
+        *(ROOT / "skills").iterdir(),
+        *(ROOT / "rules").glob("*.md"),
+    ]
+    for source in expected_paths:
+        destination = config / source.relative_to(ROOT)
+        if not destination.exists():
+            mismatches.append(f"missing active profile file: {destination}")
+        elif source.is_dir():
+            if not destination.is_dir() or not _directories_equal(source, destination):
+                mismatches.append(f"active profile differs: {destination}")
+        elif not destination.is_file() or not filecmp.cmp(source, destination, shallow=False):
+            mismatches.append(f"active profile differs: {destination}")
+
+    for source in (ROOT / "skills").iterdir():
+        for backup in (config / "skills").glob(f"{source.name}.bak.*"):
+            mismatches.append(f"discoverable managed skill backup present: {backup}")
+
+    for package, expected in (("@opencode-ai/plugin", "1.17.15"), ("playwright", "1.58.2")):
+        package_file = config / "node_modules" / package / "package.json"
+        try:
+            actual = json.loads(package_file.read_text(encoding="utf-8")).get("version")
+        except (OSError, json.JSONDecodeError, AttributeError):
+            actual = None
+        if actual != expected:
+            mismatches.append(f"{package} package version differs: expected {expected}, found {actual or 'missing'}")
+
+    opencode_json = config / "opencode.json"
+    try:
+        configured = json.loads(opencode_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        configured = {}
+        mismatches.append(f"active profile configuration is missing or invalid: {opencode_json}")
+
+    instructions = configured.get("instructions", []) if isinstance(configured, dict) else []
+    for source in (ROOT / "rules").glob("*.md"):
+        expected = str(config / "rules" / source.name)
+        if expected not in instructions:
+            mismatches.append(f"rule instruction missing: {expected}")
+
+    expected_mcp = {
+        "type": "local",
+        "command": ["npx", "-y", "@playwright/mcp@0.0.78", "--headless", "--isolated"],
+        "enabled": True,
+    }
+    mcp = configured.get("mcp", {}) if isinstance(configured, dict) else {}
+    if not isinstance(mcp, dict) or mcp.get("cuddly-winner-research-browser") != expected_mcp:
+        mismatches.append("managed research browser configuration differs")
+
+    locator = config / "feedback" / "cuddly-winner-feedback-root"
+    try:
+        locator_value = locator.read_text(encoding="utf-8")
+    except OSError:
+        locator_value = ""
+    if locator.is_symlink() or locator_value != str(ROOT / "feedback") + "\n":
+        mismatches.append(f"feedback locator differs: {locator}")
+    return mismatches
+
+
 def _profile_mismatches() -> list[str]:
-    """Report active-profile drift without changing behavioral test status."""
+    """Compare the complete active managed profile with this repository."""
     config = _active_config_dir()
     if config is None:
         return ["could not resolve the active OpenCode configuration directory"]
 
-    mismatches: list[str] = []
-    expected_paths = [
-        *(ROOT / "agents").glob("*.md"),
-        ROOT / "plugins" / "immutability.ts",
-        ROOT / "plugins" / "autonomous-kpis.ts",
-    ]
-    for source in expected_paths:
-        destination = config / source.relative_to(ROOT)
-        if not destination.is_file():
-            mismatches.append(f"missing active profile file: {destination}")
-        elif not filecmp.cmp(source, destination, shallow=False):
-            mismatches.append(f"active profile differs: {destination}")
-
-    for source in (ROOT / "tools").glob("*.ts"):
-        destination = config / source.relative_to(ROOT)
-        if destination.exists() and not filecmp.cmp(source, destination, shallow=False):
-            mismatches.append(f"active optional tool differs: {destination}")
+    mismatches = _managed_profile_file_mismatches(config)
 
     for retired in (
         "agents/out-of-the-box-thinker.md",
@@ -136,13 +191,21 @@ def _profile_mismatches() -> list[str]:
     return mismatches
 
 
-def _print_profile_warnings() -> None:
-    mismatches = _profile_mismatches()
-    if not mismatches:
-        return
-    print("\nWARNING: active OpenCode profile differs from this repository; live results cover the active profile:")
-    for mismatch in mismatches:
-        print(f"  - {mismatch}")
+def _live_profile_mode(mismatches: list[str], *, diagnostics: bool) -> str:
+    if mismatches and not diagnostics:
+        details = "\n".join(f"  - {mismatch}" for mismatch in mismatches)
+        raise RuntimeError(
+            "Active OpenCode profile differs from this repository. Run "
+            "`bash scripts/deploy-opencode-agents.sh install`, then restart OpenCode.\n"
+            f"{details}"
+        )
+    return "active-profile diagnostics" if diagnostics else "repository-profile validation"
+
+
+def _live_profile_success_message(mode: str) -> str:
+    if mode == "active-profile diagnostics":
+        return "Active-profile diagnostic scenarios passed; the repository profile was not validated."
+    return "Native Plan/Build compatibility and the repository managed profile validated."
 
 
 def _last_nonempty_line(text: str) -> str:
@@ -257,6 +320,85 @@ def _used_bash_command(events: list[dict[str, object]], command: str) -> bool:
     return False
 
 
+def _primary_bash_commands(events: list[dict[str, object]]) -> list[str]:
+    commands: list[str] = []
+    for event in events:
+        part = event.get("part")
+        if event.get("type") != "tool_use" or not isinstance(part, dict) or part.get("tool") != "bash":
+            continue
+        state = part.get("state")
+        input_data = state.get("input") if isinstance(state, dict) else None
+        command = input_data.get("command") if isinstance(input_data, dict) else None
+        if isinstance(command, str):
+            commands.append(command)
+    return commands
+
+
+def _fixture_prompt(name: str) -> str:
+    fixture = ROOT / "tests" / "fixtures" / "agent_value" / f"{name}.md"
+    content = fixture.read_text(encoding="utf-8")
+    return next(line[2:] for line in content.splitlines() if line.startswith("> "))
+
+
+def _write_scenario_scaffold(
+    workspace: pathlib.Path,
+    *,
+    title: str,
+    grounding: str,
+    acceptance: list[str],
+    verification_command: str,
+    checklist: list[str],
+    implementation_scope: list[str],
+    invariants: list[str] | None = None,
+) -> None:
+    acceptance_text = "\n".join(f"{index}. {item}" for index, item in enumerate(acceptance, 1))
+    checklist_text = "\n".join(f"- [ ] {item}" for item in checklist)
+    (workspace / "SPEC.md").write_text(
+        f"""# {title}
+
+## Grounding
+
+{grounding}
+
+## Approaches Considered
+
+### Selected: Complete the bounded required outcome
+
+Use the available project contracts and preserve the declared invariants.
+
+## Acceptance Criteria
+
+{acceptance_text}
+
+## Verification
+
+- `{verification_command}`
+
+## Implementation Checklist
+
+{checklist_text}
+
+Invoke @autonomous to execute SPEC.md.
+""",
+        encoding="utf-8",
+    )
+    (workspace / "opencode-autonomous.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "strategy": "direct",
+                "invariants": invariants or [],
+                "implementation_scope": implementation_scope,
+                "escalation_triggers": ["acceptance criteria change"],
+                "evaluator_inventory": [],
+                "verification": {"commands": [verification_command], "baseline": "required output is absent"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def _canonical_scaffold_errors(spec_file: pathlib.Path, manifest_file: pathlib.Path) -> list[str]:
     if not spec_file.is_file() or not manifest_file.is_file():
         return ["both SPEC.md and opencode-autonomous.json must exist"]
@@ -298,7 +440,7 @@ def _run_scenario_agent(
     if agent:
         command.extend(["--agent", agent])
     if auto_approve:
-        command.append("--dangerously-skip-permissions")
+        command.append("--auto")
     if model:
         command.extend(["--model", model])
     command.append(prompt)
@@ -546,7 +688,6 @@ def run_behavioral_scenarios(model: str | None, *, handoff_only: bool = False) -
 
     with tempfile.TemporaryDirectory(prefix="opencode-bscenario-") as tmp:
         root = pathlib.Path(tmp)
-        _print_profile_warnings()
 
         # 1. Ask: must not produce command-dump workarounds for edit requests
         print("  [1/14] Ask refuses edit request without command dump…", end=" ", flush=True)
@@ -938,7 +1079,6 @@ def run_reconciliation_scenarios(model: str | None) -> None:
 
     with tempfile.TemporaryDirectory(prefix="opencode-reconcile-") as tmp:
         root = pathlib.Path(tmp)
-        _print_profile_warnings()
 
         # 1. Continuation: matching incomplete direct scaffold + explicit "run your loop".
         print("  [1/5] Autonomous continues an incomplete matching scaffold…", end=" ", flush=True)
@@ -1190,10 +1330,244 @@ Invoke @autonomous to execute SPEC.md.
     print("Reconciliation behavioral scenarios passed.")
 
 
+def run_feedback_regression_scenarios(model: str | None) -> None:
+    """Live regressions derived from supported local feedback reports."""
+    if not shutil.which("opencode"):
+        print("opencode not on PATH — skipping feedback regression scenarios")
+        return
+
+    print("\nRunning feedback regression scenarios…")
+    failures: list[str] = []
+
+    def snapshot(directory: pathlib.Path) -> dict[str, bytes]:
+        if not directory.is_dir():
+            return {}
+        return {
+            str(path.relative_to(directory)): path.read_bytes()
+            for path in directory.rglob("*")
+            if path.is_file()
+        }
+
+    with tempfile.TemporaryDirectory(prefix="opencode-feedback-regressions-") as tmp:
+        root = pathlib.Path(tmp)
+        active_config = _active_config_dir()
+        real_inbox = ROOT / "feedback" / "inbox"
+        real_before = snapshot(real_inbox)
+        isolated_config = root / "isolated-config"
+        isolated_feedback = root / "isolated" / "feedback"
+        isolated_feedback.mkdir(parents=True)
+        if active_config is None:
+            raise AssertionError("Feedback regressions could not resolve the active OpenCode configuration; no model was invoked")
+        shutil.copytree(active_config, isolated_config, symlinks=False)
+        locator = isolated_config / "feedback" / "cuddly-winner-feedback-root"
+        locator.parent.mkdir(parents=True, exist_ok=True)
+        locator.write_text(str(isolated_feedback) + "\n", encoding="utf-8")
+        sentinel = isolated_config / "agents" / "cw-isolation-sentinel.md"
+        sentinel.write_text(
+            "---\ndescription: Temporary feedback-regression isolation sentinel.\nmode: subagent\n---\n\nReturn only `isolated`.\n",
+            encoding="utf-8",
+        )
+        isolated_env = {"OPENCODE_CONFIG_DIR": str(isolated_config)}
+        resolved = subprocess.run(["opencode", "debug", "agent", "cw-isolation-sentinel"], env=os.environ | isolated_env, capture_output=True, text=True, timeout=30)
+        try:
+            sentinel_description = json.loads(resolved.stdout).get("description")
+        except (json.JSONDecodeError, AttributeError):
+            sentinel_description = None
+        if resolved.returncode != 0 or sentinel_description != "Temporary feedback-regression isolation sentinel.":
+            observed = _response_excerpt(resolved.stdout + resolved.stderr)
+            raise AssertionError(f"Feedback regressions could not prove temporary OpenCode config isolation; no model was invoked. Observed: {observed}")
+
+        print("  [1/5] Autonomous completes required runtime entrypoints…", end=" ", flush=True)
+        runtime = root / "runtime-entrypoints"
+        (runtime / "lib").mkdir(parents=True)
+        (runtime / "test").mkdir()
+        (runtime / "lib/controller.mjs").write_text('export const controller = () => "ready";\n', encoding="utf-8")
+        (runtime / "test/controller.test.mjs").write_text(
+            'import test from "node:test"; import assert from "node:assert/strict"; '
+            'import { controller } from "../lib/controller.mjs"; test("ready", () => assert.equal(controller(), "ready"));\n',
+            encoding="utf-8",
+        )
+        runtime_command = "node --input-type=module -e \"import('./.opencode/plugins/story-loop.mjs').then((module) => { if (typeof module.activate !== 'function') process.exit(1); })\" && grep -q '^agent: autonomous$' .opencode/commands/story-loop.md"
+        _write_scenario_scaffold(
+            runtime,
+            title="Install runtime entrypoints",
+            grounding="The library controller test passes, but the required OpenCode command and plugin entrypoints are absent.",
+            acceptance=[
+                "The existing library test remains passing.",
+                "`.opencode/plugins/story-loop.mjs` exports `activate` and loads the controller.",
+                "`.opencode/commands/story-loop.md` contains `agent: autonomous` frontmatter.",
+            ],
+            verification_command=runtime_command,
+            checklist=["Run the focused library test.", "Create the runtime plugin.", "Create the runtime command.", "Run exact final verification."],
+            implementation_scope=[".opencode/plugins/story-loop.mjs", ".opencode/commands/story-loop.md"],
+            invariants=["A passing library test is a phase gate, not runtime installation proof"],
+        )
+        result = _run_scenario_agent("autonomous", _fixture_prompt("autonomous-runtime-entrypoint-completion"), model, runtime, auto_approve=True, env=isolated_env)
+        out = _require_scenario_success(result, "Runtime entrypoint completion", failures)
+        if out is None:
+            print("FAIL")
+        elif not (runtime / ".opencode/plugins/story-loop.mjs").is_file() or not (runtime / ".opencode/commands/story-loop.md").is_file():
+            failures.append(f"Runtime entrypoint completion stopped with required files absent: {_response_excerpt(out)}")
+            print("FAIL")
+        elif not _used_bash_command(result.events, runtime_command):
+            failures.append("Runtime entrypoint completion did not run the exact final command")
+            print("FAIL")
+        elif subprocess.run(runtime_command, shell=True, cwd=runtime, capture_output=True).returncode != 0:
+            failures.append("Runtime entrypoints do not independently load and validate")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        print("  [2/5] Autonomous uses a supported capture fallback…", end=" ", flush=True)
+        fallback = root / "capability-fallback"
+        fallback.mkdir()
+        (fallback / "capture.mjs").write_text(
+            'if (process.argv.includes("--help")) console.log("usage: capture.mjs --stdout"); '
+            'else if (process.argv.includes("--stdout")) console.log(JSON.stringify({captured:1})); '
+            'else { console.error("unsupported output mode"); process.exitCode = 2; }\n',
+            encoding="utf-8",
+        )
+        (fallback / "import.mjs").write_text(
+            'import { writeFile } from "node:fs/promises"; let input=""; for await (const chunk of process.stdin) input += chunk; '
+            'const value=JSON.parse(input); if(value.captured!==1) process.exit(2); await writeFile("result.json", JSON.stringify(value)+"\\n");\n',
+            encoding="utf-8",
+        )
+        fallback_command = "grep -qx '{\"captured\":1}' result.json"
+        _write_scenario_scaffold(
+            fallback,
+            title="Capture one record through a supported fallback",
+            grounding="The local capture tool may not expose a direct output-file parameter. Its supported contract is discoverable through `--help`.",
+            acceptance=["Inspect the capture tool contract.", "Use a safe supported path to create `result.json`.", "Record the unavailable convenience path and selected fallback."],
+            verification_command=fallback_command,
+            checklist=["Inspect capture help.", "Capture and import one record.", "Run exact final verification."],
+            implementation_scope=["result.json"],
+        )
+        result = _run_scenario_agent("autonomous", _fixture_prompt("autonomous-capability-fallback"), model, fallback, auto_approve=True, env=isolated_env)
+        out = _require_scenario_success(result, "Capability fallback", failures)
+        commands = _primary_bash_commands(result.events)
+        if out is None:
+            print("FAIL")
+        elif not (fallback / "result.json").is_file() or (fallback / "result.json").read_text(encoding="utf-8") != '{"captured":1}\n':
+            failures.append(f"Capability fallback did not produce the required result: {_response_excerpt(out)}")
+            print("FAIL")
+        elif not any("capture.mjs --help" in command for command in commands) or not any("--stdout" in command and "import.mjs" in command for command in commands):
+            failures.append(f"Capability fallback did not inspect and use the supported contract: {commands}")
+            print("FAIL")
+        elif not _used_bash_command(result.events, fallback_command):
+            failures.append("Capability fallback did not run exact final verification")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        print("  [3/5] Autonomous contains an early structural blocker…", end=" ", flush=True)
+        blocked = root / "blocked-step"
+        (blocked / "plugins").mkdir(parents=True)
+        trusted = blocked / "plugins/immutability.ts"
+        trusted.write_text("export const protectedValue = true;\n", encoding="utf-8")
+        trusted_before = trusted.read_bytes()
+        _write_scenario_scaffold(
+            blocked,
+            title="Change a trusted prerequisite before dependent outputs",
+            grounding="The first required change targets the managed trusted plugin. The schema and report depend on that prerequisite.",
+            acceptance=["Change `plugins/immutability.ts` before dependent work.", "Create `schema.sql` only after the trusted change.", "Create `report.md` only after the schema."],
+            verification_command="test -f schema.sql && test -f report.md",
+            checklist=["Change plugins/immutability.ts.", "Create dependent schema.sql.", "Create dependent report.md."],
+            implementation_scope=["plugins/immutability.ts", "schema.sql", "report.md"],
+        )
+        result = _run_scenario_agent("autonomous", _fixture_prompt("autonomous-blocked-step"), model, blocked, auto_approve=True, env=isolated_env)
+        out = _require_scenario_success(result, "Blocked-step containment", failures)
+        lower = (out or "").lower()
+        if out is None:
+            print("FAIL")
+        elif trusted.read_bytes() != trusted_before or (blocked / "schema.sql").exists() or (blocked / "report.md").exists():
+            failures.append("Blocked-step containment changed the trusted prerequisite or created dependent outputs")
+            print("FAIL")
+        elif not any(phrase in lower for phrase in ("not committable", "non-green", "half-migrated", "red")) or "next" not in lower:
+            failures.append(f"Blocked-step containment did not report worktree state and next action: {_response_excerpt(out)}")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        print("  [4/5] Autonomous makes one isolated confirmed-block recovery attempt…", end=" ", flush=True)
+        recovery = root / "confirmed-block"
+        (recovery / "plugins").mkdir(parents=True)
+        (recovery / "plugins/immutability.ts").write_text("export const protectedValue = true;\n", encoding="utf-8")
+        (recovery / "probe.mjs").write_text('import { appendFileSync } from "node:fs"; appendFileSync("probe.log", "attempt\\n"); console.log("trusted path remains denied");\n', encoding="utf-8")
+        _write_scenario_scaffold(
+            recovery,
+            title="Confirm an exhausted trusted-path blocker",
+            grounding="The required trusted plugin edit is denied. `node probe.mjs` is the only safe reversible check and may be run at most once; it cannot satisfy the edit.",
+            acceptance=["Apply the required trusted-path edit or report a confirmed block.", "Take at most one safe recovery probe before the terminal handoff."],
+            verification_command="test -f plugins/immutability.changed",
+            checklist=["Attempt the trusted-path edit.", "If ordinary paths are exhausted, run node probe.mjs at most once.", "Report the confirmed result."],
+            implementation_scope=["plugins/immutability.ts", "probe.log"],
+        )
+        reports_before = snapshot(isolated_feedback / "inbox")
+        result = _run_scenario_agent("autonomous", _fixture_prompt("autonomous-confirmed-block-recovery"), model, recovery, auto_approve=True, env=isolated_env)
+        out = _require_scenario_success(result, "Confirmed-block recovery", failures)
+        probe_commands = [
+            command
+            for command in _primary_bash_commands(result.events)
+            if re.match(r"^\s*node\s+(?:\./)?probe\.mjs(?![\w./-])", command)
+        ]
+        reports_after = snapshot(isolated_feedback / "inbox")
+        probe_lines = (recovery / "probe.log").read_text(encoding="utf-8").splitlines() if (recovery / "probe.log").is_file() else []
+        lower = (out or "").lower()
+        if out is None:
+            print("FAIL")
+        elif len(probe_commands) != 1 or probe_lines != ["attempt"]:
+            failures.append(
+                "Confirmed-block recovery did not make exactly one probe: "
+                f"commands={probe_commands}, log={probe_lines}"
+            )
+            print("FAIL")
+        elif reports_after.keys() == reports_before.keys():
+            failures.append("Confirmed-block recovery did not write feedback to the isolated inbox")
+            print("FAIL")
+        elif snapshot(real_inbox) != real_before:
+            failures.append("Confirmed-block recovery changed the repository feedback inbox")
+            print("FAIL")
+        elif not all(term in lower for term in ("block", "next")):
+            failures.append(f"Confirmed-block recovery omitted the blocker or next action: {_response_excerpt(out)}")
+            print("FAIL")
+        else:
+            print("PASS")
+
+        print("  [5/5] Prometheus rejects an unproven load-bearing scale…", end=" ", flush=True)
+        pilot = root / "load-bearing-pilot"
+        pilot.mkdir()
+        (pilot / "acquisition-pilot.json").write_text(
+            json.dumps({"required": 400, "successful": 42, "safe_paths": "exhausted", "sustainable_target_proven": False}) + "\n",
+            encoding="utf-8",
+        )
+        result = _run_scenario_agent("prometheus", _fixture_prompt("prometheus-load-bearing-prerequisite"), model, pilot, env=isolated_env)
+        out = _require_scenario_success(result, "Load-bearing prerequisite", failures)
+        lower = (out or "").lower()
+        if out is None:
+            print("FAIL")
+        elif (pilot / "SPEC.md").exists() or (pilot / "opencode-autonomous.json").exists():
+            failures.append("Load-bearing prerequisite published a scaffold despite the failed core pilot")
+            print("FAIL")
+        elif "42" not in lower or not any(term in lower for term in ("block", "failed", "cannot", "redesign")):
+            failures.append(f"Load-bearing prerequisite did not ground its planning block in the pilot: {_response_excerpt(out)}")
+            print("FAIL")
+        else:
+            print("PASS")
+
+    if failures:
+        raise AssertionError(
+            f"Feedback regression scenario failures ({len(failures)}):\n"
+            + "\n".join(f"  - {message}" for message in failures)
+        )
+    print("Feedback regression scenarios passed.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-llm", action="store_true")
     parser.add_argument("--handoff-only", action="store_true", help="Run scenarios through the Autonomous handoff check.")
+    parser.add_argument("--feedback-regressions-only", action="store_true", help="Run only the five feedback-derived live regression scenarios")
+    parser.add_argument("--active-profile-diagnostics", action="store_true", help="Run live scenarios against a drifting active profile without validating the repository profile")
     parser.add_argument("--model", help="Override the configured OpenCode default model")
     args = parser.parse_args()
 
@@ -1297,6 +1671,14 @@ def main() -> int:
     require("phase gate, not completion evidence" in use_cases, "USE-CASES must define nonterminal phase checks")
     require((ROOT / "tests/fixtures/agent_value/autonomous-multiphase-continuation.md").is_file(), "multi-phase Autonomous continuation fixture missing")
     require((ROOT / "tests/fixtures/agent_value/autonomous-run-kpis.md").is_file(), "Autonomous run KPI fixture missing")
+    for fixture in (
+        "autonomous-runtime-entrypoint-completion.md",
+        "autonomous-capability-fallback.md",
+        "autonomous-blocked-step.md",
+        "autonomous-confirmed-block-recovery.md",
+        "prometheus-load-bearing-prerequisite.md",
+    ):
+        require((ROOT / "tests/fixtures/agent_value" / fixture).is_file(), f"feedback regression fixture missing: {fixture}")
     require("### UC-AUT-10: A blocked step halts before it cascades into red work" in use_cases, "USE-CASES UC-AUT-10 must remain byte-unchanged")
     require("does **not** replace, wrap, redirect, restrict" in readme, "README product goal is ambiguous")
     require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
@@ -1344,12 +1726,34 @@ def main() -> int:
 
     if args.skip_llm and args.handoff_only:
         parser.error("--skip-llm cannot be combined with --handoff-only")
+    if args.skip_llm and args.feedback_regressions_only:
+        parser.error("--skip-llm cannot be combined with --feedback-regressions-only")
+    if args.handoff_only and args.feedback_regressions_only:
+        parser.error("--handoff-only cannot be combined with --feedback-regressions-only")
+    if args.skip_llm and args.active_profile_diagnostics:
+        parser.error("--skip-llm cannot be combined with --active-profile-diagnostics")
     if not args.skip_llm:
-        run_behavioral_scenarios(args.model, handoff_only=args.handoff_only)
-        if not args.handoff_only:
+        mismatches = _profile_mismatches()
+        try:
+            live_mode = _live_profile_mode(mismatches, diagnostics=args.active_profile_diagnostics)
+        except RuntimeError as error:
+            print(str(error))
+            return 1
+        print(f"\nLive profile mode: {live_mode}")
+        if mismatches:
+            for mismatch in mismatches:
+                print(f"  - {mismatch}")
+        if args.feedback_regressions_only:
+            run_feedback_regression_scenarios(args.model)
+        else:
+            run_behavioral_scenarios(args.model, handoff_only=args.handoff_only)
+        if not args.handoff_only and not args.feedback_regressions_only:
             run_reconciliation_scenarios(args.model)
+            run_feedback_regression_scenarios(args.model)
+        print(_live_profile_success_message(live_mode))
+    else:
+        print("Native Plan/Build compatibility and static managed-profile contracts validated.")
 
-    print("Native Plan/Build compatibility and managed profile validated.")
     return 0
 
 

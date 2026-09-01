@@ -58,12 +58,18 @@ bash scripts/deploy-opencode-agents.sh install
 See [SKILLS.md](docs/SKILLS.md) for the catalog and
 [CONTRIBUTING.md](CONTRIBUTING.md) for the process to add or change a skill.
 
-Use `status` to inspect all managed entries and `remove` to remove current
-byte-identical copies or repository symlinks while preserving modifications. Use
-`--mode symlink` for a live development install. Override the OpenCode root with
-`--config-dir` or `OPENCODE_DEPLOY_CONFIG_DIR`; all destination directories
-derive from that one root. OpenCode loads agents, tools, and plugins at startup,
-so restart it after changes.
+Use `status` to inspect all managed entries. It distinguishes current copies,
+stale or modified copies, current repository links, foreign links, and missing
+entries, then states whether managed entries are current or require installation
+and restart. Backups are stored under `<config_dir>/backups/`, outside OpenCode's
+agent, plugin, tool, skill, and rule discovery directories. Status flags older
+managed skill backups that remain discoverable, and install relocates them
+without deleting them. `remove` deletes only current byte-identical copies or repository
+links while preserving modifications. Use `--mode symlink` for a live
+development install. Override the OpenCode root with `--config-dir` or
+`OPENCODE_DEPLOY_CONFIG_DIR`; all destination directories derive from that one
+root. OpenCode loads agents, tools, and plugins at startup, so restart it after
+changes.
 
 ## Local Feedback
 
@@ -187,3 +193,12 @@ Skill coverage validates packaged skills and a temporary deployed copy without
 model credentials. The separate pressure suite remains optional live-model
 evidence. The audit command validates its CLI only; auditing a recorded session
 also requires `--project` and an OpenCode database.
+
+Live managed-agent scenarios fail before model invocation when the active
+profile differs from this clone. Run the installer and restart OpenCode first.
+`--active-profile-diagnostics` intentionally exercises a drifting active profile
+but never validates the repository profile. The five feedback-derived scenarios
+can be run alone with `tests/verify_opencode.py --feedback-regressions-only`.
+Platform results are recorded separately: missing macOS evidence prevents a
+macOS or cross-platform validation claim, not completion of Linux implementation
+and deterministic checks.

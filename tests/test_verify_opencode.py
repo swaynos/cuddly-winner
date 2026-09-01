@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import pathlib
+import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,6 +15,78 @@ import verify_opencode
 
 
 class BehavioralAssertionTests(unittest.TestCase):
+    def test_live_profile_preflight_fails_closed_by_default(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "install.*restart OpenCode"):
+            verify_opencode._live_profile_mode(["active profile differs"], diagnostics=False)
+
+    def test_live_profile_preflight_labels_diagnostic_runs(self) -> None:
+        self.assertEqual(
+            verify_opencode._live_profile_mode(["active profile differs"], diagnostics=True),
+            "active-profile diagnostics",
+        )
+        self.assertEqual(
+            verify_opencode._live_profile_mode([], diagnostics=False),
+            "repository-profile validation",
+        )
+        self.assertNotIn(
+            "repository profile validated",
+            verify_opencode._live_profile_success_message("active-profile diagnostics").lower(),
+        )
+
+    def test_managed_profile_inventory_detects_tools_skills_rules_runtime_and_wiring(self) -> None:
+        root = pathlib.Path(__file__).parents[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            config = pathlib.Path(temporary)
+            for directory in ("agents", "plugins", "tools", "skills", "rules"):
+                shutil.copytree(root / directory, config / directory)
+            for package, version in (("@opencode-ai/plugin", "1.17.15"), ("playwright", "1.58.2")):
+                target = config / "node_modules" / package / "package.json"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps({"version": version}), encoding="utf-8")
+            rule_paths = [str(config / "rules" / source.name) for source in (root / "rules").glob("*.md")]
+            (config / "opencode.json").write_text(
+                json.dumps(
+                    {
+                        "instructions": rule_paths,
+                        "mcp": {
+                            "cuddly-winner-research-browser": {
+                                "type": "local",
+                                "command": ["npx", "-y", "@playwright/mcp@0.0.78", "--headless", "--isolated"],
+                                "enabled": True,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            locator = config / "feedback" / "cuddly-winner-feedback-root"
+            locator.parent.mkdir()
+            locator.write_text(str(root / "feedback") + "\n", encoding="utf-8")
+
+            self.assertEqual(verify_opencode._managed_profile_file_mismatches(config), [])
+
+            shutil.copytree(
+                config / "skills" / "cuddly-winner-feedback",
+                config / "skills" / "cuddly-winner-feedback.bak.legacy",
+            )
+            (config / "tools" / "spike.ts").unlink()
+            (config / "skills" / "cuddly-winner-feedback" / "SKILL.md").write_text("drift\n", encoding="utf-8")
+            (config / "node_modules" / "playwright" / "package.json").write_text('{"version":"0"}', encoding="utf-8")
+            value = json.loads((config / "opencode.json").read_text(encoding="utf-8"))
+            value["instructions"] = []
+            value["mcp"]["cuddly-winner-research-browser"]["command"] = ["visible-browser"]
+            (config / "opencode.json").write_text(json.dumps(value), encoding="utf-8")
+            locator.write_text("/tmp/wrong-feedback\n", encoding="utf-8")
+
+            mismatches = verify_opencode._managed_profile_file_mismatches(config)
+            self.assertTrue(any("missing active profile file" in item and "spike.ts" in item for item in mismatches))
+            self.assertTrue(any("active profile differs" in item and "cuddly-winner-feedback" in item for item in mismatches))
+            self.assertTrue(any("discoverable managed skill backup present" in item for item in mismatches))
+            self.assertTrue(any("playwright package version differs" in item for item in mismatches))
+            self.assertTrue(any("rule instruction missing" in item for item in mismatches))
+            self.assertTrue(any("research browser configuration differs" in item for item in mismatches))
+            self.assertTrue(any("feedback locator differs" in item for item in mismatches))
+
     def test_autonomous_uses_a_concise_final_handoff(self) -> None:
         agent = (pathlib.Path(__file__).parents[1] / "agents" / "autonomous.md").read_text(
             encoding="utf-8"

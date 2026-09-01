@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -102,9 +102,10 @@ test("copy collisions are backed up and modified managed files survive removal",
   await writeFile(path.join(agents, "prometheus.md"), "user collision\n");
 
   await deployFixture(root);
-  const backups = (await readdir(agents)).filter(name => name.startsWith("prometheus.md.bak."));
+  const backupDir = path.join(config, "backups", "agents");
+  const backups = (await readdir(backupDir)).filter(name => name.startsWith("prometheus.md.bak."));
   assert.equal(backups.length, 1);
-  assert.equal(await readFile(path.join(agents, backups[0]), "utf8"), "user collision\n");
+  assert.equal(await readFile(path.join(backupDir, backups[0]), "utf8"), "user collision\n");
 
   await writeFile(path.join(agents, "prometheus.md"), "user modification\n");
   await writeFile(path.join(agents, "unrelated.md"), "keep\n");
@@ -150,10 +151,95 @@ test("install reconciles retired agents from its prior managed inventory", async
   assert.equal(await exists(retired), false);
 }));
 
-test("status reports every managed group without profile flags", async () => fixture(async root => {
+test("status classifies current and drifted managed entries without changing them", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  await deployFixture(root);
+
+  const current = await deployFixture(root, "status");
+  for (const label of ["Agents", "Plugins", "Workflow tools", "Skills"]) assert.match(current.stdout, new RegExp(`${label} dir:`));
+  assert.match(current.stdout, /\[current copy\].*autonomous\.md/);
+  assert.match(current.stdout, /\[current copy\].*systematic-debugging/);
+  assert.match(current.stdout, /Managed entries: current/);
+
+  const agents = path.join(config, "agents");
+  const autonomous = path.join(agents, "autonomous.md");
+  const prometheus = path.join(agents, "prometheus.md");
+  const ask = path.join(agents, "ask.md");
+  const karpathy = path.join(agents, "karpathy.md");
+  const reviewer = path.join(agents, "reviewer.md");
+  const grounder = path.join(agents, "grounder.md");
+  const validator = path.join(agents, "implementation-validator.md");
+
+  await writeFile(prometheus, "stale or locally modified\n");
+  await rm(ask);
+  await symlink(path.join(repo, "agents", "ask.md"), ask);
+  await rm(karpathy);
+  await symlink(path.relative(agents, path.join(repo, "agents", "karpathy.md")), karpathy);
+  await rm(reviewer);
+  await symlink(path.join(repo, "agents", "ask.md"), reviewer);
+  await rm(grounder);
+  await symlink(path.join(root, "missing-agent.md"), grounder);
+  await rm(validator);
+  await writeFile(path.join(config, "skills", "systematic-debugging", "SKILL.md"), "changed skill\n");
+
+  const before = {
+    autonomous: await readFile(autonomous, "utf8"),
+    prometheus: await readFile(prometheus, "utf8"),
+    ask: await lstat(ask).then(() => path.join(repo, "agents", "ask.md")),
+    karpathy: await lstat(karpathy).then(() => path.relative(agents, path.join(repo, "agents", "karpathy.md"))),
+    reviewer: await lstat(reviewer).then(() => path.join(repo, "agents", "ask.md")),
+  };
   const result = await deployFixture(root, "status");
-  for (const label of ["Agents", "Plugins", "Workflow tools", "Skills"]) assert.match(result.stdout, new RegExp(`${label} dir:`));
-  assert.match(result.stdout, /\[none\].*spike\.ts/);
+
+  assert.match(result.stdout, /\[current copy\].*autonomous\.md/);
+  assert.match(result.stdout, /\[stale or modified copy\].*prometheus\.md/);
+  assert.match(result.stdout, /\[current link\].*ask\.md/);
+  assert.match(result.stdout, /\[current link\].*karpathy\.md/);
+  assert.match(result.stdout, /\[foreign link\].*reviewer\.md/);
+  assert.match(result.stdout, /\[foreign link\].*grounder\.md/);
+  assert.match(result.stdout, /\[missing\].*implementation-validator\.md/);
+  assert.match(result.stdout, /\[stale or modified copy\].*systematic-debugging/);
+  assert.match(result.stdout, /Managed entries: drifted; run install, then restart OpenCode\./);
+
+  assert.equal(await readFile(autonomous, "utf8"), before.autonomous);
+  assert.equal(await readFile(prometheus, "utf8"), before.prometheus);
+  assert.equal((await lstat(ask)).isSymbolicLink(), true);
+  assert.equal((await lstat(karpathy)).isSymbolicLink(), true);
+  assert.equal((await lstat(reviewer)).isSymbolicLink(), true);
+  assert.equal(await exists(validator), false);
+}));
+
+test("status reports missing entries and remove accepts a relative repository link", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  const missing = await deployFixture(root, "status");
+  assert.match(missing.stdout, /\[missing\].*spike\.ts/);
+  assert.match(missing.stdout, /Managed entries: drifted; run install, then restart OpenCode\./);
+
+  await deployFixture(root);
+  const agents = path.join(config, "agents");
+  const ask = path.join(agents, "ask.md");
+  await rm(ask);
+  await symlink(path.relative(agents, path.join(repo, "agents", "ask.md")), ask);
+  await deployFixture(root, "remove");
+  assert.equal(await exists(ask), false);
+}));
+
+test("install relocates discoverable managed skill backups outside the skills directory", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  await deployFixture(root);
+  const skills = path.join(config, "skills");
+  const legacy = path.join(skills, "cuddly-winner-feedback.bak.legacy");
+  await cp(path.join(skills, "cuddly-winner-feedback"), legacy, { recursive: true });
+
+  const status = await deployFixture(root, "status");
+  assert.match(status.stdout, /\[discoverable backup\].*cuddly-winner-feedback\.bak\.legacy/);
+  assert.match(status.stdout, /Managed entries: drifted/);
+  assert.equal(await exists(legacy), true);
+
+  const installed = await deployFixture(root);
+  assert.match(installed.stdout, /Relocated discoverable backup:/);
+  assert.equal(await exists(legacy), false);
+  assert.equal(await exists(path.join(config, "backups", "skills", "cuddly-winner-feedback.bak.legacy")), true);
 }));
 
 test("retired and per-category configuration flags are rejected", async () => fixture(async root => {

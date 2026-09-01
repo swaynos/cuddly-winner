@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SDK_VERSION="1.17.15"
 PLAYWRIGHT_VERSION="1.58.2"
+MANAGED_ENTRY_DRIFT=0
 
 usage() {
   cat <<'EOF'
@@ -64,20 +65,46 @@ entries_equal() {
   fi
 }
 
+links_equal() {
+  local src="$1"
+  local dst="$2"
+  [[ -L "$dst" ]] || return 1
+  node -e '
+    const { readlinkSync } = require("node:fs");
+    const { dirname, resolve } = require("node:path");
+    const [source, destination] = process.argv.slice(1);
+    const target = resolve(dirname(destination), readlinkSync(destination));
+    process.exit(target === resolve(source) ? 0 : 1);
+  ' "$src" "$dst"
+}
+
 entry_status() {
-  local dst="$1"
+  local src="$1"
+  local dst="$2"
   if [[ -L "$dst" ]]; then
-    printf '  [link] %s -> %s\n' "$dst" "$(readlink "$dst" || true)"
+    if links_equal "$src" "$dst"; then
+      printf '  [current link] %s -> %s\n' "$dst" "$(readlink "$dst" || true)"
+    else
+      printf '  [foreign link] %s -> %s\n' "$dst" "$(readlink "$dst" || true)"
+      MANAGED_ENTRY_DRIFT=1
+    fi
+  elif entries_equal "$src" "$dst"; then
+    printf '  [current copy] %s\n' "$dst"
   elif [[ -e "$dst" ]]; then
-    printf '  [copy] %s\n' "$dst"
+    printf '  [stale or modified copy] %s\n' "$dst"
+    MANAGED_ENTRY_DRIFT=1
   else
-    printf '  [none] %s\n' "$dst"
+    printf '  [missing] %s\n' "$dst"
+    MANAGED_ENTRY_DRIFT=1
   fi
 }
 
 backup_entry() {
   local dst="$1"
-  local backup="${dst}.bak.$(date +%Y%m%d%H%M%S).$$"
+  local relative="${dst#"${CONFIG_DIR}/"}"
+  local backup_dir="${CONFIG_DIR}/backups/$(dirname "$relative")"
+  local backup="${backup_dir}/$(basename "$dst").bak.$(date +%Y%m%d%H%M%S).$$"
+  mkdir -p "$backup_dir"
   mv "$dst" "$backup"
   printf 'Backed up existing entry: %s -> %s\n' "$dst" "$backup"
 }
@@ -89,13 +116,13 @@ sync_entry() {
   local dst="$4"
 
   if [[ "$action" == "status" ]]; then
-    entry_status "$dst"
+    entry_status "$src" "$dst"
     return
   fi
 
   if [[ "$action" == "remove" ]]; then
     if [[ -L "$dst" ]]; then
-      if [[ "$(readlink "$dst" || true)" == "$src" ]]; then
+      if links_equal "$src" "$dst"; then
         rm -f "$dst"
         printf 'Removed link: %s\n' "$dst"
       else
@@ -112,7 +139,7 @@ sync_entry() {
 
   mkdir -p "$(dirname "$dst")"
   if [[ "$mode" == "symlink" ]]; then
-    if [[ -L "$dst" && "$(readlink "$dst" || true)" == "$src" ]]; then
+    if links_equal "$src" "$dst"; then
       printf 'Unchanged: %s\n' "$dst"
       return
     fi
@@ -155,6 +182,28 @@ sync_group() {
   done
 }
 
+sync_discoverable_skill_backups() {
+  local backup target source name
+  local backups=()
+  shopt -s nullglob
+  for source in "${SKILL_SOURCES[@]}"; do
+    name="$(basename "$source")"
+    backups+=("${SKILLS_DIR}/${name}.bak."*)
+  done
+  shopt -u nullglob
+  for backup in "${backups[@]}"; do
+    if [[ "$ACTION" == "status" ]]; then
+      printf '  [discoverable backup] %s\n' "$backup"
+      MANAGED_ENTRY_DRIFT=1
+    elif [[ "$ACTION" == "install" ]]; then
+      target="${CONFIG_DIR}/backups/skills/$(basename "$backup")"
+      mkdir -p "$(dirname "$target")"
+      mv "$backup" "$target"
+      printf 'Relocated discoverable backup: %s -> %s\n' "$backup" "$target"
+    fi
+  done
+}
+
 sync_retired_agents() {
   local state_file="$1"
   local name source expected_sha256 dst
@@ -167,7 +216,7 @@ sync_retired_agents() {
     [[ -n "$name" ]] || continue
     dst="${AGENTS_DIR}/${name}"
     if [[ "$ACTION" == "status" ]]; then
-      if [[ -L "$dst" && "$(readlink "$dst" || true)" == "$source" ]]; then
+      if links_equal "$source" "$dst"; then
         printf '  [retired link] %s -> %s\n' "$dst" "$source"
       elif [[ -f "$dst" ]] && [[ "$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"))' "$dst")" == "$expected_sha256" ]]; then
         printf '  [retired copy] %s\n' "$dst"
@@ -175,7 +224,7 @@ sync_retired_agents() {
         printf '  [modified or unrelated] %s\n' "$dst"
       fi
     elif [[ "$ACTION" == "install" ]]; then
-      if [[ -L "$dst" && "$(readlink "$dst" || true)" == "$source" ]] || [[ -f "$dst" && "$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"))' "$dst")" == "$expected_sha256" ]]; then
+      if links_equal "$source" "$dst" || [[ -f "$dst" && "$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"))' "$dst")" == "$expected_sha256" ]]; then
         rm -f "$dst"
         printf 'Removed retired agent: %s\n' "$dst"
       elif [[ -e "$dst" || -L "$dst" ]]; then
@@ -370,7 +419,15 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"
   sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
   sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
+  sync_discoverable_skill_backups
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
+  if [[ "$ACTION" == "status" ]]; then
+    if [[ "$MANAGED_ENTRY_DRIFT" == 0 ]]; then
+      printf 'Managed entries: current\n'
+    else
+      printf 'Managed entries: drifted; run install, then restart OpenCode.\n'
+    fi
+  fi
   sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
   node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
   sync_feedback_locator
@@ -384,6 +441,7 @@ sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@
 sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"
 sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
+sync_discoverable_skill_backups
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
 sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"

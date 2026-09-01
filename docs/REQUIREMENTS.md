@@ -332,9 +332,14 @@ The installer accepts one configuration root from `--config-dir`,
 `OPENCODE_DEPLOY_CONFIG_DIR`, or `opencode debug paths`, in that order. Agent,
 plugin, tool, and skill destinations are fixed subdirectories of that root.
 Copy and symlink modes are supported. Status and removal inspect every current
-managed entry. Removal deletes only links
-to current repository sources or current byte-identical copies; modified and
-unrelated entries are preserved.
+managed entry. Status distinguishes current copies, stale or modified copies,
+current repository links (including equivalent relative links), foreign links,
+and missing entries, and reports whether installation plus restart is required.
+Collision backups live outside runtime discovery. Status flags older managed
+skill backups that remain under `skills/`, and install preserves them by moving
+them to the non-discoverable backup tree.
+Removal deletes only links to current repository sources or current
+byte-identical copies; modified and unrelated entries are preserved.
 
 The retired `--with-autonomous`, `--with-tools`, `--with-workflow-tools`,
 `--with-skills`, per-category path overrides, source overrides, and local
@@ -415,3 +420,13 @@ audit checks, mutation-runner behavior, additive deployment and
 safe removal, and documentation consistency, following the evidence requirements
 defined in `docs/TEST-PLAN.md` and `docs/TESTING-METHODOLOGY.md`. No release check may require Bubblewrap, Lima, a
 protected runner, or a custom supervisor.
+
+Live repository-profile validation compares the complete managed installation,
+including agents and their effective metadata, plugins, tools, skills, rules and
+instruction wiring, pinned runtime packages, the managed research-browser entry,
+and the feedback locator. Drift fails before model invocation and requires
+installation plus OpenCode restart. An explicit active-profile diagnostic mode
+may exercise drift, but its result is not repository-profile validation.
+Behavioral evidence is platform-specific: a missing run leaves that platform
+unproven and does not invalidate deterministic or behavioral evidence recorded
+on another platform.

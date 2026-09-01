@@ -261,6 +261,19 @@ mode, including idempotence, collision backups, status, and safe removal. The
 plugins and session-fetch tool always install as copies, even in symlink mode,
 so their local state resolves from the selected configuration root.
 
+For each current managed source, status compares content or the resolved link
+target and reports `current copy`, `stale or modified copy`, `current link`,
+`foreign link`, or `missing`. Equivalent relative links count as current. Status
+does not change files and returns a managed-entry summary with install-and-restart
+guidance when drift exists. Retired-agent, MCP, rule-instruction, and feedback-
+locator diagnostics retain their separate ownership-specific labels.
+
+Collision backups are written beneath `<config_dir>/backups/` with their managed
+relative path, not beside the live entry. This prevents a backed-up skill package
+from remaining discoverable. Status identifies legacy `<skill>.bak.*`
+directories beside current managed skills; install moves those directories into
+the central backup tree without deleting their contents.
+
 The installer also synchronizes one namespaced MCP entry through a narrow JSON
 helper: a headless isolated research browser (`@playwright/mcp`, Node). It backs
 up before mutation, changes only its own keys, preserves unrelated entries, and
@@ -369,3 +382,12 @@ descendant agents, current scaffold-file presence, completion/review tokens, and
 enabled run-KPI activity duration, token totals, and token rate. It is an investigative
 reporting aid, not proof of ancestry enforcement, tool-boundary compliance,
 scaffold validity, or fresh verification-command execution.
+
+Before live managed-agent scenarios invoke a model, `tests/verify_opencode.py`
+compares the complete active managed profile and effective agent metadata with
+this clone. Default repository-profile validation fails closed on drift. The
+explicit active-profile diagnostic mode labels its results separately and never
+claims that repository sources were validated. Feedback-derived live scenarios
+copy the active config to a temporary root, resolve a sentinel agent from that
+custom directory to prove it is loaded, and redirect the feedback locator before
+invoking a model.
