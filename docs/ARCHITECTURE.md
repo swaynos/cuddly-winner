@@ -25,7 +25,7 @@ identity is found, it returns before inspecting tools or paths.
 
 Prometheus can edit only the four scaffold path families. Autonomous can edit
 ordinary files but cannot edit the published scaffold or this extension's tool
-and plugin sources. Ask, Karpathy, Reviewer, Grounder, Implementation-Validator, and Out-of-the-box-thinker are read-only.
+and plugin sources. Ask, Karpathy, Reviewer, Grounder, and Implementation-Validator are read-only.
 
 The plugin intercepts OpenCode mutation tools. It is not a filesystem sandbox.
 Native subprocess effects are outside path interception. Prometheus and Autonomous
@@ -232,19 +232,12 @@ as evidence, not validation, and does not claim success or label any requested
 goal validated.
 
 When exhausted safe paths would otherwise cause a terminal negative handoff,
-Autonomous delegates once to the hidden `out-of-the-box-thinker`. It supplies a
-small blocker packet and receives either one safe recovery proposal or
-`CONFIRMED_BLOCKED`; Autonomous remains the sole editor and may try the proposal
-once. Missing scaffolds, ordinary user approval, and planning decisions do not
-enter this recovery flow.
-
-On a confirmed block, the final Autonomous message carries a strict terminal
-record containing only schema version, terminal state, session ID, episode, and
-blocker code. At idle, the immutability plugin validates that exact record from a
-root Autonomous session and writes a minimal report through an owner-only
-feedback locator. Its deterministic session-and-episode filename makes capture
-idempotent. It neither reads nor stores transcript material and skips writes when
-the active project is the Cuddly Winner source clone.
+Autonomous takes one creative pass at a safe, reversible alternative within the
+unchanged requested outcome, acceptance criteria, and permissions. Missing
+scaffolds, ordinary user approval, and planning decisions do not enter this
+recovery step. On a confirmed block, Autonomous reports the failed step, a
+concise blocker code, and the exact next human action, and records it with
+`cuddly-winner-feedback` when that skill is available.
 
 ## Permission Semantics
 

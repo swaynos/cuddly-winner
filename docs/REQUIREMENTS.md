@@ -48,7 +48,7 @@ direct ordinary planning to Prometheus or ordinary implementation to Autonomous.
 ## Managed Agents
 
 The managed identities are `ask`, `prometheus`, `autonomous`, `karpathy`,
-`reviewer`, `grounder`, `implementation-validator`, and `out-of-the-box-thinker`. They are selected explicitly or delegated internally. Delegated sessions
+`reviewer`, `grounder`, and `implementation-validator`. They are selected explicitly or delegated internally. Delegated sessions
 inherit the topmost managed ancestor's identity so delegation cannot widen that
 agent's edit-tool boundary.
 
@@ -132,22 +132,13 @@ non-green and not committable as-is, and names the exact next action to reach
 green or revert. Reporting a failure honestly never licenses describing that
 same red or half-migrated tree as done, ready, or committable.
 
-After exhausting ordinary safe in-scope paths for a terminal block, failed core
-outcome, or escalation, Autonomous delegates one bounded blocker packet to the
-hidden read-only `out-of-the-box-thinker`. The packet contains only the requested
-outcome, unchanged acceptance boundary, blocker code, and safe paths already
-tried. The thinker returns one safe recovery proposal or `CONFIRMED_BLOCKED`.
-Autonomous alone may edit and tries a valid proposal once. It does not invoke
-recovery for missing scaffolds, normal approval requests, or planning decisions.
-It never loops, widens scope, weakens acceptance criteria, or bypasses controls.
-
-After confirmed recovery failure, Autonomous emits one strict terminal record
-with a session ID, episode, and uppercase blocker code. The trusted local plugin
-captures only that record, after the session is idle, as a sanitized local report.
-It copies no transcript, command, tool output, source text, path, or credential.
-Capture applies only to confirmed blocks, uses an atomic deterministic filename
-for durable deduplication, and skips the Cuddly Winner source clone to prevent
-recursion.
+After exhausting ordinary safe in-scope paths, Autonomous takes one creative
+pass at a safe, reversible alternative within the unchanged requested outcome,
+acceptance criteria, and permissions before a terminal `Blocked`, `Failed`, or
+escalation handoff. It never widens scope, weakens acceptance criteria, or
+bypasses controls to find one. On a confirmed block it reports plainly: the
+failed step, a concise blocker code, and the exact next human action, and
+records it with `cuddly-winner-feedback` when that skill is available.
 
 Autonomous uses native Bash with `ask` permission. OpenCode auto mode may approve
 those requests automatically. Autonomous never stages, commits, stashes, resets,
@@ -198,14 +189,6 @@ context window after Autonomous reaches candidate completion, compares codebase
 state against SPEC.md, and generates a severity-grouped gap report. A critical
 or major gap permits one bounded Autonomous correction followed by fresh
 verification and validation; unresolved gaps prohibit a successful status.
-
-### Out-of-the-box Thinker
-
-Out-of-the-box Thinker is a hidden, read-only recovery analyst. When Autonomous
-exhausts ordinary safe in-scope paths before a terminal block, it delegates one
-bounded blocker packet to the thinker. The thinker returns one safe recovery
-proposal or `CONFIRMED_BLOCKED`. It cannot edit, execute commands, delegate, or
-contact external services.
 
 ## Permission Model
 
@@ -403,11 +386,6 @@ recorder must return a complete draft and state the permission block. The record
 does not scan for clones, use a network client, or recover from a stale locator by
 guessing. Git ignore prevents ordinary add/status discovery but cannot prevent an
 explicit force-add.
-
-Terminal capture uses a separate strict JSON record accepted only from the trusted
-plugin. It records no free-form model text and deduplicates by session and blocker
-episode. The plugin and terminal recorder are trusted control-plane paths that
-Autonomous cannot edit.
 
 ## Mutation Testing
 

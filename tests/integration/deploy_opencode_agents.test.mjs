@@ -32,7 +32,7 @@ async function exists(file) {
 test("default copy install is idempotent and includes the complete managed profile", async () => fixture(async root => {
   const config = path.join(root, "config");
   await deployFixture(root);
-  assert.equal((await readdir(path.join(config, "agents"))).filter(name => name.endsWith(".md")).length, 8);
+  assert.equal((await readdir(path.join(config, "agents"))).filter(name => name.endsWith(".md")).length, 7);
   for (const name of ["immutability.ts", "autonomous-kpis.ts"]) {
     await stat(path.join(config, "plugins", name));
   }

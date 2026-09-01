@@ -15,7 +15,7 @@ import tempfile
 from dataclasses import dataclass
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MANAGED_AGENTS = {"ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator", "out-of-the-box-thinker"}
+MANAGED_AGENTS = {"ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"}
 
 
 def require(condition: bool, message: str) -> None:
@@ -1202,11 +1202,10 @@ def main() -> int:
     require("empty workspace is not a planning blocker" in agents["prometheus"].lower(), "Prometheus must publish for an empty-workspace calculator request")
     require("bash: ask" in agents["autonomous"] and "run: allow" not in agents["autonomous"], "Autonomous must use approval-gated native Bash")
     require(agents["autonomous"].index('"*": deny') < agents["autonomous"].index("implementation-validator: allow"), "Autonomous task permission ordering disables validator delegation")
-    require(agents["autonomous"].index('"*": deny') < agents["autonomous"].index("out-of-the-box-thinker: allow"), "Autonomous task permission ordering disables recovery delegation")
     require(agents["prometheus"].index('"*": deny') < agents["prometheus"].index("grounder: allow"), "Prometheus task permission ordering disables Grounder delegation")
     require(agents["ask"].index('"*": deny') < agents["ask"].index('"grounder": allow'), "Ask task permission ordering disables Grounder delegation")
     require(agents["karpathy"].index('"*": deny') < agents["karpathy"].index('"reviewer": allow'), "Karpathy task permission ordering disables review delegation")
-    for name in ("ask", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator", "out-of-the-box-thinker"):
+    for name in ("ask", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"):
         for tool in ("spike", "scaffold_gitignore", "validate_scaffold"):
             require(f"{tool}: deny" in agents[name], f"{name} must not expose Prometheus-only {tool}")
     require("Missing implementation files, tests, scripts," in agents["autonomous"], "Autonomous must treat missing deliverables as implementation work")
@@ -1223,8 +1222,6 @@ def main() -> int:
     require("full validator\nreport remains in that delegated task result" in agents["autonomous"], "Autonomous must retain validator evidence in the delegated task")
     require("Do not emit\n`<promise>COMPLETE</promise>`" in agents["autonomous"], "Autonomous must not emit a completion promise")
     require("implementation-validator" in agents["autonomous"], "Autonomous must reference implementation-validator handoff")
-    require("@out-of-the-box-thinker" in agents["autonomous"], "Autonomous recovery delegate missing")
-    require("CONFIRMED_BLOCKED" in agents["out-of-the-box-thinker"], "Recovery analyst terminal contract missing")
     require("evaluate codebase state against the published `SPEC.md`" in agents["implementation-validator"], "Implementation validator contract missing")
     require("must not be rewritten during execution" in agents["autonomous"], "Autonomous must not rewrite checklist boxes during execution")
     require("Use Karpathy only when the manifest explicitly" in agents["autonomous"], "Autonomous must not invoke Karpathy without a complete manifest")
@@ -1256,7 +1253,7 @@ def main() -> int:
     require("Never send credentials, secrets, private repository code" in agents["grounder"], "Grounder must prohibit sending confidential content to third-party services")
     require("Do not produce manual workarounds, command dumps" in agents["ask"], "Ask must not proxy implementation via workarounds or command dumps")
     require("Never blame the environment or session" in agents["ask"], "Ask must not blame environment for role-based capability limits")
-    for name in ("ask", "karpathy", "reviewer", "grounder", "implementation-validator", "out-of-the-box-thinker"):
+    for name in ("ask", "karpathy", "reviewer", "grounder", "implementation-validator"):
         require("bash: deny" in agents[name], f"{name} must remain read-only")
     require("Make the change yourself" not in agents["karpathy"], "Karpathy still claims edit ownership")
     require("opencode-autonomous.json" in agents["autonomous"], "Autonomous prompt must reference opencode-autonomous.json")
@@ -1275,7 +1272,7 @@ def main() -> int:
     require("Planning / spec writing → `@prometheus`" not in rules, "project rules still reroute Plan")
 
     plugin = (ROOT / "plugins/immutability.ts").read_text()
-    require('MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator", "out-of-the-box-thinker"])' in plugin, "managed identity boundary missing")
+    require('MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"])' in plugin, "managed identity boundary missing")
     require("if (!agent || !MANAGED_AGENTS.has(agent)) return" in plugin, "native/unmanaged bypass missing")
 
     readme = (ROOT / "README.md").read_text()

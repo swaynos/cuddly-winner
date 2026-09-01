@@ -2,7 +2,6 @@ import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { createHash } from "node:crypto";
 
 const MAX_BYTES = 1024 * 1024;
 const LOCATOR_NAME = "cuddly-winner-feedback-root";
@@ -74,48 +73,9 @@ async function writeReport(root, report) {
   fail("could not allocate a unique report path.");
 }
 
-function terminalRecord(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) fail("strict terminal record required.");
-  const keys = Object.keys(value).sort();
-  const expected = ["blocker_code", "episode", "schema_version", "session_id", "terminal"];
-  if (keys.length !== expected.length || keys.some((key, index) => key !== expected[index])) fail("strict terminal record required.");
-  if (
-    value.schema_version !== 1 || value.terminal !== "confirmed_blocked"
-    || typeof value.session_id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value.session_id)
-    || typeof value.episode !== "string" || !/^[1-9][0-9]{0,8}$/.test(value.episode)
-    || typeof value.blocker_code !== "string" || !/^[A-Z][A-Z0-9_]{2,63}$/.test(value.blocker_code)
-  ) fail("strict terminal record required.");
-  return value;
-}
-
-async function writeTerminalRecord(root, value) {
-  const record = terminalRecord(value);
-  const inbox = path.join(root, "inbox");
-  await privateDirectory(root);
-  await privateDirectory(inbox);
-  const digest = createHash("sha256").update(`${record.session_id}\0${record.episode}`).digest("hex");
-  const target = path.join(inbox, `terminal-${digest}.md`);
-  const capturedAt = new Date().toISOString();
-  const body = `---\nschema_version: 1\nstatus: new\ncaptured_at: ${capturedAt}\n---\n\n# Summary\n\nConfirmed Autonomous block.\n\n# Terminal record\n\n- Session: ${record.session_id}\n- Episode: ${record.episode}\n- Blocker code: ${record.blocker_code}\n`;
-  try {
-    const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    try { await handle.writeFile(body, "utf8"); } finally { await handle.close(); }
-    await chmod(target, 0o600);
-  } catch (error) {
-    if (error?.code !== "EEXIST") throw error;
-  }
-  return target;
-}
-
 async function main() {
   const report = await readStdin();
   const root = await feedbackRootFromLocator(process.argv[1]);
-  if (process.argv[2] === "--terminal-record") {
-    let value;
-    try { value = JSON.parse(report); } catch { fail("strict terminal record required."); }
-    process.stdout.write(`${await writeTerminalRecord(root, value)}\n`);
-    return;
-  }
   if (process.argv[2]) fail("unknown argument.");
   process.stdout.write(`${await writeReport(root, report)}\n`);
 }

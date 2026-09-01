@@ -43,7 +43,7 @@ class BehavioralAssertionTests(unittest.TestCase):
         expected = {
             "ask.md": ['"grounder": allow'],
             "prometheus.md": ["grounder: allow"],
-            "autonomous.md": ["implementation-validator: allow", "out-of-the-box-thinker: allow"],
+            "autonomous.md": ["implementation-validator: allow"],
             "karpathy.md": ['"reviewer": allow'],
         }
 

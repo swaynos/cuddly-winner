@@ -91,8 +91,6 @@ See [SKILLS.md](docs/SKILLS.md#cuddly-winner-feedback).
   and measurement runner.
 - **Reviewer** provides read-only rubric-based review.
 - **Grounder** gathers cited local and external evidence.
-- **Out-of-the-box-thinker** gives Autonomous one read-only recovery analysis
-  before a confirmed terminal block.
 - **Ask** answers focused questions without starting a workflow.
 
 These agents are entered explicitly. They are not aliases for Plan or Build.

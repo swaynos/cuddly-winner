@@ -278,14 +278,13 @@ or initialize Git.
 
 - **Given:** Autonomous exhausts safe in-scope paths for a terminal negative outcome.
 - **When:** it reaches the terminal handoff.
-- **Then:** delegate one bounded packet to the read-only thinker, try one valid
-  recovery proposal, and emit a strict terminal record only if recovery remains
-  `CONFIRMED_BLOCKED`.
-- **Never:** loop, widen scope, relax acceptance criteria, bypass permissions,
-  capture ordinary approval or planning handoffs, or include private material in
-  the terminal record.
-- **Evidence:** S agent, plugin, and recorder contracts; U terminal-capture tests;
-  B blocked recovery scenario.
+- **Then:** take one creative pass at a safe, reversible alternative within the
+  unchanged requested outcome, acceptance criteria, and permissions; on
+  confirmed block, report the failed step, a concise blocker code, and the exact
+  next human action.
+- **Never:** loop, widen scope, relax acceptance criteria, bypass permissions, or
+  treat an ordinary approval or planning handoff as a confirmed block.
+- **Evidence:** S agent prompt contract; B blocked recovery scenario.
 
 ### UC-AUT-13: Optional run KPIs preserve delivery rules
 

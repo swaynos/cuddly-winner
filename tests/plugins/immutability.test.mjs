@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { ImmutabilityGuard, captureTerminalFeedback } from "../../plugins/immutability.ts";
+import { ImmutabilityGuard } from "../../plugins/immutability.ts";
 
 async function fixture(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "immutability-"));
@@ -120,37 +120,13 @@ test("idle publication reminder ignores a cache poisoned by prior inheritance re
   assert.equal(prompts.length, 0);
 }));
 
-test("confirmed Autonomous terminal records create one sanitized local feedback report", async () => fixture(async root => {
-  const feedback = path.join(root, "feedback");
-  const locator = path.join(root, "cuddly-winner-feedback-root");
-  await mkdir(feedback);
-  await mkdir(path.join(root, "consumer"));
-  await writeFile(locator, `${feedback}\n`);
-  const record = { schema_version: 1, terminal: "confirmed_blocked", session_id: "session-123", episode: "1", blocker_code: "NO_SAFE_PATH" };
-  const first = await captureTerminalFeedback(record, locator, path.join(root, "consumer"));
-  const second = await captureTerminalFeedback(record, locator, path.join(root, "consumer"));
-  assert.equal(first, second);
-  const body = await readFile(first, "utf8");
-  assert.match(body, /Confirmed Autonomous block/);
-  assert.doesNotMatch(body, /consumer|tool output|command/i);
-}));
-
-test("terminal feedback rejects malformed records and never recurses into its source clone", async () => fixture(async root => {
-  const feedback = path.join(root, "feedback");
-  const locator = path.join(root, "cuddly-winner-feedback-root");
-  await mkdir(feedback);
-  await writeFile(locator, `${feedback}\n`);
-  await assert.rejects(captureTerminalFeedback({ terminal: "blocked" }, locator, path.join(root, "consumer")), /strict terminal record/);
-  assert.equal(await captureTerminalFeedback({ schema_version: 1, terminal: "confirmed_blocked", session_id: "session-123", episode: "1", blocker_code: "NO_SAFE_PATH" }, locator, root), undefined);
-}));
-
 test("only prometheus may invoke workflow tools", async () => fixture(async root => {
   const invoke = (guard, agent, tool) => guard["tool.execute.before"](
     { tool, sessionID: agent, callID: "c" }, { args: tool === "spike" ? { spike_id: "probe" } : {} });
   const pg = await hooks(root, { p: "prometheus" });
   for (const tool of ["spike", "scaffold_gitignore", "validate_scaffold"]) {
     await invoke(pg, "p", tool);
-    for (const agent of ["autonomous", "ask", "karpathy", "reviewer", "grounder", "implementation-validator", "out-of-the-box-thinker"]) {
+    for (const agent of ["autonomous", "ask", "karpathy", "reviewer", "grounder", "implementation-validator"]) {
       const guard = await hooks(root, { [agent]: agent });
       await assert.rejects(invoke(guard, agent, tool), /only @prometheus may invoke/);
     }
@@ -177,7 +153,7 @@ test("autonomous edits source but not trusted extension paths", async () => fixt
 }));
 
 test("read-only managed agents cannot mutate or execute", async () => fixture(async root => {
-  for (const agent of ["ask", "karpathy", "reviewer", "grounder", "implementation-validator", "out-of-the-box-thinker"]) {
+  for (const agent of ["ask", "karpathy", "reviewer", "grounder", "implementation-validator"]) {
     const guard = await hooks(root, { [agent]: agent });
     await assert.rejects(mutate(guard, agent, path.join(root, "README.md")), /read-only/);
     await assert.rejects(guard["tool.execute.before"]({ tool: "bash", sessionID: agent, callID: "shell" }, { args: { command: "true", cwd: root } }), /read-only/);

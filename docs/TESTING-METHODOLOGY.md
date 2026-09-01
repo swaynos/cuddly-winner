@@ -99,7 +99,7 @@ Each live scenario runs in a disposable workspace and fails on a nonzero agent
 exit status. Fixture assertions inspect files and Git state where applicable,
 rather than treating a filename or generic keyword in model output as evidence.
 The suite defines 14 scenarios for the managed agents (`ask`, `autonomous`,
-`prometheus`, `karpathy`, `reviewer`, `grounder`, `implementation-validator`, `out-of-the-box-thinker`):
+`prometheus`, `karpathy`, `reviewer`, `grounder`, `implementation-validator`):
 
 1. **`Ask` Edit Refusal**: Requires an explicit refusal, no mutation, and no command-dump workaround.
 2. **`Ask` Capability Boundaries**: Attributes limits to role design rather than session or environment restrictions.
@@ -131,7 +131,7 @@ specific task allows override the catch-all deny. Autonomous scenarios cover bot
 successful Implementation Validator delegation and the unavailable-validator
 fallback, which is valid only after candidate readiness and final verification.
 
-`karpathy`, `reviewer`, `grounder`, `implementation-validator`, and `out-of-the-box-thinker` are intentionally subagents. Their live
+`karpathy`, `reviewer`, `grounder`, and `implementation-validator` are intentionally subagents. Their live
 scenarios invoke them through OpenCode's documented `@mention` path, then require
 the JSON task event to identify the requested child agent. The harness reads the
 child session's recorded tool calls for read-only and private-content checks; a
