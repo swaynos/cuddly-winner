@@ -557,8 +557,10 @@ or initialize Git.
 
 - **Given:** current managed copies, repository symlinks, modifications, and unrelated entries.
 - **When:** status or remove runs without profile flags.
-- **Then:** inspect every group and remove only current matching copies or links.
-- **Never:** remove modified or unrelated entries or promise migration of retired artifacts.
+- **Then:** inspect every group, record managed-agent ownership, and remove only
+  current matching copies or links plus a recorded retired agent during install
+  when its copy or symlink remains unchanged.
+- **Never:** remove modified or unrelated entries or migrate retired artifacts.
 - **Evidence:** F status/removal fixture.
 
 ### UC-DEP-05: Retired and granular options fail

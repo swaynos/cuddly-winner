@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { lstat, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -111,6 +112,42 @@ test("copy collisions are backed up and modified managed files survive removal",
   assert.equal(await readFile(path.join(agents, "prometheus.md"), "utf8"), "user modification\n");
   assert.equal(await readFile(path.join(agents, "unrelated.md"), "utf8"), "keep\n");
   assert.equal(await exists(path.join(agents, "autonomous.md")), false);
+}));
+
+test("install reconciles retired agents from its prior managed inventory", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  const agents = path.join(config, "agents");
+  await deployFixture(root);
+  const stateFile = path.join(agents, "cuddly-winner-managed.json");
+  const state = JSON.parse(await readFile(stateFile, "utf8"));
+  const source = path.join(repo, "agents", "retired-agent.md");
+  const retired = path.join(agents, "retired-agent.md");
+  const retiredContent = "previous managed agent\n";
+  state.agents["retired-agent.md"] = {
+    source,
+    mode: "copy",
+    sha256: createHash("sha256").update(retiredContent).digest("hex"),
+  };
+  await writeFile(stateFile, `${JSON.stringify(state)}\n`);
+  await writeFile(retired, retiredContent);
+
+  const removed = await deployFixture(root);
+  assert.match(removed.stdout, /Removed retired agent: .*retired-agent\.md/);
+  assert.equal(await exists(retired), false);
+
+  const retainedState = JSON.parse(await readFile(stateFile, "utf8"));
+  retainedState.agents["retired-agent.md"] = state.agents["retired-agent.md"];
+  await writeFile(stateFile, `${JSON.stringify(retainedState)}\n`);
+  await writeFile(retired, "user modification\n");
+  const preserved = await deployFixture(root);
+  assert.match(preserved.stdout, /Skipped modified or unrelated retired agent: .*retired-agent\.md/);
+  assert.equal(await readFile(retired, "utf8"), "user modification\n");
+
+  await rm(retired);
+  await symlink(source, retired);
+  const linked = await deployFixture(root);
+  assert.match(linked.stdout, /Removed retired agent: .*retired-agent\.md/);
+  assert.equal(await exists(retired), false);
 }));
 
 test("status reports every managed group without profile flags", async () => fixture(async root => {

@@ -338,8 +338,11 @@ unrelated entries are preserved.
 
 The retired `--with-autonomous`, `--with-tools`, `--with-workflow-tools`,
 `--with-skills`, per-category path overrides, source overrides, and local
-deployment environment file are unsupported. The installer performs no
-automatic migration of retired runner or supervisor artifacts.
+deployment environment file are unsupported. The installer records managed
+agent ownership and removes a retired agent during a later install only when
+its copy matches the recorded hash or its symlink targets the recorded source.
+Modified and unrelated entries are preserved. It does not migrate retired
+runner or supervisor artifacts.
 
 ## Governance Tools
 

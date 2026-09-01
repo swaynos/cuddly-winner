@@ -309,10 +309,16 @@ as the active project root. They use worktree only when no session directory is
 available, preventing a stale root worktree from redirecting scaffold artifacts
 or path enforcement to `/`.
 
-Status and remove always process all current managed groups. Remove accepts
-only a current repository symlink or byte-identical current copy and preserves
-everything else. Retired control-plane artifacts are outside this installer and
-must be removed manually if they remain from an older version.
+The installer records each managed agent's source, mode, and SHA-256 in an
+owner-only state file beneath `<config_dir>/agents/`. On a later install it
+reconciles that inventory against the current agent sources, removing a retired
+agent only when its copy still matches the recorded hash or its symlink still
+targets the recorded source. Status reports retained retired agents. Modified
+and unrelated entries remain untouched. A bootstrap inventory covers exact
+copies of agents retired before state tracking began.
+
+Remove always processes current managed groups. It accepts only a current
+repository symlink or byte-identical current copy and preserves everything else.
 
 Installation is platform-neutral. It never checks for or installs Bubblewrap,
 Lima, Docker, a VM image, or a supervisor.

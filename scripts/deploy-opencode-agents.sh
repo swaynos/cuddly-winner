@@ -155,6 +155,46 @@ sync_group() {
   done
 }
 
+sync_retired_agents() {
+  local state_file="$1"
+  local name source expected_sha256 dst
+  local source_args=()
+  local agent_source
+  for agent_source in "${AGENT_SOURCES[@]}"; do
+    source_args+=(--source "$agent_source")
+  done
+  while IFS=$'\t' read -r name source expected_sha256; do
+    [[ -n "$name" ]] || continue
+    dst="${AGENTS_DIR}/${name}"
+    if [[ "$ACTION" == "status" ]]; then
+      if [[ -L "$dst" && "$(readlink "$dst" || true)" == "$source" ]]; then
+        printf '  [retired link] %s -> %s\n' "$dst" "$source"
+      elif [[ -f "$dst" ]] && [[ "$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"))' "$dst")" == "$expected_sha256" ]]; then
+        printf '  [retired copy] %s\n' "$dst"
+      elif [[ -e "$dst" || -L "$dst" ]]; then
+        printf '  [modified or unrelated] %s\n' "$dst"
+      fi
+    elif [[ "$ACTION" == "install" ]]; then
+      if [[ -L "$dst" && "$(readlink "$dst" || true)" == "$source" ]] || [[ -f "$dst" && "$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"))' "$dst")" == "$expected_sha256" ]]; then
+        rm -f "$dst"
+        printf 'Removed retired agent: %s\n' "$dst"
+      elif [[ -e "$dst" || -L "$dst" ]]; then
+        printf 'Skipped modified or unrelated retired agent: %s\n' "$dst"
+      fi
+    fi
+  done < <(node "$AGENT_STATE_HELPER" retired --state "$state_file" "${source_args[@]}")
+}
+
+record_agent_state() {
+  local state_file="$1"
+  local source_args=()
+  local agent_source
+  for agent_source in "${AGENT_SOURCES[@]}"; do
+    source_args+=(--source "$agent_source")
+  done
+  node "$AGENT_STATE_HELPER" record --state "$state_file" --mode "$MODE" "${source_args[@]}"
+}
+
 sync_rule_instructions() {
   local action="$1"
   shift
@@ -292,12 +332,14 @@ SKILLS_DIR="${CONFIG_DIR}/skills"
 RULES_DIR="${CONFIG_DIR}/rules"
 OPENCODE_JSON="${CONFIG_DIR}/opencode.json"
 LEGACY_OPENCODE_JSON="${CONFIG_DIR}/config.json"
+AGENT_STATE_FILE="${AGENTS_DIR}/cuddly-winner-managed.json"
 FEEDBACK_LOCATOR_DIR="${CONFIG_DIR}/feedback"
 FEEDBACK_LOCATOR="${FEEDBACK_LOCATOR_DIR}/cuddly-winner-feedback-root"
 FEEDBACK_ROOT="$(cd "$REPO_ROOT" && pwd -P)/feedback"
 [[ "$FEEDBACK_ROOT" != *$'\n'* ]] || die "Repository path cannot contain a newline."
 INSTRUCTIONS_HELPER="${SCRIPT_DIR}/opencode-instructions.mjs"
 MCP_HELPER="${SCRIPT_DIR}/opencode-mcp-config.mjs"
+AGENT_STATE_HELPER="${SCRIPT_DIR}/opencode-agent-state.mjs"
 
 shopt -s nullglob
 AGENT_SOURCES=("${REPO_ROOT}"/agents/*.md)
@@ -320,6 +362,10 @@ printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
 
 if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
+  if [[ "$ACTION" == "status" ]]; then
+    printf 'Retired agents:\n'
+    sync_retired_agents "$AGENT_STATE_FILE"
+  fi
   sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
   sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"
   sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
@@ -332,6 +378,8 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
 fi
 
 sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
+sync_retired_agents "$AGENT_STATE_FILE"
+record_agent_state "$AGENT_STATE_FILE"
 sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
 sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"
 sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"

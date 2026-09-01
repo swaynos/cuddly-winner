@@ -94,7 +94,11 @@ def _profile_mismatches() -> list[str]:
         if destination.exists() and not filecmp.cmp(source, destination, shallow=False):
             mismatches.append(f"active optional tool differs: {destination}")
 
-    for retired in ("plugins/opencode-autonomous-supervisor.js", "plugins/opencode-autonomous-supervisor"):
+    for retired in (
+        "agents/out-of-the-box-thinker.md",
+        "plugins/opencode-autonomous-supervisor.js",
+        "plugins/opencode-autonomous-supervisor",
+    ):
         if (config / retired).exists():
             mismatches.append(f"retired artifact present in active profile: {config / retired}")
 
