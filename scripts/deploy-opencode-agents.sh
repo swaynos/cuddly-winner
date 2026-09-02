@@ -183,25 +183,25 @@ sync_group() {
 }
 
 sync_discoverable_skill_backups() {
+  # Iterate matches directly under nullglob. Bash 3.2 rejects "${empty[@]}"
+  # when nounset is set, so no intermediate array is collected here.
   local backup target source name
-  local backups=()
   shopt -s nullglob
   for source in "${SKILL_SOURCES[@]}"; do
     name="$(basename "$source")"
-    backups+=("${SKILLS_DIR}/${name}.bak."*)
+    for backup in "${SKILLS_DIR}/${name}.bak."*; do
+      if [[ "$ACTION" == "status" ]]; then
+        printf '  [discoverable backup] %s\n' "$backup"
+        MANAGED_ENTRY_DRIFT=1
+      elif [[ "$ACTION" == "install" ]]; then
+        target="${CONFIG_DIR}/backups/skills/$(basename "$backup")"
+        mkdir -p "$(dirname "$target")"
+        mv "$backup" "$target"
+        printf 'Relocated discoverable backup: %s -> %s\n' "$backup" "$target"
+      fi
+    done
   done
   shopt -u nullglob
-  for backup in "${backups[@]}"; do
-    if [[ "$ACTION" == "status" ]]; then
-      printf '  [discoverable backup] %s\n' "$backup"
-      MANAGED_ENTRY_DRIFT=1
-    elif [[ "$ACTION" == "install" ]]; then
-      target="${CONFIG_DIR}/backups/skills/$(basename "$backup")"
-      mkdir -p "$(dirname "$target")"
-      mv "$backup" "$target"
-      printf 'Relocated discoverable backup: %s -> %s\n' "$backup" "$target"
-    fi
-  done
 }
 
 sync_retired_agents() {
