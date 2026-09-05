@@ -321,6 +321,36 @@ engineering context. When invoked, Autonomous leaves all Git publication
 decisions to the human. Its session evidence and validator report describe the
 aggregate pending changeset.
 
+### External Loop Wrapper
+
+`scripts/autonomous-loop.mjs` is an optional external loop controller for
+Autonomous. It is a developer tool that lives beside the other repository
+scripts. The installer never deploys it, it is not part of the managed profile,
+and no agent, plugin, or tool depends on it. It does not run inside an OpenCode
+session and does not change any agent prompt, permission, or completion rule.
+
+The wrapper treats Autonomous as a black box. For each configured pass it starts
+one fresh `opencode run --agent autonomous --auto` session and sends no message,
+so the published scaffold is the sole driver of the work. Autonomous keeps its
+strict one-invocation completion contract inside every pass; the wrapper only
+decides whether to start another pass.
+
+The wrapper owns loop control and progress measurement, and the agent never sees
+either. An optional `--state-cmd` runs a project-supplied command that prints
+JSON counters before and after each pass, and the wrapper records the per-key
+delta without knowing what the counters mean. It writes one append-only JSONL
+evidence record per pass and, by default, continues after a failed or
+unproductive pass. It stops when the pass count is exhausted, an optional
+consecutive-idle or wall-clock limit is reached, or `--stop-on-failure` sees a
+non-zero exit.
+
+This does not reintroduce a custom supervisor, durable run-state machine,
+protected evidence store, or cross-session resume guarantee. Each pass is
+independent and starts fresh, and continuity between passes comes only from the
+target project's own worktree and durable state, the same way a Ralph-style
+runner works. The JSONL log is plain developer evidence, not run state returned
+to the agent. Per-session analysis still uses `tests/audit_run.py`.
+
 ## Deployment
 
 Default installation deploys the complete managed profile: all seven agents, the

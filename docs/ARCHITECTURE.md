@@ -304,6 +304,16 @@ recovery step. On a confirmed block, Autonomous reports the failed step, a
 concise blocker code, and the exact next human action, and records it with
 `cuddly-winner-feedback` when that skill is available.
 
+The optional `scripts/autonomous-loop.mjs` wrapper provides an external loop
+over Autonomous for open-ended, incremental workloads. It spawns one fresh
+Autonomous session per pass with no message, so the scaffold drives the work. It
+optionally reads project-supplied JSON counters before and after each pass and
+records a per-pass JSONL evidence log. It is a developer script, not part of the
+managed profile: the installer never deploys it, it runs outside any OpenCode
+session, and it changes no agent prompt or permission. Autonomous keeps its
+one-invocation completion contract inside each pass, and the wrapper adds no
+cross-session resume. See docs/REQUIREMENTS.md § External Loop Wrapper.
+
 ## Permission Semantics
 
 Agent frontmatter sets `bash: ask` for Autonomous. Prometheus denies direct Bash
