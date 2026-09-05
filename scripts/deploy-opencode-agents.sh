@@ -395,7 +395,7 @@ AGENT_SOURCES=("${REPO_ROOT}"/agents/*.md)
 SKILL_SOURCES=("${REPO_ROOT}"/skills/*)
 RULE_SOURCES=("${REPO_ROOT}"/rules/*.md)
 shopt -u nullglob
-PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/autonomous-kpis.ts")
+PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/autonomous-kpis.ts" "${REPO_ROOT}/plugins/announce-hygiene.ts")
 PLUGIN_MODE="copy"
 SESSION_FETCH_SOURCE="${REPO_ROOT}/tools/session_fetch.ts"
 SESSION_FETCH_MODE="copy"

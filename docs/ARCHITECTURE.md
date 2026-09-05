@@ -35,6 +35,71 @@ approve it. Explicit command denies for read-only roles remain enforced.
 The immutability plugin is part of the managed profile and does not affect
 native OpenCode agents.
 
+## Local Model History Hygiene
+
+`plugins/announce-hygiene.ts` addresses one measured failure in local Qwen
+models: the model writes a sentence promising an action and ends the turn
+without emitting the tool call. OpenCode replays assistant text back into the
+conversation, so each occurrence becomes an in-context example of a turn ending
+that way and the model copies itself. The rate compounds within a session.
+
+Replaying one recorded turn against `ollama-heavy/qwen36-35b-coding`:
+
+| History | Failures | |
+| --- | --- | --- |
+| intact | 13/74 (17.6%) | |
+| seeded turns removed | 0/74 (0.0%) | p = 0.000069 |
+| intact, plus a system prompt rule | 2/50 (4.0%) | p = 0.019 |
+
+Removing the seeded turns is the complete fix. The prompt rule alone only
+lowers the rate, which still leaves a long session likely to seed itself, so
+the plugin applies both. `experimental.chat.messages.transform` drops seeded
+turns from the history sent to the model; `experimental.chat.system.transform`
+appends the rule.
+
+Two removal rules keep it safe to apply blind. A turn holding any tool part is
+never a candidate, so removal cannot orphan a tool result. The final entry is
+always kept, because it is the turn being continued from rather than history
+behind it. Each removal appends one line to
+`~/.local/share/opencode/announce-hygiene.jsonl`, so the plugin cannot be
+silently dead: an empty audit file alongside sessions that still stall means it
+is not applying.
+
+### Provider Scope Is A Naming Convention
+
+The scope test is `providerID.startsWith("ollama")`. That is all it is. It
+matches the provider ids configured in `config.json`, so it depends on those
+ids being named consistently rather than on anything intrinsic to the endpoint.
+
+Nothing better is available in the hook that matters.
+`experimental.chat.messages.transform` receives `input: {}`: no model, no
+session, no config. The only provider signal is the `providerID` stamped on
+each message, judged per turn, which is the right granularity anyway because a
+local turn is what contaminates the history whoever is later asked to continue
+from it. The system-prompt hook does receive the current `Model` and could use
+a stronger signal, but the message-removal half cannot.
+
+It fails in two directions and they are not equally bad. A local provider named
+something else, `qwen-box` say, is simply not covered and the plugin does
+nothing. A remote provider named `ollama-something` would be covered wrongly
+and would have turns deleted from its history; since the action is removing
+messages, that is the worse error.
+
+The prefix is kept deliberately, so a new local endpoint needs no code change.
+Two stricter designs were considered and rejected for now: an explicit
+allowlist of provider ids, and deriving the set at plugin init by asking the
+`client` for provider config and keeping those whose `baseURL` resolves
+locally. The latter is the only option where "local" means local. Adopt one of
+them as soon as any provider that is not a local Ollama endpoint is given a
+name beginning `ollama`.
+
+OpenCode calls every exported function in a plugin file as a plugin factory,
+passing `{ directory, worktree, client }`. An exported helper that assumes its
+own argument type therefore throws during load and takes the whole file with
+it. This plugin exports only its factory and reaches its predicates through an
+inert `__selftest` property. The defensive guard at the top of `parseRunKpis`
+in `autonomous-kpis.ts` exists for the same reason.
+
 ## Workflow Tools
 
 ### Spike
@@ -250,8 +315,9 @@ access for read-only roles, remain denied.
 ## Deployment
 
 The installer deploys one complete managed profile: agents, plugins
-(`immutability.ts`, `autonomous-kpis.ts`), the four workflow tools and pinned SDK
-dependency, non-core skills, and global rule files.
+(`immutability.ts`, `autonomous-kpis.ts`, `announce-hygiene.ts`), the four
+workflow tools and pinned SDK dependency, non-core skills, and global rule
+files.
 
 Install sources are fixed repository paths. A single configuration root is
 resolved from the CLI, one environment variable, or OpenCode's debug output;
