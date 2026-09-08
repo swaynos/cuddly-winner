@@ -69,8 +69,12 @@ restart OpenCode after installing or changing a skill.
 - **Trigger:** Designing project-local OpenCode agents or skills from a
   repository's recurring risks and workflows.
 - **Required behavior:** Inventory the repository first; prefer reusable skills
-  or existing global agents where sufficient; propose local definitions before
-  editing; keep permissions narrow; and require approval before deletion.
+or existing global agents where sufficient; propose local definitions before
+editing; keep permissions narrow; and require approval before deletion. An
+explicit Prometheus planning request authorizes publication of a newly proposed,
+narrowly scoped execution definition under the next-iteration contract in
+[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). Ask before replacing a conflicting
+or user-owned local definition.
 - **Must not:** Add global roles by default, create local definitions before a
   proposal is approved, or modify global configuration without an explicit
   request.

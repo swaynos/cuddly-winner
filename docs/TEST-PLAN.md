@@ -23,6 +23,20 @@ Dry runs and evaluator self-tests prove test plumbing only. They do not count as
 behavioral or live-runtime evidence. A skipped or unexercised case is blocked,
 not passed.
 
+## Approved Next Iteration
+
+The cases in this section define evidence for the prospective generated-agent
+contract in [`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). They do not validate
+the current runtime, which still uses the managed Autonomous, Karpathy, and
+Implementation Validator agents.
+
+| Test case | Use case | Class | Setup and action | Evidence | Pass condition |
+| --- | --- | --- | --- | --- | --- |
+| TP-NEXT-01 | UC-NEXT-01 | F, S, B | Give Prometheus ordinary, incremental, and scalar-optimization fixtures. | Generated definition, durable brief, effective permissions, and fresh execution transcript. | It selects a supported strategy and publishes a bounded local executor whose task brief supplies all required context. |
+| TP-NEXT-02 | UC-NEXT-02 | B, O | Publish a local executor, restart OpenCode, start a new conversation, and select that agent. | Startup agent inventory, handoff text, new-session transcript, and reads of durable context. | OpenCode discovers the definition after restart; the new agent acts without the planning transcript; the handoff does not claim restart clears history. |
+| TP-NEXT-03 | UC-NEXT-03 | B, F | Run a bounded Ralph fixture with a productive pass, an unproductive pass, and a final outcome check. | Per-pass counters, command output, retained evidence, pass decisions, and final outcome result. | The agent applies the declared pass policy and separates pass progress from final delivery. |
+| TP-NEXT-04 | UC-NEXT-04, UC-NEXT-05 | U, F, S, B | Exercise deterministic verification, a task requiring independent review, a local-agent name collision, and protected-path requests. | Task brief, review evidence where required, collision decision, resolved identity, and tool decisions. | Validation follows the task brief without a fixed Validator dependency; user-owned definitions survive; generated identities cannot bypass their declared boundary. |
+
 ## Case Requirements
 
 Before a case is executed, its test asset must record:

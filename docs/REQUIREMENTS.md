@@ -11,6 +11,16 @@ platform.
 durable source of truth. `SPEC.md` and `opencode-autonomous.json` are transient
 task scaffolds.
 
+## Approved Next Iteration
+
+The approved replacement for the fixed Autonomous workflow is documented in
+[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). Prometheus will publish a
+task-specific project-local execution agent, then require an OpenCode restart
+and a new execution session. The next iteration removes the shipped
+`autonomous`, `karpathy`, and `implementation-validator` definitions. This is a
+future contract: the managed-agent and manifest rules below describe the current
+runtime until its implementation replaces them.
+
 ## No Legacy Support
 
 This project supports exactly one current version of each contract it owns: the

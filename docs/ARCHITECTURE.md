@@ -18,6 +18,16 @@ Managed agent
 There is deliberately no command sandbox, Linux-only runtime, virtual machine,
 supervisor, completion reducer, or protected evidence subsystem.
 
+## Approved Next Iteration
+
+[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md) defines the approved replacement
+for the current fixed Autonomous flow. Prometheus will write a project-local
+agent definition and durable task brief, then hand off through an OpenCode
+restart and a new session. The future runtime must enforce generated-agent
+boundaries explicitly; an unknown local agent cannot inherit today’s unmanaged
+bypass. This section is prospective and does not alter the implementation
+described below.
+
 ## Identity And Immutability
 
 The immutability plugin resolves the topmost managed ancestor. If no managed

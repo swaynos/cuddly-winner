@@ -11,6 +11,67 @@ Evidence classes:
 - **B**: behavioral agent evaluation
 - **O**: optional live OpenCode smoke test
 
+## Approved Next Iteration
+
+The following cases specify the generated-execution-agent design in
+[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). They are prospective. The current
+Autonomous, Karpathy, and Implementation Validator cases below remain the
+runtime contract until the replacement ships.
+
+### UC-NEXT-01: Prometheus publishes a scoped local executor
+
+- **Given:** Prometheus has a planning-ready task.
+- **When:** it selects an execution strategy.
+- **Then:** publish a task-specific definition under `.opencode/agents/` and a
+  durable task brief containing scope, permissions, strategy, verification,
+  evidence, stops, and escalation.
+- **Never:** rely on the planning transcript or publish an unrestricted unknown
+  agent.
+- **Evidence:** F generated files; S definition and boundary contract; B fresh
+  execution scenario.
+
+### UC-NEXT-02: Publication creates a fresh-context handoff
+
+- **Given:** Prometheus has published a generated executor.
+- **When:** it hands off.
+- **Then:** stop before implementation and tell the user to restart OpenCode,
+  start a new conversation, and select the named local agent.
+- **Never:** state that restart alone clears resumed-session history or require
+  the execution agent to recover the planning transcript.
+- **Evidence:** B handoff transcript; O startup discovery and new-session run.
+
+### UC-NEXT-03: A Ralph-style executor measures pass progress
+
+- **Given:** Prometheus selects an incremental loop strategy.
+- **When:** the generated executor completes a pass.
+- **Then:** collect declared independent before-and-after progress evidence and
+  follow the declared pass and run-wide stop rules.
+- **Never:** treat a useful pass, agent prose, or process exit status as final
+  outcome completion.
+- **Evidence:** B multipass fixture; F retained pass evidence.
+
+### UC-NEXT-04: Validation is task-defined
+
+- **Given:** Prometheus publishes a generated executor.
+- **When:** it defines completion evidence.
+- **Then:** state the required outcome evidence, freshness rule, and failure or
+  incomplete result. Specify independent review only when the task needs it.
+- **Never:** require an Implementation Validator handoff by default or label
+  unproved work delivered.
+- **Evidence:** S task-brief contract; B pass, fail, and independent-review
+  scenarios.
+
+### UC-NEXT-05: Local definitions preserve ownership and boundaries
+
+- **Given:** a target name collides with an existing local agent, or a generated
+  agent attempts a protected action.
+- **When:** Prometheus publishes or the executor runs.
+- **Then:** ask before replacing a user-owned definition and enforce the
+  generated agent's declared path and tool boundary.
+- **Never:** overwrite unrelated definitions or classify generated agents as
+  unmanaged identities.
+- **Evidence:** F collision fixture; U permission-resolution matrix.
+
 ## Native Compatibility
 
 ### UC-NATIVE-01: Plan and Build remain native
