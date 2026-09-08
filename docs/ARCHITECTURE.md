@@ -18,29 +18,29 @@ Managed agent
 There is deliberately no command sandbox, Linux-only runtime, virtual machine,
 supervisor, completion reducer, or protected evidence subsystem.
 
-## Approved Next Iteration
+## Generated Execution Agents
 
-[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md) defines the approved replacement
-for the current fixed Autonomous flow. Prometheus will write a project-local
-agent definition and durable task brief, then hand off through an OpenCode
-restart and a new session. The future runtime must enforce generated-agent
-boundaries explicitly; an unknown local agent cannot inherit today’s unmanaged
-bypass. This section is prospective and does not alter the implementation
-described below.
+[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md) defines the current replacement
+for the fixed Autonomous flow. Prometheus writes a registered project-local
+agent definition and durable task brief, then hands off through an OpenCode
+restart and a new session. The plugin enforces a generated identity only when it
+is registered and has a valid task manifest; unknown local agents retain the
+native bypass.
 
 ## Identity And Immutability
 
 The immutability plugin resolves the topmost managed ancestor. If no managed
 identity is found, it returns before inspecting tools or paths.
 
-Prometheus can edit only the four scaffold path families. Autonomous can edit
-ordinary files but cannot edit the published scaffold or this extension's tool
-and plugin sources. Ask, Karpathy, Reviewer, Grounder, and Implementation-Validator are read-only.
+Prometheus can publish only task-package paths and spike evidence. A registered
+generated executor can edit only its manifest-declared paths and cannot edit the
+published package or this extension's tool and plugin sources. Ask, Reviewer,
+and Grounder are read-only.
 
 The plugin intercepts OpenCode mutation tools. It is not a filesystem sandbox.
-Native subprocess effects are outside path interception. Prometheus and Autonomous
-both use `bash: ask`, so each command requires user approval and auto mode may
-approve it. Explicit command denies for read-only roles remain enforced.
+Native subprocess effects are outside path interception. Prometheus denies direct
+Bash; generated executors use only their manifest-declared Bash permission.
+Explicit command denies for read-only roles remain enforced.
 
 The immutability plugin is part of the managed profile and does not affect
 native OpenCode agents.
@@ -140,10 +140,9 @@ on close or idle expiry. The tool promises authenticated session continuity.
 
 ### Static Scaffold Validation
 
-`tools/validate_scaffold.ts` parses schema-v3 `opencode-autonomous.json`, checks
-canonical worktree-relative paths and evaluator inventory, verifies required
-SPEC sections, and requires SPEC and manifest verification command lists to
-match exactly. It performs no command execution.
+`tools/validate_scaffold.ts` validates the schema-v1 generated-agent registry
+and task package, including canonical paths, matching task identity, registered
+agent definition, and task brief. It performs no command execution.
 
 The schema fails closed on unknown versions, fields, enum values, malformed
 limits, escaping paths, missing evaluator files, and incomplete Karpathy
@@ -151,7 +150,7 @@ configuration. Only the current schema version is accepted. There is no
 migration path or compatibility alias for an older version; a mismatch requires
 Prometheus to republish (see `docs/REQUIREMENTS.md` § No Legacy Support).
 
-#### Manifest Schema (v3)
+#### Task Package Schema (v1)
 
 Both strategies require:
 
@@ -237,7 +236,7 @@ managed descendant that merely inherits Prometheus's edit restrictions (for
 example a Grounder child spawned before publication) is not itself Prometheus
 and never receives this reminder.
 
-## Autonomous Flow
+## Retired Autonomous Flow
 
 Autonomous reads the unchanged scaffold and chooses only the declared strategy.
 For Direct it implements right-sized items, uses native Bash for focused checks,
@@ -314,15 +313,12 @@ recovery step. On a confirmed block, Autonomous reports the failed step, a
 concise blocker code, and the exact next human action, and records it with
 `cuddly-winner-feedback` when that skill is available.
 
-The optional `scripts/autonomous-loop.mjs` wrapper provides an external loop
-over Autonomous for open-ended, incremental workloads. It spawns one fresh
-Autonomous session per pass with no message, so the scaffold drives the work. It
-optionally reads project-supplied JSON counters before and after each pass and
-records a per-pass JSONL evidence log. It is a developer script, not part of the
-managed profile: the installer never deploys it, it runs outside any OpenCode
-session, and it changes no agent prompt or permission. Autonomous keeps its
-one-invocation completion contract inside each pass, and the wrapper adds no
-cross-session resume. See docs/REQUIREMENTS.md § External Loop Wrapper.
+The optional `scripts/task-loop.mjs` wrapper provides an external loop over a
+named generated task agent for incremental workloads. It starts one fresh
+session per pass with no message, reads optional project-supplied JSON counters,
+and records per-pass JSONL evidence. It is a developer script, not part of the
+managed profile, and does not accept a final outcome. See
+`docs/NEXT-ITERATION.md`.
 
 ## Permission Semantics
 

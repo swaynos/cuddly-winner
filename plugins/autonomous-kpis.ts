@@ -134,11 +134,15 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
     return sessionID;
   }
 
-  async function policyFor(root: string): Promise<RunKpiPolicy | undefined> {
+  async function policyFor(root: string, agent: string | undefined): Promise<RunKpiPolicy | undefined> {
     if (policies.has(root)) return policies.get(root);
     let policy: RunKpiPolicy | undefined;
     try {
-      policy = parseRunKpis(JSON.parse(await readFile(resolve(rootDirectory, "opencode-autonomous.json"), "utf8")));
+      if (agent) {
+        const registry = JSON.parse(await readFile(resolve(rootDirectory, ".opencode/generated-agents.json"), "utf8"));
+        const entry = registry?.schema_version === 1 && Array.isArray(registry.agents) ? registry.agents.find((item: any) => item?.name === agent) : undefined;
+        if (typeof entry?.manifest === "string") policy = parseRunKpis(JSON.parse(await readFile(resolve(rootDirectory, entry.manifest), "utf8")));
+      }
     } catch {}
     policies.set(root, policy);
     return policy;
@@ -155,8 +159,7 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
         }
       } catch {}
     }
-    if (rootAgents.get(root) !== "autonomous") return;
-    const policy = await policyFor(root);
+    const policy = await policyFor(root, rootAgents.get(root));
     return policy ? { root, policy } : undefined;
   }
 
@@ -190,12 +193,12 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
       output: { maxOutputTokens: number | undefined },
     ) => {
       const root = await rootFor(input.sessionID);
-      if (input.agent === "autonomous" && root === input.sessionID) rootAgents.set(root, "autonomous");
+      if (root === input.sessionID) rootAgents.set(root, input.agent);
       const enabled = await enabledPolicy(input.sessionID);
       if (!enabled) return;
       const used = summary(enabled.root).tokens;
       const remaining = Math.floor(enabled.policy.hardBudgetTokens - used);
-      if (remaining <= 0) throw new Error("Autonomous KPI hard token budget exhausted; stop new work and report the incomplete state.");
+      if (remaining <= 0) throw new Error("Generated-agent KPI hard token budget exhausted; stop new work and report the incomplete state.");
       output.maxOutputTokens = output.maxOutputTokens === undefined
         ? remaining
         : Math.min(output.maxOutputTokens, remaining);

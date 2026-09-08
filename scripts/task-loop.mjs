@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * autonomous-loop.mjs — optional external loop controller for Autonomous.
+ * task-loop.mjs — optional external loop controller for a generated task agent.
  *
  * This is a developer tool, not part of the managed profile. The installer
- * never deploys it and no agent, plugin, or tool depends on it. It treats
- * Autonomous as a black box: one fresh `opencode run --agent autonomous --auto`
+ * never deploys it and no agent, plugin, or tool depends on it. It treats the
+ * named generated task agent as a black box: one fresh `opencode run --agent`
  * per configured pass, with independent per-pass evidence recorded to a JSONL
- * log. Autonomous's one-invocation completion contract is unchanged — the
- * wrapper owns loop control and domain measurement, the agent never sees them.
+ * log. The wrapper owns loop control and domain measurement; the agent never
+ * sees them.
  *
- * There is no cross-session resume: each pass starts a fresh Autonomous session
+ * There is no cross-session resume: each pass starts a fresh generated-agent session
  * and relies on the target project's own worktree and durable state for
  * continuity, exactly as a Ralph-style runner does. The JSONL log is plain
  * append-only evidence, not a run-state machine handed back to the agent.
@@ -19,8 +19,7 @@
  * counters; the wrapper only diffs two JSON objects and records the delta. It
  * has no domain knowledge of what the counters mean.
  *
- * See docs/REQUIREMENTS.md § External Loop Wrapper and docs/ARCHITECTURE.md
- * § Autonomous Flow.
+ * See docs/NEXT-ITERATION.md.
  */
 import { spawn, execFile } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
@@ -30,14 +29,15 @@ import { pathToFileURL } from "node:url";
 const STATE_CMD_MAX_BUFFER = 8 * 1024 * 1024;
 
 const USAGE = `Usage:
-  node scripts/autonomous-loop.mjs [options]
+  node scripts/task-loop.mjs [options]
 
-Runs Autonomous once per pass as a black box, recording per-pass evidence.
-Each pass is a fresh \`opencode run --agent autonomous --auto\` session with no
-message, so the published scaffold is the sole driver.
+Runs a generated task agent once per pass as a black box, recording per-pass
+evidence. Each pass is a fresh \`opencode run --agent <name>\` session with no
+message, so the published task package is the sole driver.
 
 Options:
   --project <path>     Directory to run each pass in (default: current directory)
+  --agent <name>       Registered generated task agent to run (required)
   --passes <n>         Maximum number of passes (default: 10)
   --state-cmd <cmd>    Shell command printing JSON counters; run before and
                        after each pass. The wrapper records the per-key delta.
@@ -46,7 +46,7 @@ Options:
   --stop-on-failure    Stop after the first pass that exits non-zero
                        (default: record and continue, like a Ralph runner)
   --log <path>         JSONL evidence log, relative to --project unless absolute
-                       (default: .autonomous-loop/runs.jsonl)
+                        (default: .task-loop/runs.jsonl)
   --dry-run            Print the resolved plan and exit without running a pass
   -h, --help           Show this help
 
@@ -85,7 +85,8 @@ export function parseArgs(argv) {
     idleStop: null,
     wallBudget: null,
     stopOnFailure: false,
-    log: ".autonomous-loop/runs.jsonl",
+    agent: null,
+    log: ".task-loop/runs.jsonl",
     dryRun: false,
     help: false,
   };
@@ -93,6 +94,7 @@ export function parseArgs(argv) {
     const flag = argv[index];
     switch (flag) {
       case "--project": options.project = resolve(requireValue(argv, ++index, flag)); break;
+      case "--agent": options.agent = requireValue(argv, ++index, flag); break;
       case "--passes": options.passes = positiveInteger(requireValue(argv, ++index, flag), flag); break;
       case "--state-cmd": options.stateCmd = requireValue(argv, ++index, flag); break;
       case "--idle-stop": options.idleStop = positiveInteger(requireValue(argv, ++index, flag), flag); break;
@@ -107,6 +109,7 @@ export function parseArgs(argv) {
   if (options.idleStop !== null && options.stateCmd === null) {
     throw usageError("--idle-stop requires --state-cmd to measure per-pass deltas");
   }
+  if (options.agent !== null && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(options.agent)) throw usageError("--agent must be a lowercase hyphenated task id");
   return options;
 }
 
@@ -152,12 +155,12 @@ function formatPassLine(record, passes) {
 
 function defaultSpawnPass(options) {
   return new Promise((resolvePromise) => {
-    const child = spawn("opencode", ["run", "--agent", "autonomous", "--auto", "--dir", options.project], {
+    const child = spawn("opencode", ["run", "--agent", options.agent, "--dir", options.project], {
       cwd: options.project,
       stdio: "inherit",
     });
     child.on("error", (error) => {
-      process.stderr.write(`autonomous-loop: failed to spawn opencode: ${error.message}\n`);
+      process.stderr.write(`task-loop: failed to spawn opencode: ${error.message}\n`);
       resolvePromise({ exitCode: 127 });
     });
     child.on("close", (code) => resolvePromise({ exitCode: code === null ? 1 : code }));
@@ -256,15 +259,16 @@ export async function runLoop(options, deps = {}) {
 
 function planText(options) {
   const lines = [
-    "autonomous-loop plan:",
+    "task-loop plan:",
     `  project:         ${options.project}`,
+    `  agent:           ${options.agent ?? "(required)"}`,
     `  passes:          ${options.passes}`,
     `  state-cmd:       ${options.stateCmd ?? "(none)"}`,
     `  idle-stop:       ${options.idleStop ?? "(disabled)"}`,
     `  wall-budget:     ${options.wallBudget === null ? "(disabled)" : `${options.wallBudget}s`}`,
     `  stop-on-failure: ${options.stopOnFailure}`,
     `  log:             ${resolve(options.project, options.log)}`,
-    `  per-pass command: opencode run --agent autonomous --auto --dir ${options.project}`,
+    `  per-pass command: opencode run --agent ${options.agent ?? "<required>"} --dir ${options.project}`,
   ];
   return lines.join("\n");
 }
@@ -273,7 +277,7 @@ function summaryText(options, summary) {
   const productive = summary.passes.filter((record) => record.exit_code === 0).length;
   return [
     "",
-    `autonomous-loop finished: ${summary.stoppedBy}`,
+    `task-loop finished: ${summary.stoppedBy}`,
     `  passes run:   ${summary.passes.length}/${options.passes}`,
     `  exit 0 passes: ${productive}`,
     `  log:          ${resolve(options.project, options.log)}`,
@@ -291,7 +295,7 @@ export async function run(argv, deps = {}) {
   try {
     options = parseArgs(argv);
   } catch (error) {
-    process.stderr.write(`autonomous-loop: ${error.message}\n`);
+    process.stderr.write(`task-loop: ${error.message}\n`);
     if (error.usage) process.stderr.write(USAGE);
     return 2;
   }
@@ -302,6 +306,10 @@ export async function run(argv, deps = {}) {
   if (options.dryRun) {
     emit(planText(options));
     return 0;
+  }
+  if (options.agent === null) {
+    process.stderr.write("task-loop: --agent is required\n");
+    return 2;
   }
   const sink = deps.sink ?? makeFileSink(options);
   const summary = await runLoop(options, { ...deps, sink });

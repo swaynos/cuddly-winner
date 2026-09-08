@@ -10,6 +10,21 @@ const LEGACY_AGENTS = {
     mode: "copy",
     sha256: "70b80d5bf5932b38868e08dc76f58c6b8c74560da2e05e0ac7b193d4c8ab614c",
   },
+  "autonomous.md": {
+    source: "agents/autonomous.md",
+    mode: "copy",
+    sha256: "1fcd6d4fb7ad95f93010d614b63368fe993e16f3a09288866f41dcb01749095d",
+  },
+  "karpathy.md": {
+    source: "agents/karpathy.md",
+    mode: "copy",
+    sha256: "2fe1bc8c3dc7a04e6d09b827f39718d09a0871f87c6320164b6abb5400d2b00e",
+  },
+  "implementation-validator.md": {
+    source: "agents/implementation-validator.md",
+    mode: "copy",
+    sha256: "4be445cff2f6f1a232a69e65a6b2ce9be7f848724c0649a36a089fa196c7afb7",
+  },
 };
 
 function die(message) {

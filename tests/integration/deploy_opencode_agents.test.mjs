@@ -33,7 +33,7 @@ async function exists(file) {
 test("default copy install is idempotent and includes the complete managed profile", async () => fixture(async root => {
   const config = path.join(root, "config");
   await deployFixture(root);
-  assert.equal((await readdir(path.join(config, "agents"))).filter(name => name.endsWith(".md")).length, 7);
+  assert.equal((await readdir(path.join(config, "agents"))).filter(name => name.endsWith(".md")).length, 4);
   for (const name of ["immutability.ts", "autonomous-kpis.ts"]) {
     await stat(path.join(config, "plugins", name));
   }
@@ -157,56 +157,42 @@ test("status classifies current and drifted managed entries without changing the
 
   const current = await deployFixture(root, "status");
   for (const label of ["Agents", "Plugins", "Workflow tools", "Skills"]) assert.match(current.stdout, new RegExp(`${label} dir:`));
-  assert.match(current.stdout, /\[current copy\].*autonomous\.md/);
+  assert.match(current.stdout, /\[current copy\].*prometheus\.md/);
   assert.match(current.stdout, /\[current copy\].*systematic-debugging/);
   assert.match(current.stdout, /Managed entries: current/);
 
   const agents = path.join(config, "agents");
-  const autonomous = path.join(agents, "autonomous.md");
   const prometheus = path.join(agents, "prometheus.md");
   const ask = path.join(agents, "ask.md");
-  const karpathy = path.join(agents, "karpathy.md");
   const reviewer = path.join(agents, "reviewer.md");
   const grounder = path.join(agents, "grounder.md");
-  const validator = path.join(agents, "implementation-validator.md");
 
   await writeFile(prometheus, "stale or locally modified\n");
   await rm(ask);
   await symlink(path.join(repo, "agents", "ask.md"), ask);
-  await rm(karpathy);
-  await symlink(path.relative(agents, path.join(repo, "agents", "karpathy.md")), karpathy);
   await rm(reviewer);
   await symlink(path.join(repo, "agents", "ask.md"), reviewer);
   await rm(grounder);
   await symlink(path.join(root, "missing-agent.md"), grounder);
-  await rm(validator);
   await writeFile(path.join(config, "skills", "systematic-debugging", "SKILL.md"), "changed skill\n");
 
   const before = {
-    autonomous: await readFile(autonomous, "utf8"),
     prometheus: await readFile(prometheus, "utf8"),
     ask: await lstat(ask).then(() => path.join(repo, "agents", "ask.md")),
-    karpathy: await lstat(karpathy).then(() => path.relative(agents, path.join(repo, "agents", "karpathy.md"))),
     reviewer: await lstat(reviewer).then(() => path.join(repo, "agents", "ask.md")),
   };
   const result = await deployFixture(root, "status");
 
-  assert.match(result.stdout, /\[current copy\].*autonomous\.md/);
   assert.match(result.stdout, /\[stale or modified copy\].*prometheus\.md/);
   assert.match(result.stdout, /\[current link\].*ask\.md/);
-  assert.match(result.stdout, /\[current link\].*karpathy\.md/);
   assert.match(result.stdout, /\[foreign link\].*reviewer\.md/);
   assert.match(result.stdout, /\[foreign link\].*grounder\.md/);
-  assert.match(result.stdout, /\[missing\].*implementation-validator\.md/);
   assert.match(result.stdout, /\[stale or modified copy\].*systematic-debugging/);
   assert.match(result.stdout, /Managed entries: drifted; run install, then restart OpenCode\./);
 
-  assert.equal(await readFile(autonomous, "utf8"), before.autonomous);
   assert.equal(await readFile(prometheus, "utf8"), before.prometheus);
   assert.equal((await lstat(ask)).isSymbolicLink(), true);
-  assert.equal((await lstat(karpathy)).isSymbolicLink(), true);
   assert.equal((await lstat(reviewer)).isSymbolicLink(), true);
-  assert.equal(await exists(validator), false);
 }));
 
 test("status reports missing entries and remove accepts a relative repository link", async () => fixture(async root => {

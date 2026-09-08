@@ -25,10 +25,9 @@ not passed.
 
 ## Approved Next Iteration
 
-The cases in this section define evidence for the prospective generated-agent
-contract in [`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). They do not validate
-the current runtime, which still uses the managed Autonomous, Karpathy, and
-Implementation Validator agents.
+The cases in this section define evidence for the current generated-agent
+contract in [`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). Older fixed-agent
+cases below are retired history and do not validate the runtime.
 
 | Test case | Use case | Class | Setup and action | Evidence | Pass condition |
 | --- | --- | --- | --- | --- | --- |

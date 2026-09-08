@@ -15,7 +15,7 @@ import tempfile
 from dataclasses import dataclass
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MANAGED_AGENTS = {"ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"}
+MANAGED_AGENTS = {"ask", "prometheus", "reviewer", "grounder"}
 
 
 def require(condition: bool, message: str) -> None:
@@ -1572,77 +1572,12 @@ def main() -> int:
     args = parser.parse_args()
 
     agents = {p.stem: p.read_text() for p in (ROOT / "agents").glob("*.md")}
-    require(set(agents) == MANAGED_AGENTS, "optional managed-agent roster mismatch")
+    require(set(agents) == MANAGED_AGENTS, "managed-agent roster mismatch")
     require("bash: deny" in agents["prometheus"] and "spike: ask" in agents["prometheus"], "Prometheus defaults missing")
-    require("Publication is mandatory for every planning-ready Prometheus run" in agents["prometheus"], "Prometheus publication gate missing")
-    require("does not wait for a separate user request to write the scaffold" in agents["prometheus"], "Prometheus publication must not require a second request")
-    require("Do not ask merely for formats, thresholds, geometry, seeds, quotas" in agents["prometheus"], "Prometheus must apply bounded defaults for unspecified mechanics")
-    require("empty workspace is not a planning blocker" in agents["prometheus"].lower(), "Prometheus must publish for an empty-workspace calculator request")
-    require("bash: ask" in agents["autonomous"] and "run: allow" not in agents["autonomous"], "Autonomous must use approval-gated native Bash")
-    require(agents["autonomous"].index('"*": deny') < agents["autonomous"].index("implementation-validator: allow"), "Autonomous task permission ordering disables validator delegation")
-    require(agents["prometheus"].index('"*": deny') < agents["prometheus"].index("grounder: allow"), "Prometheus task permission ordering disables Grounder delegation")
-    require(agents["ask"].index('"*": deny') < agents["ask"].index('"grounder": allow'), "Ask task permission ordering disables Grounder delegation")
-    require(agents["karpathy"].index('"*": deny') < agents["karpathy"].index('"reviewer": allow'), "Karpathy task permission ordering disables review delegation")
-    for name in ("ask", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"):
-        for tool in ("spike", "scaffold_gitignore", "validate_scaffold"):
-            require(f"{tool}: deny" in agents[name], f"{name} must not expose Prometheus-only {tool}")
-    require("Missing implementation files, tests, scripts," in agents["autonomous"], "Autonomous must treat missing deliverables as implementation work")
-    require("placeholder test, ignored verification flag, disabled" in agents["autonomous"], "Autonomous must reject incomplete candidates before validator handoff")
-    require("Do not escalate ordinary local debugging" in agents["autonomous"], "Autonomous escalation boundary is too broad")
-    require("reviewer verdicts are not substitutes" in agents["autonomous"], "Autonomous must not substitute reviewer approval for final verification")
-    require("Reviewer feedback is advisory" in agents["autonomous"], "Autonomous reviewer feedback must remain advisory")
-    stop_phrase = "declared verification passes or a required step proves impossible to complete with any tool or permission available in this session"
-    require(stop_phrase in normalize_whitespace(agents["autonomous"]), "Autonomous must state its stop conditions")
-    require("Do not stage, commit, stash, reset, switch branches, or initialize Git" in agents["autonomous"], "Autonomous must preserve the human-owned pending changeset")
-    require("detailed PR Contract" in agents["autonomous"], "Autonomous must prepare a detailed validator evidence packet")
-    require("Goals and validated outcomes" in agents["autonomous"], "Autonomous must provide concise validated outcomes")
-    require("Brief change summary" in agents["autonomous"], "Autonomous must provide a brief change summary")
-    require("full validator\nreport remains in that delegated task result" in agents["autonomous"], "Autonomous must retain validator evidence in the delegated task")
-    require("Do not emit\n`<promise>COMPLETE</promise>`" in agents["autonomous"], "Autonomous must not emit a completion promise")
-    require("implementation-validator" in agents["autonomous"], "Autonomous must reference implementation-validator handoff")
-    require("evaluate codebase state against the published `SPEC.md`" in agents["implementation-validator"], "Implementation validator contract missing")
-    require("must not be rewritten during execution" in agents["autonomous"], "Autonomous must not rewrite checklist boxes during execution")
-    require("Use Karpathy only when the manifest explicitly" in agents["autonomous"], "Autonomous must not invoke Karpathy without a complete manifest")
-    require("scaffold, treat\nan explicit request to run or continue the loop as authorization to continue" in agents["autonomous"], "Autonomous must treat a matching scaffold's continue request as standing authorization")
-    require("top-level `@prometheus` for supersession" in agents["autonomous"], "Autonomous must name the top-level Prometheus supersession route on a material mismatch")
-    require("stop at that item instead of\ncompleting downstream checklist items" in agents["autonomous"], "Autonomous must stop at a structurally blocked item instead of cascading into dependent work")
-    require("minimize the red, half-migrated surface left in the worktree" in agents["autonomous"], "Autonomous must minimize, not maximize, red surface left behind a blocker")
-    require("worktree is left red or half-migrated and therefore not\ncommittable as-is" in agents["autonomous"], "Autonomous must disclose a red or half-migrated worktree as not committable in a failed/blocked handoff")
-    require("does not license describing that same\nred or half-migrated tree as done, ready, or committable" in agents["autonomous"], "Autonomous must not describe a red or half-migrated tree as done, ready, or committable")
-    require("A failed kill criterion requires redesign" in agents["prometheus"], "Prometheus must require redesign on failed kill criterion, not optimistic planning")
-    require("load-bearing empirical prerequisite" in agents["prometheus"], "Prometheus must establish load-bearing empirical prerequisites before publication")
-    require("without a scaffold only when" in agents["prometheus"], "Prometheus must have bounded exception for finishing without scaffold")
-    require("### Selected:" in agents["prometheus"], "Prometheus must require Selected heading in Approaches Considered")
-    require("Do not substitute implicit prose" in agents["prometheus"], "Prometheus must prohibit implicit prose substituting for structural labels")
-    require("Reuse a matching scaffold only when it still\nserves the explicit active request" in agents["prometheus"], "Prometheus must only reuse a scaffold that still serves the active request")
-    require("superseding a scaffold neither validates nor discards prior" in agents["prometheus"], "Prometheus must state that supersession neither validates nor discards prior implementation changes")
-    require("do not turn the switch into a\nconfirmation loop" in agents["prometheus"], "Prometheus must not turn an explicit material supersession into a confirmation loop")
-    require("delegates here only when the published" in agents["karpathy"], "Karpathy must require explicit manifest selection — not user-invocable directly")
-    require("Do not select a strategy" in agents["karpathy"], "Karpathy must not select its own strategy")
-    require("do not infer missing values" in agents["karpathy"], "Karpathy must not infer missing prerequisites")
-    require("rather than writing project files" in agents["karpathy"], "Karpathy must return summary to Autonomous, not write files directly")
-    require("Never fabricate metrics" in agents["karpathy"], "Karpathy must prohibit fabricated metrics")
-    require("never determines completion by itself" in agents["reviewer"], "Reviewer verdict must be advisory, not a completion gate")
-    require(
-        any(phrase in agents["reviewer"] for phrase in ("final non-empty line", "last non-empty line", "absolute last")),
-        "Reviewer must enforce verdict-last output format",
-    )
-    require("do not rely solely on a rubric passed by the caller" in agents["reviewer"], "Reviewer must read SPEC from disk, not from caller-passed rubric only")
-    require("Never send credentials, secrets, private repository code" in agents["grounder"], "Grounder must prohibit sending confidential content to third-party services")
-    require("Do not produce manual workarounds, command dumps" in agents["ask"], "Ask must not proxy implementation via workarounds or command dumps")
-    require("Never blame the environment or session" in agents["ask"], "Ask must not blame environment for role-based capability limits")
-    for name in ("ask", "karpathy", "reviewer", "grounder", "implementation-validator"):
+    require(".opencode/generated-agents.json" in agents["prometheus"], "Prometheus must publish a generated-agent registry")
+    require("quit and restart OpenCode" in agents["prometheus"], "Prometheus must require restart before execution")
+    for name in ("ask", "reviewer", "grounder"):
         require("bash: deny" in agents[name], f"{name} must remain read-only")
-    require("Make the change yourself" not in agents["karpathy"], "Karpathy still claims edit ownership")
-    require("opencode-autonomous.json" in agents["autonomous"], "Autonomous prompt must reference opencode-autonomous.json")
-    autonomous_prompt = normalize_whitespace(agents["autonomous"]).lower()
-    require("after each bounded step or focused check" in autonomous_prompt, "Autonomous must re-evaluate complete scope after each bounded step")
-    require("phase gate, not permission to hand off" in autonomous_prompt, "Autonomous must treat passing phase checks as nonterminal")
-    require("program.md" not in agents["autonomous"], "Autonomous prompt contains stale program.md reference")
-    require("opencode-karpathy.json" not in agents["autonomous"], "Autonomous prompt contains stale opencode-karpathy.json reference")
-    require("program.md" not in agents["karpathy"], "Karpathy prompt contains stale program.md reference")
-    require("opencode-karpathy.json" not in agents["karpathy"], "Karpathy prompt contains stale opencode-karpathy.json reference")
-    require("program.md" not in agents["reviewer"], "Reviewer prompt contains stale program.md reference")
 
     rules = (ROOT / "AGENTS.md").read_text()
     require("built-in Plan and Build modes are the default workflow" in rules, "project rules do not preserve native Plan/Build")
@@ -1650,8 +1585,8 @@ def main() -> int:
     require("Planning / spec writing → `@prometheus`" not in rules, "project rules still reroute Plan")
 
     plugin = (ROOT / "plugins/immutability.ts").read_text()
-    require('MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"])' in plugin, "managed identity boundary missing")
-    require("if (!agent || !MANAGED_AGENTS.has(agent)) return" in plugin, "native/unmanaged bypass missing")
+    require('MANAGED_AGENTS = new Set(["ask", "prometheus", "reviewer", "grounder"])' in plugin, "managed identity boundary missing")
+    require("generatedPolicy" in plugin and "isManaged(agent)" in plugin, "generated identity boundary missing")
 
     readme = (ROOT / "README.md").read_text()
     requirements = (ROOT / "docs/REQUIREMENTS.md").read_text()
@@ -1662,24 +1597,10 @@ def main() -> int:
     for name, text in (("README", readme), ("requirements", requirements), ("architecture", architecture), ("methodology", methodology)):
         require("Plan" in text and "Build" in text or name == "methodology", f"{name} omits native Plan/Build compatibility")
 
-    require(stop_phrase in normalize_whitespace(requirements), "REQUIREMENTS must state the Autonomous stop conditions")
-    require(stop_phrase in normalize_whitespace(architecture), "ARCHITECTURE must state the Autonomous stop conditions")
-    require(stop_phrase in normalize_whitespace(use_cases), "USE-CASES UC-AUT-05 must state the Autonomous stop conditions")
-    require("phase gate, not completion evidence" in readme, "README must define nonterminal phase checks")
-    require("phase gate, not completion evidence" in requirements, "REQUIREMENTS must define nonterminal phase checks")
-    require("phase gate, not completion evidence" in architecture, "ARCHITECTURE must define nonterminal phase checks")
-    require("phase gate, not completion evidence" in use_cases, "USE-CASES must define nonterminal phase checks")
-    require((ROOT / "tests/fixtures/agent_value/autonomous-multiphase-continuation.md").is_file(), "multi-phase Autonomous continuation fixture missing")
-    require((ROOT / "tests/fixtures/agent_value/autonomous-run-kpis.md").is_file(), "Autonomous run KPI fixture missing")
-    for fixture in (
-        "autonomous-runtime-entrypoint-completion.md",
-        "autonomous-capability-fallback.md",
-        "autonomous-blocked-step.md",
-        "autonomous-confirmed-block-recovery.md",
-        "prometheus-load-bearing-prerequisite.md",
-    ):
-        require((ROOT / "tests/fixtures/agent_value" / fixture).is_file(), f"feedback regression fixture missing: {fixture}")
-    require("### UC-AUT-10: A blocked step halts before it cascades into red work" in use_cases, "USE-CASES UC-AUT-10 must remain byte-unchanged")
+    generated = (ROOT / "docs/NEXT-ITERATION.md").read_text()
+    require(".opencode/generated-agents.json" in generated, "generated-agent registry contract missing")
+    require("new conversation" in generated, "fresh-session contract missing")
+    require("Ralph-style loop" in generated, "Ralph contract missing")
     require("does **not** replace, wrap, redirect, restrict" in readme, "README product goal is ambiguous")
     require("outside this project's enforcement boundary" in requirements, "durable native compatibility invariant missing")
     require("Standardized Verdict Definitions" in methodology, "TESTING-METHODOLOGY missing verdict definitions")
@@ -1701,14 +1622,14 @@ def main() -> int:
         require(not (config / "AGENTS.md").exists(), "repository rules were installed globally")
         require({p.stem for p in (config / "agents").glob("*.md")} == MANAGED_AGENTS, "specialist agents not deployed")
         require((config / "plugins/immutability.ts").is_file(), "managed-agent immutability plugin missing")
-        require((config / "plugins/autonomous-kpis.ts").is_file(), "Autonomous KPI plugin missing")
+        require((config / "plugins/autonomous-kpis.ts").is_file(), "generated-agent KPI plugin missing")
         require(not (config / "plugins/opencode-autonomous-supervisor.js").exists(), "obsolete supervisor installed in default profile")
         require((config / "tools/spike.ts").is_file(), "spike tool missing from default profile")
         require((config / "tools/scaffold_gitignore.ts").is_file(), "scaffold_gitignore missing from default profile")
         require((config / "tools/validate_scaffold.ts").is_file(), "validate_scaffold missing from default profile")
         require((config / "skills/systematic-debugging/SKILL.md").is_file(), "skills missing from default profile")
         installed = {p.stem for p in (config / "agents").glob("*.md")}
-        require({"prometheus", "autonomous"} <= installed, "managed agents missing from default profile")
+        require({"prometheus", "ask", "reviewer", "grounder"} <= installed, "managed agents missing from default profile")
         require((config / "node_modules/@opencode-ai/plugin").is_dir(), "tool SDK missing from default profile")
 
     with tempfile.TemporaryDirectory(prefix="opencode-tools-") as tmp:

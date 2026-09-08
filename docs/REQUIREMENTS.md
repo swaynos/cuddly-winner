@@ -11,15 +11,13 @@ platform.
 durable source of truth. `SPEC.md` and `opencode-autonomous.json` are transient
 task scaffolds.
 
-## Approved Next Iteration
+## Generated Execution Agents
 
-The approved replacement for the fixed Autonomous workflow is documented in
-[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). Prometheus will publish a
-task-specific project-local execution agent, then require an OpenCode restart
-and a new execution session. The next iteration removes the shipped
-`autonomous`, `karpathy`, and `implementation-validator` definitions. This is a
-future contract: the managed-agent and manifest rules below describe the current
-runtime until its implementation replaces them.
+The generated execution contract is documented in
+[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). Prometheus publishes a
+task-specific project-local execution agent, then requires an OpenCode restart
+and a new execution session. The managed `autonomous`, `karpathy`, and
+`implementation-validator` definitions are retired.
 
 ## No Legacy Support
 
@@ -57,10 +55,11 @@ direct ordinary planning to Prometheus or ordinary implementation to Autonomous.
 
 ## Managed Agents
 
-The managed identities are `ask`, `prometheus`, `autonomous`, `karpathy`,
-`reviewer`, `grounder`, and `implementation-validator`. They are selected explicitly or delegated internally. Delegated sessions
-inherit the topmost managed ancestor's identity so delegation cannot widen that
-agent's edit-tool boundary.
+The shipped managed identities are `ask`, `prometheus`, `reviewer`, and
+`grounder`. A generated identity is managed only when it is listed in the
+project's schema-v1 generated-agent registry and has a valid task manifest.
+Delegated sessions inherit the topmost managed identity so delegation cannot
+widen that agent's edit-tool boundary.
 
 ### Ask
 
@@ -97,7 +96,7 @@ contracted spike. If missing evidence eliminates a core requested outcome, it
 redesigns or reports a planning blocker; it does not relabel a degraded result as
 success. Acceptance criteria must mark any allowed degraded branch as optional.
 
-### Autonomous
+### Retired Fixed Executors
 
 Autonomous owns implementation and final verification. It reads the published
 scaffold, executes bounded right-sized work, makes reversible implementation
@@ -267,7 +266,7 @@ the `spike` tool. The tool:
 The tool permission is `ask`, so each invocation prompts normally and auto mode
 may approve it. A failed kill criterion requires redesign or a planning blocker.
 
-### Scaffold
+### Retired Scaffold
 
 Every published scaffold contains:
 
@@ -295,7 +294,7 @@ focused question and is limited to once per session to prevent a feedback
 loop. A managed descendant that only inherits Prometheus's edit restrictions
 is not itself Prometheus and never receives this reminder.
 
-## Autonomous Profile
+## Retired Autonomous Profile
 
 Direct is the default for ordinary feature, defect, and technical-debt work.
 Autonomous works one right-sized item at a time, verifies relevant increments,
@@ -331,18 +330,17 @@ engineering context. When invoked, Autonomous leaves all Git publication
 decisions to the human. Its session evidence and validator report describe the
 aggregate pending changeset.
 
-### External Loop Wrapper
+### Generated Task Loop
 
-`scripts/autonomous-loop.mjs` is an optional external loop controller for
-Autonomous. It is a developer tool that lives beside the other repository
+`scripts/task-loop.mjs` is an optional external loop controller for a registered
+generated task agent. It is a developer tool that lives beside the other repository
 scripts. The installer never deploys it, it is not part of the managed profile,
 and no agent, plugin, or tool depends on it. It does not run inside an OpenCode
 session and does not change any agent prompt, permission, or completion rule.
 
-The wrapper treats Autonomous as a black box. For each configured pass it starts
-one fresh `opencode run --agent autonomous --auto` session and sends no message,
-so the published scaffold is the sole driver of the work. Autonomous keeps its
-strict one-invocation completion contract inside every pass; the wrapper only
+The wrapper treats the named task agent as a black box. For each configured pass
+it starts one fresh `opencode run --agent <task-id>` session and sends no message,
+so the published task package is the sole driver of the work. The wrapper only
 decides whether to start another pass.
 
 The wrapper owns loop control and progress measurement, and the agent never sees
@@ -363,7 +361,7 @@ to the agent. Per-session analysis still uses `tests/audit_run.py`.
 
 ## Deployment
 
-Default installation deploys the complete managed profile: all seven agents, the
+Default installation deploys the complete managed profile: the four retained agents, the
 immutability plugin, `spike`, `validate_scaffold`, `scaffold_gitignore`, the
 pinned OpenCode tool SDK, and all non-core skills. This ensures the shipped
 Prometheus agent always has its declared command and governance tools available.
@@ -454,8 +452,8 @@ are reported without attributing them to a particular agent after a switch.
 ## Validation
 
 Release validation separately proves native compatibility, identity inheritance,
-role permissions, Prometheus triage and deliberation behavior, Autonomous
-approval-gated Bash, Direct/Karpathy prompt contracts, deterministic skill and
+role permissions, Prometheus triage and deliberation behavior, generated-agent
+approval-gated Bash, task-package strategy contracts, deterministic skill and
 audit checks, mutation-runner behavior, additive deployment and
 safe removal, and documentation consistency, following the evidence requirements
 defined in `docs/TEST-PLAN.md` and `docs/TESTING-METHODOLOGY.md`. No release check may require Bubblewrap, Lima, a

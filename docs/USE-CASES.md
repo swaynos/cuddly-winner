@@ -13,10 +13,9 @@ Evidence classes:
 
 ## Approved Next Iteration
 
-The following cases specify the generated-execution-agent design in
-[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). They are prospective. The current
-Autonomous, Karpathy, and Implementation Validator cases below remain the
-runtime contract until the replacement ships.
+The following cases specify the current generated-execution-agent design in
+[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). The older fixed-agent cases below
+are retired history and do not describe the runtime.
 
 ### UC-NEXT-01: Prometheus publishes a scoped local executor
 

@@ -76,8 +76,8 @@ narrowly scoped execution definition under the next-iteration contract in
 [`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). Ask before replacing a conflicting
 or user-owned local definition.
 - **Must not:** Add global roles by default, create local definitions before a
-  proposal is approved, or modify global configuration without an explicit
-  request.
+  proposal is approved except for an explicitly requested Prometheus task
+  package, or modify global configuration without an explicit request.
 - **Evidence:** Inventory, scoped proposal, approval where required, and local
   paths under `.opencode/`.
 

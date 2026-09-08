@@ -2,16 +2,12 @@
 
 ## Status
 
-This document defines the approved direction for the next iteration. It does
-not describe the currently deployed runtime. Until the implementation ships,
-the contracts in `docs/REQUIREMENTS.md` and `docs/ARCHITECTURE.md` for the
-managed `autonomous`, `karpathy`, and `implementation-validator` agents remain
-current.
+This document defines the current generated-execution-agent runtime. It replaces
+the former fixed Autonomous workflow.
 
-The next iteration removes those three shipped agent definitions. It retains
-Prometheus and may retain the read-only Ask, Grounder, and Reviewer agents.
-Whether Validator should return as a reusable agent remains open; this design
-does not require it.
+The runtime removes those three shipped agent definitions. It retains Prometheus
+and the read-only Ask, Grounder, and Reviewer agents. It does not ship a fixed
+Validator role.
 
 ## Prometheus Publication
 
@@ -89,19 +85,17 @@ acceptance condition. No fixed Implementation Validator handoff is required.
 
 ## Required Runtime Work
 
-The implementation must change the present runtime before this design can be
-called supported:
+The runtime recognizes a generated identity only when its name appears in
+`.opencode/generated-agents.json` and its schema-v1 task manifest validates.
+The immutability plugin applies the manifest's edit-path and Bash boundaries to
+that identity and its descendants. Other project-local definitions remain
+unmanaged. Published task packages are immutable to generated executors.
 
-- expand Prometheus's edit boundary to permit scoped project-local agent and
-  task-brief publication;
-- define how the immutability plugin recognizes and enforces generated agent
-  permissions instead of treating them as unrestricted unknown identities;
-- replace the current manifest schema and static validation contract rather than
-  adding a compatibility alias for retired `direct` and `karpathy` semantics;
-- update deployment to stop shipping Autonomous, Karpathy, and Implementation
-  Validator while preserving any retained read-only agents; and
-- add startup, collision, permission, fresh-session, loop, and validation
-  evidence described in `docs/TEST-PLAN.md`.
+`validate_scaffold` rejects retired schema-v3 manifests and the former
+`karpathy` strategy. It validates the registered schema-v1 package without
+running project commands. The optional `scripts/task-loop.mjs` starts each Ralph
+pass as a new session for the named generated agent; it records progress but
+does not accept the final outcome.
 
-This is a replacement contract. The project must not accept both old and new
-manifest or strategy formats as a compatibility layer.
+This is a replacement contract. The project does not accept old and new manifest
+or strategy formats as a compatibility layer.

@@ -1,12 +1,13 @@
-import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { validateManifest } from "../tools/validate_scaffold.ts";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 const SHELL_TOOLS = new Set(["bash"]);
 const PROMETHEUS_ONLY_TOOLS = new Set(["spike", "scaffold_gitignore", "validate_scaffold"]);
-const MANAGED_AGENTS = new Set(["ask", "prometheus", "autonomous", "karpathy", "reviewer", "grounder", "implementation-validator"]);
-const READ_ONLY_AGENTS = new Set(["ask", "karpathy", "reviewer", "grounder", "implementation-validator"]);
-const PROMETHEUS_WRITABLE = ["SPEC.md", "opencode-autonomous.json", ".prometheus/evaluator/**", ".spike/**"];
+const MANAGED_AGENTS = new Set(["ask", "prometheus", "reviewer", "grounder"]);
+const READ_ONLY_AGENTS = new Set(["ask", "reviewer", "grounder"]);
+const PROMETHEUS_WRITABLE = [".opencode/agents/**", ".opencode/tasks/**", ".opencode/generated-agents.json", ".spike/**"];
 const TRUSTED_PATHS = [
   "tools/spike.ts",
   "tools/validate_scaffold.ts",
@@ -63,8 +64,8 @@ function isTrustedPath(relPath: string): boolean {
   return TRUSTED_PATHS.some((trusted) => relPath === trusted || relPath.startsWith(`${trusted}/`));
 }
 
-function isPublishedScaffold(relPath: string): boolean {
-  return relPath === "SPEC.md" || relPath === "opencode-autonomous.json" || relPath.startsWith(".prometheus/evaluator/");
+function isPublishedTaskPackage(relPath: string): boolean {
+  return relPath === ".opencode/generated-agents.json" || relPath.startsWith(".opencode/agents/") || relPath.startsWith(".opencode/tasks/");
 }
 
 export const ImmutabilityGuard = async ({ directory, worktree, client }: { directory: string; worktree: string; client: any }) => {
@@ -72,6 +73,27 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
   const root = realpathSync(lexicalRoot);
   const sessionAgents = new Map<string, string>();
   const publicationReminders = new Set<string>();
+
+  type GeneratedPolicy = { editPaths: string[]; bash: boolean };
+  const generatedPolicies = new Map<string, GeneratedPolicy | undefined>();
+  function generatedPolicy(agent: string): GeneratedPolicy | undefined {
+    if (generatedPolicies.has(agent)) return generatedPolicies.get(agent);
+    let policy: GeneratedPolicy | undefined;
+    try {
+      const registry = JSON.parse(readFileSync(resolve(root, ".opencode/generated-agents.json"), "utf8"));
+      const entry = Array.isArray(registry?.agents) ? registry.agents.find((item: any) => item?.name === agent) : undefined;
+      if (registry?.schema_version === 1 && typeof entry?.manifest === "string") {
+        const manifest = JSON.parse(readFileSync(resolve(root, entry.manifest), "utf8"));
+        const result = validateManifest(manifest);
+        if (result.valid && manifest.agent_name === agent && entry.manifest === `.opencode/tasks/${manifest.task_id}.json`) {
+          policy = { editPaths: manifest.permissions.edit_paths, bash: manifest.permissions.bash };
+        }
+      }
+    } catch {}
+    generatedPolicies.set(agent, policy);
+    return policy;
+  }
+  function isManaged(agent: string): boolean { return MANAGED_AGENTS.has(agent) || generatedPolicy(agent) !== undefined; }
 
   async function resolveAgent(sessionID: string, visited = new Set<string>()): Promise<string | undefined> {
     if (visited.has(sessionID)) return undefined;
@@ -83,7 +105,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       const parentID = session?.parentID;
       if (parentID) {
         const parentAgent = await resolveAgent(parentID, visited);
-        if (parentAgent && MANAGED_AGENTS.has(parentAgent)) {
+        if (parentAgent && isManaged(parentAgent)) {
           sessionAgents.set(sessionID, parentAgent);
           return parentAgent;
         }
@@ -137,7 +159,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       if (!sessionID || publicationReminders.has(sessionID)) return;
       const agent = await ownAgent(sessionID);
       if (agent !== "prometheus") return;
-      if (existsSync(resolve(root, "SPEC.md")) && existsSync(resolve(root, "opencode-autonomous.json"))) return;
+      if (existsSync(resolve(root, ".opencode/generated-agents.json"))) return;
 
       // Continue the same session once rather than allowing an unpublished plan to end silently.
       publicationReminders.add(sessionID);
@@ -145,7 +167,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
         path: { id: sessionID },
         body: {
           agent: "prometheus",
-          parts: [{ type: "text", text: "Before completing, publish SPEC.md and opencode-autonomous.json if this task is planning-ready. If a concrete planning blocker remains, state it as a focused question." }],
+          parts: [{ type: "text", text: "Before completing, publish a registered .opencode generated-agent task package if this task is planning-ready. If a concrete planning blocker remains, state it as a focused question." }],
         },
       });
     },
@@ -158,7 +180,8 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
     ) => {
       if (!MUTATING_TOOLS.has(input.tool) && !SHELL_TOOLS.has(input.tool) && !PROMETHEUS_ONLY_TOOLS.has(input.tool)) return;
       const agent = await resolveAgent(input.sessionID);
-      if (!agent || !MANAGED_AGENTS.has(agent)) return;
+      if (!agent || !isManaged(agent)) return;
+      const generated = generatedPolicy(agent);
 
       if (PROMETHEUS_ONLY_TOOLS.has(input.tool)) {
         if (agent !== "prometheus") throw new Error(`ImmutabilityGuard: only @prometheus may invoke ${input.tool}.`);
@@ -169,6 +192,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       if (SHELL_TOOLS.has(input.tool)) {
         if (READ_ONLY_AGENTS.has(agent)) throw new Error(`ImmutabilityGuard: @${agent} is read-only.`);
         if (agent === "prometheus") throw new Error("ImmutabilityGuard: @prometheus may not execute shell commands directly.");
+        if (generated && !generated.bash) throw new Error(`ImmutabilityGuard: @${agent} may not execute shell commands.`);
         return;
       }
 
@@ -185,9 +209,10 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       for (const unresolvedPath of paths) {
         const absolutePath = safeTarget(lexicalRoot, root, unresolvedPath);
         const relPath = relative(root, absolutePath).replace(/\\/g, "/");
-        if (isPublishedScaffold(relPath) && agent !== "prometheus") throw new Error(`ImmutabilityGuard: @${agent} cannot rewrite published scaffold: "${relPath}".`);
-        if (agent === "prometheus" && isPublishedScaffold(relPath)) continue;
+        if (isPublishedTaskPackage(relPath) && agent !== "prometheus") throw new Error(`ImmutabilityGuard: @${agent} cannot rewrite published task package: "${relPath}".`);
+        if (agent === "prometheus" && isPublishedTaskPackage(relPath)) continue;
         if (isTrustedPath(relPath)) throw new Error(`ImmutabilityGuard: "${relPath}" is trusted control-plane state.`);
+        if (generated && !generated.editPaths.includes(relPath)) throw new Error(`ImmutabilityGuard: @${agent} cannot edit outside its declared edit paths: "${relPath}".`);
         if (agent === "prometheus" && !PROMETHEUS_WRITABLE.some((pattern) => matchesPattern(relPath, pattern))) {
           throw new Error(`ImmutabilityGuard: @prometheus is restricted to writing [${PROMETHEUS_WRITABLE.join(", ")}].`);
         }

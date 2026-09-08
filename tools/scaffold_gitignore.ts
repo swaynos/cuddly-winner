@@ -15,13 +15,12 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-const BEGIN = "# BEGIN OpenCode Autonomous artifacts";
-const END = "# END OpenCode Autonomous artifacts";
+const BEGIN = "# BEGIN OpenCode generated task artifacts";
+const END = "# END OpenCode generated task artifacts";
 
 export const MANAGED_PATHS = [
-  "/SPEC.md",
-  "/opencode-autonomous.json",
-  "/.prometheus/evaluator/",
+  "/.opencode/generated-agents.json",
+  "/.opencode/tasks/",
   "/.spike/",
 ];
 

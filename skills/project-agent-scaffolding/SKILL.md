@@ -56,7 +56,12 @@ the current repo only.
 6. Keep permissions narrow.
    - Reviewers default to read-only.
    - Grounding agents may use `webfetch` when current external docs matter.
-   - Implementers should be rare and scoped to exact project workflows.
+    - Implementers should be rare and scoped to exact project workflows.
+
+Prometheus is the exception to the separate approval step for one generated
+execution definition: an explicit request to run Prometheus authorizes it to
+publish the task package for that request. It still asks before replacing a
+conflicting or user-owned local definition.
 
 7. Cleanup safely.
    - Archive by default under `.opencode/archive/`.

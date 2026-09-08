@@ -10,7 +10,7 @@ import {
   parseArgs,
   run,
   runLoop,
-} from "../../scripts/autonomous-loop.mjs";
+} from "../../scripts/task-loop.mjs";
 
 const silent = () => {};
 
@@ -22,7 +22,8 @@ test("parseArgs applies the documented defaults", () => {
   assert.equal(options.idleStop, null);
   assert.equal(options.wallBudget, null);
   assert.equal(options.stopOnFailure, false);
-  assert.equal(options.log, ".autonomous-loop/runs.jsonl");
+  assert.equal(options.agent, null);
+  assert.equal(options.log, ".task-loop/runs.jsonl");
   assert.equal(options.dryRun, false);
 });
 
@@ -195,7 +196,7 @@ test("run --dry-run prints the plan and never spawns a pass", async () => {
   });
   assert.equal(code, 0);
   const output = lines.join("\n");
-  assert.match(output, /autonomous-loop plan:/);
+  assert.match(output, /task-loop plan:/);
   assert.match(output, /\/tmp\/loop-project/);
 });
 
@@ -212,15 +213,15 @@ test("run returns exit code 2 on an argument error", async () => {
 });
 
 test("run writes one JSONL evidence record per pass through the file sink", async () => {
-  const project = mkdtempSync(path.join(tmpdir(), "autonomous-loop-"));
+  const project = mkdtempSync(path.join(tmpdir(), "task-loop-"));
   try {
-    const code = await run(["--project", project, "--passes", "2"], {
+    const code = await run(["--project", project, "--agent", "fix-widget", "--passes", "2"], {
       spawnPass: async () => ({ exitCode: 0 }),
       now: () => 0,
       log: silent,
     });
     assert.equal(code, 0);
-    const logPath = path.join(project, ".autonomous-loop", "runs.jsonl");
+    const logPath = path.join(project, ".task-loop", "runs.jsonl");
     const lines = readFileSync(logPath, "utf8").trim().split("\n");
     assert.equal(lines.length, 2);
     const records = lines.map((line) => JSON.parse(line));

@@ -14,6 +14,7 @@ The durable source of truth for this project lives in `docs/`:
 
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md): System architecture, identity inheritance, workflow tools, manifest schemas, and skill packaging.
 - [REQUIREMENTS.md](docs/REQUIREMENTS.md): Product goals, permission models, agent profiles, and validation rules.
+- [NEXT-ITERATION.md](docs/NEXT-ITERATION.md): Generated task-agent packages and fresh-context execution.
 - [SKILLS.md](docs/SKILLS.md): Skill contracts, catalog, and shared package rules.
 - [RESOURCE-SELECTION.md](docs/RESOURCE-SELECTION.md): Non-disruptive research and browser credential policy.
 - [TEST-PLAN.md](docs/TEST-PLAN.md): Evidence classes, test cases, and platform matrix.
@@ -34,7 +35,7 @@ Support).
 Command security belongs to OpenCode's native permission model:
 
 - Prometheus denies direct Bash and uses the approval-gated `spike` tool for contracted command-dependent research.
-- Autonomous uses native Bash with `ask` permission.
+- A registered project-local task agent receives only its manifest-declared Bash and edit access.
 - `opencode --auto` automatically approves `ask` requests.
 - Explicit `deny` permissions remain denied in auto mode.
 - Bash results are engineering evidence, not tamper-resistant proof.
