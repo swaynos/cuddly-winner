@@ -50,6 +50,18 @@ test("registered executor can edit only its manifest scope", async () => fixture
   await assert.rejects(mutate(instance, "executor", path.join(root, ".opencode", "tasks", "fix-widget.json")), /published task package/);
 }));
 
+test("apply_patch move destinations are checked against trusted control-plane paths", async () => fixture(async root => {
+  await publish(root);
+  const instance = await guard(root, { executor: "fix-widget" });
+  await assert.rejects(
+    instance["tool.execute.before"](
+      { tool: "apply_patch", sessionID: "executor", callID: "move" },
+      { args: { cwd: root, patchText: "*** Begin Patch\n*** Update File: src/widget.ts\n*** Move to: tools/spike.ts\n*** End Patch" } },
+    ),
+    /trusted control-plane/,
+  );
+}));
+
 test("registered executor inherits its boundary through delegation", async () => fixture(async root => {
   await publish(root, "fix-widget", ["src/widget.ts"], false);
   const instance = await guard(root, { parent: "fix-widget", child: "build" }, { child: "parent" });

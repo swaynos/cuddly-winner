@@ -31,7 +31,7 @@ function matchesPattern(relPath: string, pattern: string): boolean {
 function extractPatchedPaths(patchText: string): string[] {
   const paths = new Set<string>();
   for (const line of patchText.split(/\r?\n/)) {
-    const match = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/);
+    const match = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/) ?? line.match(/^\*\*\* Move to: (.+)$/);
     if (match?.[1].trim()) paths.add(match[1].trim());
   }
   return [...paths];

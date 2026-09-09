@@ -21,6 +21,18 @@ jobs:
       - name: Install pyenv-virtualenv
         run: git clone --depth 1 https://github.com/pyenv/pyenv-virtualenv.git "$(pyenv root)/plugins/pyenv-virtualenv"
       - run: npm ci
+      - name: Install the pinned OpenCode CLI
+        run: |
+          npm install -g "opencode-ai@$(cat .opencode-cli-version)"
+          opencode --version
       - run: bash scripts/ci.sh
         env:
           OPENCODE_DEPLOY_CONFIG_DIR: ${{ runner.temp }}/opencode-config
+          OPENCODE_E2E_ARTIFACTS: ${{ runner.temp }}/e2e-artifacts
+      - name: Upload end-to-end evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-evidence
+          path: ${{ runner.temp }}/e2e-artifacts
+          if-no-files-found: ignore

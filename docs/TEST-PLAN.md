@@ -18,10 +18,17 @@ or lifecycle rules.
 - **S**: static source, configuration, or documentation contract check
 - **B**: behavioral agent evaluation against a frozen repository fixture
 - **O**: optional live OpenCode smoke test
+- **E**: deterministic installed-product end-to-end test driving the real
+  OpenCode binary against a scripted loopback provider
 
 Dry runs and evaluator self-tests prove test plumbing only. They do not count as
 behavioral or live-runtime evidence. A skipped or unexercised case is blocked,
 not passed.
+
+Class E evidence proves runtime wiring, deployment, and permission policy across
+real processes. It is not behavioral evidence: the tool calls come from a frozen
+script rather than a model's judgement, so class E never substitutes for class B
+or class O.
 
 ## Approved Next Iteration
 
@@ -35,6 +42,7 @@ cases below are retired history and do not validate the runtime.
 | TP-NEXT-02 | UC-NEXT-02 | B, O | Publish a local executor, restart OpenCode, start a new conversation, and select that agent. | Startup agent inventory, handoff text, new-session transcript, and reads of durable context. | OpenCode discovers the definition after restart; the new agent acts without the planning transcript; the handoff does not claim restart clears history. |
 | TP-NEXT-03 | UC-NEXT-03 | B, F | Run a bounded Ralph fixture with a productive pass, an unproductive pass, and a final outcome check. | Per-pass counters, command output, retained evidence, pass decisions, and final outcome result. | The agent applies the declared pass policy and separates pass progress from final delivery. |
 | TP-NEXT-04 | UC-NEXT-04, UC-NEXT-05 | U, F, S, B | Exercise deterministic verification, a task requiring independent review, a local-agent name collision, and protected-path requests. | Task brief, review evidence where required, collision decision, resolved identity, and tool decisions. | Validation follows the task brief without a fixed Validator dependency; user-owned definitions survive; generated identities cannot bypass their declared boundary. |
+| TP-NEXT-05 | UC-NEXT-01, UC-NEXT-02, UC-NEXT-04 | E, F, S | Run `evals/seed_build/test_end_to_end.py` against the fixture in `evals/seed_build/e2e/`. Install the managed profile into an isolated configuration root, then run the pinned real OpenCode binary as a fresh process per agent against a scripted loopback provider: Prometheus without automatic approval, then the published project-local generated agent with it. Preload no task package. Probe published-package writes, trusted-source writes, out-of-scope writes, and a governance tool the generated agent does not own. | Installed tree, effective per-agent tool availability, provider request bodies and offered tool schemas, JSON tool events, task-package bytes before and after execution, Bash command results, child session agents from the isolated database, Git HEAD/count/index, hidden acceptance suite output, and an independent replay of each declared command. | The profile installs the four agents, all plugins, tools, and pinned runtime; effective permissions match the four retained roles; Prometheus publishes a valid registered schema-v1 task package and ends with the restart handoff; OpenCode discovers the project-local generated agent, which consumes the published bytes, creates every required file, and runs each declared command through native Bash; every probe is refused for its specific documented reason; the published package is unchanged and Git publication state is preserved with work left pending; the hidden suite and the independent replay pass; and no provider request is unscripted and no scripted turn unused. |
 
 ## Case Requirements
 
@@ -230,6 +238,13 @@ Each fixture must record:
 | Agent behavioral tests (Ask, Grounder, Prometheus, Autonomous, Karpathy, Reviewer, Implementation Validator) | `tests/fixtures/agent_value/` |
 | Planning evaluation (Prometheus → SPEC) | `evals/seed_build/` |
 | Build evaluation (Autonomous → verification) | `evals/seed_build/` |
+| Installed-product end to end (install → Prometheus → generated agent) | `evals/seed_build/e2e/` |
+
+The end-to-end fixture keeps its hidden acceptance suite in
+`evals/seed_build/e2e/hidden/`. That directory is never copied into the agent
+workspace and is never named in the request, so the harness scores the delivered
+work against criteria the agent could not read. The scored request itself is
+`evals/seed_build/e2e/request.md`.
 
 ### Fixture reference rule
 

@@ -234,12 +234,19 @@ export default tool({
     handle: tool.schema.string().optional(),
     url: tool.schema.string().url().optional(),
     method: tool.schema.enum(["GET", "HEAD"]).optional(),
-    interactive_approved: tool.schema.boolean().optional(),
   },
   async execute(args, context) {
     const sessionID = context.sessionID ?? "unknown";
     const current = await service();
-    if (args.operation === "bootstrap") return JSON.stringify(await current.bootstrap({ profile: await installedProfile(args.site ?? ""), sessionID, interactive_approved: args.interactive_approved === true }));
+    if (args.operation === "bootstrap") {
+      await context.ask({
+        permission: "browser",
+        patterns: [args.site ?? ""],
+        always: [],
+        metadata: { operation: "bootstrap", site: args.site ?? "" },
+      });
+      return JSON.stringify(await current.bootstrap({ profile: await installedProfile(args.site ?? ""), sessionID, interactive_approved: true }));
+    }
     if (args.operation === "complete") return JSON.stringify(await current.complete({ handle: args.handle ?? "", sessionID }));
     if (args.operation === "close") return JSON.stringify(await current.close({ handle: args.handle ?? "", sessionID }));
     return JSON.stringify(await current.request({ handle: args.handle ?? "", sessionID, url: args.url ?? "", method: args.method ?? "GET" }));

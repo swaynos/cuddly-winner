@@ -459,6 +459,13 @@ safe removal, and documentation consistency, following the evidence requirements
 defined in `docs/TEST-PLAN.md` and `docs/TESTING-METHODOLOGY.md`. No release check may require Bubblewrap, Lima, a
 protected runner, or a custom supervisor.
 
+Release validation also proves the installed product end to end: the installer,
+the effective per-agent permissions OpenCode resolves, the Prometheus-to-
+generated-agent handoff across separate processes, native command execution,
+manifest-scoped edit and Bash boundaries, and each refused boundary probe. That
+evidence comes from a scripted loopback provider, so it establishes wiring,
+deployment, and permission policy, never agent judgement.
+
 Live repository-profile validation compares the complete managed installation,
 including agents and their effective metadata, plugins, tools, skills, rules and
 instruction wiring, pinned runtime packages, the managed research-browser entry,

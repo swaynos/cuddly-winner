@@ -20,3 +20,17 @@ node --test tests/plugins/*.test.mjs tests/integration/*.test.mjs
 "$PYTHON" evals/seed_build/test_planning.py --dry-run
 "$PYTHON" evals/seed_build/test_build.py --dry-run
 bash scripts/deploy-opencode-agents.sh status
+
+# Deterministic installed-product end-to-end test. Runs last because it is the
+# slowest step, so the cheaper checks always report first. It needs the pinned
+# OpenCode CLI; exit status 2 means that prerequisite is absent, which is a skip
+# rather than a failure so this script stays usable without the CLI.
+set +e
+"$PYTHON" evals/seed_build/test_end_to_end.py
+E2E_STATUS=$?
+set -e
+case "$E2E_STATUS" in
+  0) ;;
+  2) printf 'End-to-end test skipped: pinned OpenCode CLI %s not available.\n' "$(cat .opencode-cli-version)" ;;
+  *) exit "$E2E_STATUS" ;;
+esac

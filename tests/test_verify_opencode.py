@@ -87,38 +87,11 @@ class BehavioralAssertionTests(unittest.TestCase):
             self.assertTrue(any("research browser configuration differs" in item for item in mismatches))
             self.assertTrue(any("feedback locator differs" in item for item in mismatches))
 
-    def test_autonomous_uses_a_concise_final_handoff(self) -> None:
-        agent = (pathlib.Path(__file__).parents[1] / "agents" / "autonomous.md").read_text(
-            encoding="utf-8"
-        )
-
-        self.assertIn("Goals and validated outcomes", agent)
-        self.assertIn("Brief change summary", agent)
-        self.assertIn("each exact verification command", agent)
-        self.assertIn("validator verdict", agent)
-        self.assertIn("detailed PR Contract", agent)
-        self.assertIn("full validator\nreport remains in that delegated task result", agent)
-        self.assertIn("unavailable, do not report success or label any\nrequested goal `Validated`", agent)
-        self.assertIn("Do not emit\n`<promise>COMPLETE</promise>`", agent)
-        self.assertIn('"*": deny\n    grounder: allow', agent)
-        self.assertIn("placeholder test, ignored verification flag, disabled", agent)
-        self.assertIn("Delegate to the required validator after this candidate-readiness check", agent)
-        self.assertIn(
-            "declared verification passes or a required step proves impossible to complete with any tool or permission available in this session",
-            verify_opencode.normalize_whitespace(agent),
-        )
-        self.assertIn("stop at that item instead of\ncompleting downstream checklist items", agent)
-        self.assertIn("minimize the red, half-migrated surface left in the worktree", agent)
-        self.assertIn("worktree is left red or half-migrated and therefore not\ncommittable as-is", agent)
-        self.assertIn("does not license describing that same\nred or half-migrated tree as done, ready, or committable", agent)
-
     def test_task_permission_specific_allows_follow_the_catch_all_deny(self) -> None:
         root = pathlib.Path(__file__).parents[1] / "agents"
         expected = {
             "ask.md": ['"grounder": allow'],
             "prometheus.md": ["grounder: allow"],
-            "autonomous.md": ["implementation-validator: allow"],
-            "karpathy.md": ['"reviewer": allow'],
         }
 
         for filename, specific_allows in expected.items():

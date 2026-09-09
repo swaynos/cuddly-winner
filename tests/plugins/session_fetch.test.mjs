@@ -39,6 +39,20 @@ test("bootstrap requires approval and returns no credentials", async () => {
   assert.doesNotMatch(JSON.stringify(result), /cookie|token|sid/i);
 });
 
+test("tool bootstrap requests OpenCode approval instead of accepting a caller flag", async () => {
+  const tool = (await import("../../tools/session_fetch.ts")).default;
+  const approvals = [];
+  await assert.rejects(
+    tool.execute({ operation: "bootstrap", site: "missing", interactive_approved: true }, {
+      sessionID: "one",
+      ask: async input => { approvals.push(input); },
+    }),
+    /session-fetch-sites\.json/,
+  );
+  assert.equal(approvals.length, 1);
+  assert.equal(approvals[0].permission, "browser");
+});
+
 test("complete keeps session material private and native request forwards it", async () => {
   const requests = [];
   const service = new SessionFetchService({

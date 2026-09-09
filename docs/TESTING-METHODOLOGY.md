@@ -81,6 +81,68 @@ Live end-to-end evaluations test planning (`test_planning.py`) and implementatio
 
 ---
 
+## Installed-Product End To End (`evals/seed_build/test_end_to_end.py`)
+
+`test_planning.py` and `test_build.py` are separate evaluations, and the build
+evaluation starts from a canonical scaffold rather than from planning output.
+Neither exercises installation, cross-process handoff, or permission
+enforcement. `test_end_to_end.py` covers that gap and is the only class-E
+evidence in the repository.
+
+### What it exercises
+
+One run installs the managed profile with `scripts/deploy-opencode-agents.sh`
+into an isolated configuration root, then starts the real OpenCode binary once
+per agent in the same Git worktree. Prometheus, in normal approval mode,
+publishes a project-local generated execution agent — its definition, registry
+entry, schema-v1 task manifest, and durable brief. The generated agent then runs
+as a separate process under documented automatic approval. No canonical scaffold
+is preloaded, so the generated agent consumes exactly the bytes Prometheus
+published and acts from the worktree without the planning transcript. The
+harness scores the result with a hidden acceptance suite and an independent
+replay of each declared verification command.
+
+### Scripted provider
+
+`evals/seed_build/_llm_server.py` serves scripted server-sent events on
+`POST /v1/chat/completions`, the wire shape OpenCode's own subprocess tests use
+through `@ai-sdk/openai-compatible`. Each scripted turn is scoped to its agent's
+system prompt, so a subagent's requests may interleave with its parent's without
+disturbing per-agent ordering. The server records every request, including the
+tool schemas OpenCode offered. An unscripted request and an unused scripted turn
+each fail the test, which keeps a silently shortened run from passing.
+
+### Isolation
+
+The harness redirects `HOME`, every `XDG_*` root, `ZDOTDIR`, and
+`OPENCODE_CONFIG_DIR`, supplies the provider through
+`OPENCODE_CONFIG_CONTENT`, strips provider credentials from the environment, and
+sets `enabled_providers` to the scripted provider alone. It disables the managed
+research-browser MCP entry by name so the run stays offline without editing the
+installed profile. Temporary paths are resolved through symlinks before use,
+because OpenCode resolves its worktree to a real path and a mismatch makes
+in-workspace paths look external.
+
+### Runtime pin
+
+`.opencode-cli-version` is the single source of truth for the supported OpenCode
+CLI version. The harness asserts the running binary matches it and records the
+version, repository revision, and platform in every report. CI installs that
+same pinned version. `OPENCODE_E2E_BIN` selects a specific binary and
+`OPENCODE_E2E_ARTIFACTS` selects the evidence directory. Exit status 2 means the
+pinned CLI is absent, which `scripts/ci.sh` treats as a skip rather than a
+failure.
+
+### What it does not prove
+
+The tool calls come from a frozen script, not from a model, so this test proves
+wiring, deployment, and permission policy — never agent judgement. Its hidden
+oracle passing means the delivered files satisfy unseen criteria, not that an
+agent reasoned well. Judgement remains the job of the behavioral fixtures and
+the optional live scenarios.
+
+---
+
 ## Live Model Defaults
 
 `tests/verify_opencode.py` and `tests/test_skill_coverage.py` run optional
