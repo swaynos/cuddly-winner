@@ -2,474 +2,599 @@
 
 ## Boundary
 
-Native OpenCode agents bypass this extension. Only explicitly selected managed
-agents enter the identity-scoped plugin:
+Native and unmanaged OpenCode agents bypass the managed-identity branch of the
+immutability and KPI plugins. Only a shipped managed identity or a
+registry-recognized generated identity enters that identity-scoped enforcement.
+Installed shared rules and globally loaded plugin hooks still run where their
+own contracts apply, including prompt and session hygiene. This boundary does
+not promise byte-for-byte unchanged native prompts or sessions.
 
 ```text
-Plan / Build / unknown agents -> OpenCode unchanged
+Plan / Build / unknown / unregistered local agent
+  -> no managed-identity routing or permission envelope
+  -> shared global rules and applicable plugin hooks may still run
 
-Managed agent
-  -> ancestry-based identity resolution
-  -> fixed edit-tool boundary
-  -> managed workflow tools
-  -> OpenCode native permissions for commands
+Shipped or registry-recognized managed agent
+  -> managed ancestry resolution
+  -> identity-specific mutation and Bash rules
+  -> OpenCode native permission handling
 ```
 
-There is deliberately no command sandbox, Linux-only runtime, virtual machine,
-supervisor, completion reducer, or protected evidence subsystem.
+There is no command sandbox, virtual machine, supervisor, completion reducer,
+protected evidence store, or custom run-state service.
 
-## Generated Execution Agents
+## Managed Components
 
-[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md) defines the current replacement
-for the fixed Autonomous flow. Prometheus writes a registered project-local
-agent definition and durable task brief, then hands off through an OpenCode
-restart and a new session. The plugin enforces a generated identity only when it
-is registered and has a valid task manifest; unknown local agents retain the
-native bypass.
+The installed profile contains these exact source groups:
 
-## Identity And Immutability
+| Group | Count | Sources |
+| --- | ---: | --- |
+| Agents | 4 | `agents/ask.md`, `agents/grounder.md`, `agents/prometheus.md`, `agents/reviewer.md` |
+| Plugins | 3 | `plugins/immutability.ts`, `plugins/autonomous-kpis.ts`, `plugins/announce-hygiene.ts` |
+| Tools | 4 | `tools/session_fetch.ts`, `tools/scaffold_gitignore.ts`, `tools/spike.ts`, `tools/validate_scaffold.ts` |
 
-The immutability plugin resolves the topmost managed ancestor. If no managed
-identity is found, it returns before inspecting tools or paths.
+The tools split into one session-fetch tool and three Prometheus governance
+tools: `scaffold_gitignore`, `spike`, and `validate_scaffold`.
 
-Prometheus can publish only task-package paths and spike evidence. A registered
-generated executor can edit only its manifest-declared paths and cannot edit the
-published package or this extension's tool and plugin sources. Ask, Reviewer,
-and Grounder are read-only.
+## Identity and Immutability
 
-The plugin intercepts OpenCode mutation tools. It is not a filesystem sandbox.
-Native subprocess effects are outside path interception. Prometheus denies direct
-Bash; generated executors use only their manifest-declared Bash permission.
-Explicit command denies for read-only roles remain enforced.
+`plugins/immutability.ts` recognizes the four shipped names `ask`, `grounder`,
+`prometheus`, and `reviewer`. Generated handling has separate registration and
+policy gates. A valid non-reserved name present in a parseable registry
+`agents[]` is registered for immutability even before full validation. It
+receives edit and Bash policy only after the schema-v1 registry passes
+registry-wide structural validation and that name's package passes full
+schema-v1 validation. If either validation fails, the registered identity stays
+managed and mutation and Bash fail closed; it does not become unmanaged. Package
+files for unselected entries are not loaded by that validation call.
 
-The immutability plugin is part of the managed profile and does not affect
-native OpenCode agents.
+Reserved native and shipped names never register as generated identities. The
+validator rejects their entries, native identities keep native handling, and
+shipped identities keep their shipped policy. A registry cannot hijack either
+class. `plugins/autonomous-kpis.ts` activates a generated run-KPI policy only
+after full package validation.
 
-## Local Model History Hygiene
+The plugin resolves parent sessions recursively. When it finds a managed parent,
+the child inherits that parent's identity even if the child names another agent.
+If no managed identity appears in a fully resolved ancestry, the plugin returns
+without inspecting the call. A cycle or failed, missing, mismatched, or malformed
+session lookup makes ancestry unresolved; mutation and Bash fail closed instead
+of falling back to a descendant identity, and the KPI plugin stays inactive.
 
-`plugins/announce-hygiene.ts` addresses one measured failure in local Qwen
-models: the model writes a sentence promising an action and ends the turn
-without emitting the tool call. OpenCode replays assistant text back into the
-conversation, so each occurrence becomes an in-context example of a turn ending
-that way and the model copies itself. The rate compounds within a session.
+The generated policy is cached by agent name for the life of the plugin. This is
+one reason publication hands off only after OpenCode restarts in a fresh session.
 
-Replaying one recorded turn against `ollama-heavy/qwen36-35b-coding`:
+### Mutation Rules
 
-| History | Failures | |
-| --- | --- | --- |
-| intact | 13/74 (17.6%) | |
-| seeded turns removed | 0/74 (0.0%) | p = 0.000069 |
-| intact, plus a system prompt rule | 2/50 (4.0%) | p = 0.019 |
+The plugin intercepts `write`, `edit`, `patch`, and `apply_patch`. It resolves
+each exposed target against the active session directory, rejects a lexical
+escape, and rejects any existing symlink component between the project root and
+the target.
 
-Removing the seeded turns is the complete fix. The prompt rule alone only
-lowers the rate, which still leaves a long session likely to seed itself, so
-the plugin applies both. `experimental.chat.messages.transform` drops seeded
-turns from the history sent to the model; `experimental.chat.system.transform`
-appends the rule.
+Ask, Grounder, and Reviewer cannot mutate. Prometheus can mutate only paths
+matching these publication patterns:
 
-Two removal rules keep it safe to apply blind. A turn holding any tool part is
-never a candidate, so removal cannot orphan a tool result. The final entry is
-always kept, because it is the turn being continued from rather than history
-behind it. Each removal appends one line to
-`~/.local/share/opencode/announce-hygiene.jsonl`, so the plugin cannot be
-silently dead: an empty audit file alongside sessions that still stall means it
-is not applying.
+```text
+.opencode/agents/**
+.opencode/tasks/**
+.opencode/generated-agents.json
+.spike/**
+```
 
-### Provider Scope Is A Naming Convention
+A generated agent can mutate only a path that exactly equals one entry in
+`permissions.edit_paths`. These entries are not globs and do not imply access to
+children. A generated agent cannot mutate any published package path, including
+another generated agent's package.
 
-The scope test is `providerID.startsWith("ollama")`. That is all it is. It
-matches the provider ids configured in `config.json`, so it depends on those
-ids being named consistently rather than on anything intrinsic to the endpoint.
+The following control-plane paths remain immutable to generated agents even if a
+manifest lists them:
 
-Nothing better is available in the hook that matters.
-`experimental.chat.messages.transform` receives `input: {}`: no model, no
-session, no config. The only provider signal is the `providerID` stamped on
-each message, judged per turn, which is the right granularity anyway because a
-local turn is what contaminates the history whoever is later asked to continue
-from it. The system-prompt hook does receive the current `Model` and could use
-a stronger signal, but the message-removal half cannot.
+```text
+tools/spike.ts
+tools/validate_scaffold.ts
+tools/scaffold_gitignore.ts
+plugins/immutability.ts
+plugins/autonomous-kpis.ts
+skills/cuddly-winner-feedback/record-feedback.mjs
+```
 
-It fails in two directions and they are not equally bad. A local provider named
-something else, `qwen-box` say, is simply not covered and the plugin does
-nothing. A remote provider named `ollama-something` would be covered wrongly
-and would have turns deleted from its history; since the action is removing
-messages, that is the worse error.
+### Bash and Governance Tools
 
-The prefix is kept deliberately, so a new local endpoint needs no code change.
-Two stricter designs were considered and rejected for now: an explicit
-allowlist of provider ids, and deriving the set at plugin init by asking the
-`client` for provider config and keeping those whose `baseURL` resolves
-locally. The latter is the only option where "local" means local. Adopt one of
-them as soon as any provider that is not a local Ollama endpoint is given a
-name beginning `ollama`.
+Ask, Grounder, Reviewer, and Prometheus cannot call `bash`. A generated agent
+with `permissions.bash: false` cannot call it. A generated agent with
+`permissions.bash: true` reaches OpenCode's native permission decision.
 
-OpenCode calls every exported function in a plugin file as a plugin factory,
-passing `{ directory, worktree, client }`. An exported helper that assumes its
-own argument type therefore throws during load and takes the whole file with
-it. This plugin exports only its factory and reaches its predicates through an
-inert `__selftest` property. The defensive guard at the top of `parseRunKpis`
-in `autonomous-kpis.ts` exists for the same reason.
+Only Prometheus can invoke `spike`, `scaffold_gitignore`, or
+`validate_scaffold`. These tools perform their own bounded operations after the
+plugin admits the call.
+
+The plugin guards OpenCode tool calls, not filesystem effects produced by a
+native process. Bash and spike commands can reach any host resource available to
+the OpenCode process.
+
+## Prometheus Publication Flow
+
+Prometheus reads local evidence, delegates research to Grounder when useful, and
+uses an approved measured spike only for a command-dependent planning
+assumption. It chooses conservative, reversible defaults for unspecified
+implementation mechanics and escalates only a decision that changes the
+outcome, acceptance, material scope, policy, trust boundary, safety posture, or
+an irreversible choice.
+
+Publication proceeds in this order:
+
+1. Choose `direct`, `ralph`, or `optimization` from evidence. Use `direct` by default.
+2. Define exact final checks from the target project's declared toolchain.
+3. Write `.opencode/tasks/<id>.md` with the full durable task brief.
+4. Invoke `scaffold_gitignore` when the governance tool is installed.
+5. Write `.opencode/tasks/<id>.json` using the schema in this document.
+6. Write `.opencode/agents/<id>.md` as a primary agent that reads the brief and manifest.
+7. Add the registry entry and invoke `validate_scaffold` with `agent_name` set to
+   the selected task id when installed.
+
+Prometheus then stops before implementation. Its final response names the agent,
+brief, and manifest and instructs the user to quit and restart OpenCode, start a
+new conversation, and select the generated agent.
+
+The shipped Prometheus prompt contains the exact registry and manifest schema,
+including the reserved-name and strategy rules. A copied installed profile does
+not need access to this repository's docs to publish the package.
+
+The agent definition's frontmatter must not grant more access than the manifest.
+The static package validator checks that the file exists as a regular file, but
+does not parse or compare its frontmatter. The publication prompt and runtime
+immutability policy supply those separate safeguards.
+
+If an own-agent Prometheus session becomes idle and
+`.opencode/generated-agents.json` does not exist, the plugin sends that session
+one asynchronous continuation prompt. It does not send the reminder to a child
+that merely inherits Prometheus's identity, and it does not send a second
+reminder in the same session.
+
+## Canonical Task Package Schema
+
+This section is the single canonical field contract. `docs/NEXT-ITERATION.md`
+defines workflow and links here rather than repeating the schema.
+
+### Package Paths
+
+For task id `<id>`, a package uses exactly these locations:
+
+```text
+.opencode/agents/<id>.md
+.opencode/tasks/<id>.md
+.opencode/tasks/<id>.json
+.opencode/generated-agents.json
+```
+
+`<id>` must match `^[a-z0-9]+(?:-[a-z0-9]+)*$`.
+
+### Validation Primitives
+
+A JSON record is an object that is not `null` or an array.
+
+The validator's canonical worktree-relative string check requires a non-empty
+string that:
+
+- contains no backslash;
+- is not an absolute POSIX or Windows path;
+- has no drive-letter prefix such as `C:`;
+- has no slash-delimited segment that is empty, `.` or `..`.
+
+A validated path list is a non-empty `string[]`. Every item must pass that
+canonical check, and exact duplicate strings are rejected.
+
+The implementation currently applies this path-list primitive to several fields
+whose meaning is a command, evidence statement, or stop statement. In exact
+terms, `verification.commands`, `verification.success_evidence`,
+`verification.failure_conditions`, `escalation_triggers`, Ralph progress
+evidence and run stops, and optimization stops all receive the same check. The
+check does not prove that an item is an existing path, an executable command, or
+a meaningful statement.
+
+### Registry
+
+The registry has this shape:
+
+```json
+{
+  "schema_version": 1,
+  "agents": [
+    {
+      "name": "fix-widget",
+      "manifest": ".opencode/tasks/fix-widget.json"
+    }
+  ]
+}
+```
+
+The registry must be a JSON record with `schema_version` exactly `1` and
+`agents` as an array. Every entry must be a record. `name` must be a lowercase
+hyphenated task id, `manifest` must pass the canonical relative-string check,
+and names must be unique. Native names `build`, `plan`, `general`, `explore`,
+`compaction`, `title`, and `summary`, plus shipped names `ask`, `grounder`,
+`prometheus`, and `reviewer`, are reserved and rejected as generated identities.
+
+For the named entry, the registry name must equal the manifest's `agent_name`,
+and the registry path must equal `.opencode/tasks/<manifest.task_id>.json`. Its
+manifest must be a complete schema-v1 manifest, and that manifest, agent
+definition, and task brief must exist as regular files rather than symlinks.
+Errors in the registry envelope or any entry's shape, reserved name, or duplicate
+name fail every named result. The validator does not load an unselected entry's
+manifest or package artifacts.
+
+`validateTaskPackage(root, agentName)` performs registry-wide structural
+validation, then fully validates the named schema-v1 package. The installed
+`validate_scaffold` tool exposes the same optional `agent_name`. With no name,
+validation selects a package only when the registry contains exactly one record
+entry; a registry with multiple entries requires `agent_name`. Prometheus passes
+the selected task id.
+
+The validator does not reject additional keys on the registry record or its
+entries. Such keys have no defined runtime meaning.
+
+### Manifest Top Level
+
+Every top-level key below is required except `run_kpis`. Unknown top-level keys
+are rejected.
+
+| Field | Exact contract |
+| --- | --- |
+| `schema_version` | The number `1`. |
+| `task_id` | Lowercase hyphenated slug matching the package id pattern. |
+| `agent_name` | Exactly equal to `task_id`. |
+| `agent_definition` | Exactly `.opencode/agents/<task_id>.md` and canonical. |
+| `task_brief` | Exactly `.opencode/tasks/<task_id>.md` and canonical. |
+| `strategy` | Exactly `direct`, `ralph`, or `optimization`. |
+| `permissions` | Record defined below. |
+| `implementation_scope` | Validated path list. |
+| `durable_context` | Validated path list. |
+| `verification` | Record defined below. |
+| `limits` | Record defined below. |
+| `escalation_triggers` | Validated path list. |
+| `strategy_config` | Strategy-specific record defined below. |
+| `run_kpis` | Optional record defined below. |
+
+### Permissions
+
+`permissions` allows exactly these keys. Both are required.
+
+| Field | Exact contract |
+| --- | --- |
+| `edit_paths` | Validated path list. Every exact item must also occur in `implementation_scope`. |
+| `bash` | Boolean. |
+
+Unknown permission keys are rejected. Runtime mutation checks use exact string
+membership in `edit_paths`; they do not expand patterns.
+
+### Verification
+
+`verification` allows exactly these keys. All are required.
+
+| Field | Exact contract |
+| --- | --- |
+| `commands` | Validated path list. |
+| `success_evidence` | Validated path list. |
+| `freshness` | String containing at least one non-whitespace character. |
+| `failure_conditions` | Validated path list. |
+| `independent_review` | `null` or a string containing at least one non-whitespace character. |
+
+Unknown verification keys are rejected. The validator records the strings but
+does not run commands or perform review.
+
+### Limits
+
+`limits` must be a record with `stop_conditions` as a non-empty array of
+non-empty strings. This array does not receive canonical-path or duplicate
+validation. The validator does not inspect or reject other keys inside
+`limits`.
+
+### Direct Strategy Config
+
+`direct` allows exactly one `strategy_config` key:
+
+| Field | Exact contract |
+| --- | --- |
+| `work_selection` | String containing at least one non-whitespace character. |
+
+### Ralph Strategy Config
+
+`ralph` allows exactly these keys, and all are required:
+
+| Field | Exact contract |
+| --- | --- |
+| `work_selection` | Non-whitespace string. |
+| `pass_budget` | Positive integer. |
+| `state_paths` | Validated path list. |
+| `progress_evidence_before` | Validated path list. |
+| `progress_evidence_after` | Validated path list. |
+| `pass_failure_treatment` | Non-whitespace string. |
+| `run_stop_conditions` | Validated path list. |
+| `later_pass_starter` | Non-whitespace string. |
+
+### Optimization Strategy Config
+
+`optimization` allows exactly these keys, and all are required:
+
+| Field | Exact contract |
+| --- | --- |
+| `work_selection` | Non-whitespace string. |
+| `objective` | Non-whitespace string. |
+| `direction` | Exactly `minimize` or `maximize`. |
+| `evaluator` | Non-whitespace canonical worktree-relative string. |
+| `score_extraction` | Exactly `first float on stdout` or `last float on stdout`. |
+| `noise_policy` | Non-whitespace string. |
+| `mutable_targets` | Validated path list with no `*`, `?`, `[` or `]`. |
+| `immutable_targets` | Validated path list with no `*`, `?`, `[` or `]`. |
+| `experiment_budget` | Positive integer. |
+| `keep_revert_rule` | Non-whitespace string. |
+| `stop_conditions` | Validated path list. |
+
+No exact item may occur in both target lists. The validator checks evaluator
+path syntax but does not check that the evaluator exists or execute it.
+
+### Optional Run KPI Config
+
+When `run_kpis` is present, it must be a record with `enabled` as a boolean. If
+`enabled` is `false`, no target is required and the runtime plugin remains inert.
+If `enabled` is `true`, these values are required:
+
+| Field | Exact contract |
+| --- | --- |
+| `unattended_runtime.target_seconds` | Positive finite number. |
+| `token_burn.target_tokens_per_active_minute` | Positive finite number. |
+| `token_burn.hard_budget_tokens` | Positive finite number. |
+
+The validator does not inspect or reject other keys inside `run_kpis`,
+`unattended_runtime`, or `token_burn`.
+
+### Static Validation Boundary
+
+`tools/validate_scaffold.ts` rejects unknown manifest, permission, verification,
+and strategy-config keys, as described above. It rejects invalid identity and
+path relationships, reserved generated names, malformed or duplicate registry
+entries, an incomplete named manifest, and missing or non-regular named package
+artifacts. These are registry-wide structural checks followed by full schema-v1
+validation of the named package.
+
+It does not execute project commands, parse the task brief, parse agent
+frontmatter, compare frontmatter permissions with the manifest, check evaluator
+existence, validate package files for unselected registry entries, assess
+evidence freshness, or decide whether the task can succeed.
+
+## Generated Agent Execution
+
+The generated agent reads its brief and manifest from the worktree. The brief is
+the semantic contract; the manifest is the machine-checked identity, permission,
+strategy, and evidence envelope.
+
+For `direct`, the agent applies the declared work-selection rule to bounded
+in-scope items. For `ralph`, each pass must collect its declared before and after
+evidence and honor pass and run stops. For `optimization`, each experiment uses
+the evaluator and keep-or-revert rule without changing immutable targets.
+
+The checked-in `examples/ml-loop` package makes that optimization boundary
+concrete. Editable training code writes a fixed-schema candidate artifact. The
+immutable evaluator derives the score from that artifact and separate held-out
+data, immutable SHA-256 checks guard the evaluator boundary, and the regression
+check confirms that a forged score log is ignored.
+
+Completion remains agent-led. A task is complete only when its brief's outcome
+and acceptance criteria are met and all declared final evidence is fresh. Static
+package validation alone is not completion.
+
+## Optional Run KPI Runtime
+
+`plugins/autonomous-kpis.ts` resolves the root session and reads the generated
+root agent's registry manifest. An enabled policy applies to that root and all
+descendants.
+
+For each completed assistant message, the plugin sums input, output, reasoning,
+cache-read, and cache-write tokens. It merges overlapping assistant activity
+intervals before computing active duration and tokens per active minute. Message
+updates replace the same message id, and removals delete its contribution.
+
+Before a generated response, the plugin computes remaining hard-budget tokens.
+It rejects the request when none remain; otherwise it limits `maxOutputTokens` to
+the smaller existing cap and remaining budget. A system addition reports targets
+and current observations and tells the agent to continue only useful in-scope
+work.
+
+The duration and token-rate targets are guidance. The plugin does not sleep,
+create work, approve a tool, decide completion, or persist cross-session state.
+
+## Optional Generated Task Loop
+
+`scripts/task-loop.mjs` is not deployed. It runs a registered generated agent as
+a black box, once per pass, through a fresh
+`opencode run --agent <id> --dir <project>` process with no message.
+
+The optional `--state-cmd` executes through `/bin/sh -c` before and after a pass
+and must print a JSON object. Numeric keys are diffed, with a missing numeric
+value treated as zero. A pass counts as idle only when the delta is an object
+with at least one numeric key and every delta is zero.
+
+The wrapper records `pass`, `started_at`, `duration_s`, `exit_code`, `before`,
+`after`, and `delta` as one append-only JSONL record. It can stop for exhausted
+passes, a configured idle streak, or the first non-zero result when
+`--stop-on-failure` is set. It checks elapsed wall time after a completed pass
+and before starting the next one. It does not predict whether a future pass will
+overrun the budget. It never stages, commits, or accepts changes.
 
 ## Workflow Tools
 
 ### Spike
 
-`tools/spike.ts` is a native bounded process helper, not a security boundary. It
-accepts an exact command, spike identifier, and optional timeout. The project
-root comes from OpenCode context; callers cannot choose another root.
+`tools/spike.ts` runs a native bounded process, not a sandbox. It accepts an exact
+command, safe spike id, and optional timeout. The active project root comes from
+OpenCode context.
 
 Before spawning, it verifies `.spike/<id>/QUESTION.md` contains a question and
-kill criterion. It uses `.spike/<id>` as the process working directory, a reduced
-environment, finite timeout, bounded output, process-group termination, common
-secret redaction, and atomic result persistence under `.spike/<id>/runs/`.
-
-Every result includes `sandboxed: false`. The command may read or mutate any
-resource available to the OpenCode process. OpenCode approval is the trust
-decision, and `--auto` intentionally approves it.
+kill criterion. It runs from `.spike/<id>`, applies finite timeout and output
+bounds, uses a reduced environment, terminates the process group when needed,
+redacts common secret shapes, and writes an atomic result under
+`.spike/<id>/runs/`. Every result records `sandboxed: false`.
 
 ### Session Fetch
 
-`tools/session_fetch.ts` establishes a configured site's interactive browser
-session, then provides private read-only HTTP retrieval through an opaque
-session handle. Site profiles live in `session-fetch-sites.json` beneath the
-managed OpenCode configuration root and are maintained by
-`scripts/opencode-session-fetch-sites.mjs`. The tool requires an explicit
-interactive-approval argument before it opens a visible browser, accepts only
-configured HTTPS origins and `GET` or `HEAD`, and removes private session state
-on close or idle expiry. The tool promises authenticated session continuity.
+`tools/session_fetch.ts` establishes an approved interactive browser session for
+a configured site and then offers private read-only HTTP retrieval through an
+opaque handle. Site profiles live in `session-fetch-sites.json` under the managed
+OpenCode configuration root.
 
-### Static Scaffold Validation
+The tool accepts only configured HTTPS origins and `GET` or `HEAD`. It removes
+private session state on close or idle expiry. Opening the visible browser needs
+explicit approval.
 
-`tools/validate_scaffold.ts` validates the schema-v1 generated-agent registry
-and task package, including canonical paths, matching task identity, registered
-agent definition, and task brief. It performs no command execution.
+### Static Package Validation
 
-The schema fails closed on unknown versions, fields, enum values, malformed
-limits, escaping paths, missing evaluator files, and incomplete Karpathy
-configuration. Only the current schema version is accepted. There is no
-migration path or compatibility alias for an older version; a mismatch requires
-Prometheus to republish (see `docs/REQUIREMENTS.md` § No Legacy Support).
-
-#### Task Package Schema (v1)
-
-Both strategies require:
-
-| Field | Contract |
-| --- | --- |
-| `schema_version` | Integer `3`. |
-| `strategy` | `"direct"` or `"karpathy"`. |
-| `invariants` | String array. |
-| `implementation_scope` | Non-empty canonical worktree-relative path array. |
-| `escalation_triggers` | String array. |
-| `evaluator_inventory` | Canonical files under `.prometheus/evaluator/`; may be empty for Direct. |
-| `verification` | Exact non-empty `commands` array plus a human-readable `baseline` string. |
-| `limits` | Optional positive numeric bounds. |
-| `run_kpis` | Optional disabled-by-default unattended-runtime and token-burn policy. |
-
-Karpathy additionally requires `optimization` with objective, minimize/maximize
-direction, finite baseline, score extraction, noise runs and threshold, mutable
-and immutable targets, experiment and pivot limits, and target/exhaustion stop
-criteria. Every evaluator inventory path must also be immutable. Direct rejects
-an optimization block.
-
-`run_kpis` is optional. When `enabled` is `true`, it requires
-`unattended_runtime.target_seconds` plus
-`token_burn.target_tokens_per_active_minute` and
-`token_burn.hard_budget_tokens`, all positive finite numbers. When `enabled` is
-`false`, it declares no targets. The validator rejects unknown nested keys and
-every retired schema version.
+`tools/validate_scaffold.ts` implements the canonical schema and package checks
+in this document. It performs registry-wide structural validation and full
+schema-v1 validation of the named package. It accepts an optional `agent_name`,
+which is required to select one package from a multi-entry registry, and runs no
+project command.
 
 ### Git Exclusion
 
 In a Git worktree, `tools/scaffold_gitignore.ts` manages exactly this root block:
 
 ```gitignore
-# BEGIN OpenCode Autonomous artifacts
-/SPEC.md
-/opencode-autonomous.json
-/.prometheus/evaluator/
+# BEGIN OpenCode generated task artifacts
+/.opencode/generated-agents.json
+/.opencode/tasks/
 /.spike/
-# END OpenCode Autonomous artifacts
+# END OpenCode generated task artifacts
 ```
 
-It accepts no paths, preserves unrelated content and permissions, rejects
-symlinks and malformed markers, writes atomically, and reports tracked generated
-artifacts without changing the Git index. Outside a Git worktree it does not
-create `.gitignore` and reports that exclusion was skipped.
+This block is the exact `MANAGED_BLOCK` assembled by the source. The tool accepts
+no path arguments, preserves unrelated bytes and existing permissions, rejects a
+symlink target and malformed or duplicate markers, and writes atomically. It
+reports matching artifacts that Git already tracks without changing the index.
+Outside a Git worktree it skips without creating `.gitignore`.
 
-## Prometheus Flow
+## Local Model History Hygiene
 
-Prometheus runs a deliberation loop before asking the human anything. It uses
-whatever tools are available in the session — bash, web search, connected MCPs,
-Grounder research, measured spikes — to resolve uncertainties internally. It
-escalates to the human only when available research paths are exhausted and the
-answer is required to proceed. When context is too thin to constrain a decision,
-creative liberty is implied. Unspecified implementation mechanics receive
-conservative, reversible, and testable defaults in the scaffold; they are not
-planning blockers unless they change outcome, acceptance, material scope,
-policy, trust, safety, or an irreversible tradeoff.
+`plugins/announce-hygiene.ts` addresses a measured local Qwen failure where an
+assistant promises an action and ends the turn before calling a tool. It applies
+only when the recorded provider id starts with `ollama`.
 
-When Prometheus identifies that outcomes are measurable — a clear metric,
-direction, and evaluator exist — it recommends Karpathy mode in the scaffold.
+The message transform removes an earlier completed assistant turn only when the
+turn came from that provider prefix, ended with `stop`, contains no tool part,
+and matches the narrow announcement shape. It always preserves the final
+message. The system transform adds an intent-and-action rule for a current local
+provider. Removed message ids are recorded best-effort in
+`~/.local/share/opencode/announce-hygiene.jsonl`.
 
-Publication order is:
+The provider prefix is a naming convention. A local endpoint with another name
+is missed, while a remote endpoint whose id starts with `ollama` is covered
+wrongly. The latter can remove its prior text turns, so provider naming must
+preserve this assumption.
 
-1. Run the deliberation loop: investigate, resolve, apply creative liberty, or escalate with a focused question.
-2. Identify whether outcomes are measurable and select Direct or Karpathy.
-3. Define acceptance criteria, implementation scope, escalation triggers, and exact final verification.
-4. Create optional evaluator and spike assets.
-5. Write `opencode-autonomous.json` and `SPEC.md` before the final Prometheus response.
-6. Invoke governance tools (`scaffold_gitignore`, `validate_scaffold`) when installed; scaffold exclusion is a no-op outside a Git worktree.
-7. Hand off to Autonomous without waiting for a separate user request to publish.
-
-Static publication means “complete enough to implement without inventing
-requirements,” not “all commands have already passed.”
-Prometheus may end without publishing only for a concrete planning blocker or a
-focused, decision-changing question.
-
-When a root, top-level Prometheus session becomes idle without both root
-scaffold files, the immutability plugin sends one continuation prompt to that
-same session. The continuation restates the publication gate while preserving
-the agent's ability to report a concrete blocker or focused question. It is
-limited to one prompt per session to prevent a self-triggering idle loop. A
-managed descendant that merely inherits Prometheus's edit restrictions (for
-example a Grounder child spawned before publication) is not itself Prometheus
-and never receives this reminder.
-
-## Retired Autonomous Flow
-
-Autonomous reads the unchanged scaffold and chooses only the declared strategy.
-For Direct it implements right-sized items, uses native Bash for focused checks,
-and runs exact final verification before completion. For Karpathy it delegates
-proposal and analysis to the read-only strategist, applies one change, runs the
-measurement through native Bash, and makes a bounded KEEP/REVERT decision.
-Missing scripts, tests, documentation, and other described deliverables are
-implementation targets. Autonomous applies the scaffold's bounded defaults for
-unspecified mechanics and returns to Prometheus only for an outcome-changing
-requirement gap.
-
-The manifest may declare optional limits, but enforcement is agent-led inside
-the OpenCode session. Autonomous stops when declared verification passes or a
-required step proves impossible to complete with any tool or permission
-available in this session. A successful stop additionally requires all requested
-outcomes, acceptance criteria, invariants, required outputs, and checklist items
-to be complete and every exact final command to pass freshly. Autonomous does
-not stage, commit, stash, reset, switch branches, or initialize Git; the pending
-worktree is the human-owned aggregate review artifact. Reviewer output is advisory.
-
-When an enabled `run_kpis` block is present, the deployed KPI plugin records
-completed assistant-message usage for the Autonomous root and its descendants.
-It deduplicates message updates, unions overlapping assistant activity intervals,
-adds compact enabled-only guidance, and caps each new response to the remaining
-hard token budget. It does not auto-approve tools, create progress state, prompt
-idle sessions, or extend a completed task. Missing or disabled `run_kpis` leaves
-the plugin inert.
-
-After each bounded step or focused check, Autonomous inspects the complete scope
-again and advances to the next incomplete in-scope item without a progress
-handoff. A passing focused, fixture, synthetic, phase-local, or batch check is a
-phase gate, not completion evidence while required work remains. Intermediate
-metadata and leads cannot replace a required full result. Declared escalation
-conditions, failed core prerequisites, and structural blockers remain valid halt
-paths.
-
-Before validator handoff, Autonomous checks every acceptance criterion,
-invariant, required output, and checklist item against the implementation and
-fresh verification. Missing branches, disabled required stages, placeholder
-tests, ignored verification flags, and missing outputs keep the candidate
-incomplete. Missing ordinary in-scope work requires continuation. A failed
-measured prerequisite that removes a core requested outcome is a failed
-execution requiring renewed Prometheus planning; an explicitly optional branch
-may instead be reported as skipped.
-
-For tool-dependent work, Autonomous first compares the scaffold's preferred
-operation with the operations and parameters actually exposed in the current
-session. Missing optional output, export, or convenience APIs require a safe
-in-scope fallback, not a blocked handoff. It records the unavailable operation
-and fallback when they affect reproducibility. Only exhaustion of all safe paths
-available to its current identity and permissions creates a structural blocker.
-
-Before its final handoff, Autonomous prepares a detailed PR Contract covering
-intent, implementation record, proof of function (terminal output showing exit
-code 0), risk assessment, review focus, and every SPEC checklist item. It gives
-that packet to `@implementation-validator` and retains the full severity-grouped
-report in the delegated task result. The parent handoff lists goals and validated
-outcomes, fresh command exit codes, validator verdict and unresolved gaps, then a
-brief change summary with worktree state, risks, review focus, and one next human
-action. It may make one bounded correction for a critical or major gap. It does
-not emit `<promise>COMPLETE</promise>`.
-
-After a complete candidate passes readiness and final verification, Autonomous
-delegates to Implementation Validator. If the task tool cannot delegate then,
-Autonomous stops with a concise blocked handoff. It reports command observations
-as evidence, not validation, and does not claim success or label any requested
-goal validated.
-
-When exhausted safe paths would otherwise cause a terminal negative handoff,
-Autonomous takes one creative pass at a safe, reversible alternative within the
-unchanged requested outcome, acceptance criteria, and permissions. Missing
-scaffolds, ordinary user approval, and planning decisions do not enter this
-recovery step. On a confirmed block, Autonomous reports the failed step, a
-concise blocker code, and the exact next human action, and records it with
-`cuddly-winner-feedback` when that skill is available.
-
-The optional `scripts/task-loop.mjs` wrapper provides an external loop over a
-named generated task agent for incremental workloads. It starts one fresh
-session per pass with no message, reads optional project-supplied JSON counters,
-and records per-pass JSONL evidence. It is a developer script, not part of the
-managed profile, and does not accept a final outcome. See
-`docs/NEXT-ITERATION.md`.
-
-## Permission Semantics
-
-Agent frontmatter sets `bash: ask` for Autonomous. Prometheus denies direct Bash
-and uses approval-gated `spike` for contracted command-dependent research.
-Normal OpenCode sessions ask the user before each allowed command. `opencode
---auto` converts those asks to approvals. Explicit denies, including all command
-access for read-only roles, remain denied.
+OpenCode loads every exported plugin function as a factory. The hygiene plugin
+therefore exports only its factory and exposes test predicates through an inert
+`__selftest` property. The KPI parser also guards against being called with the
+plugin-factory input shape.
 
 ## Deployment
 
-The installer deploys one complete managed profile: agents, plugins
-(`immutability.ts`, `autonomous-kpis.ts`, `announce-hygiene.ts`), the four
-workflow tools and pinned SDK dependency, non-core skills, and global rule
-files.
+`scripts/deploy-opencode-agents.sh` supports `install`, `status`, and `remove`.
+It resolves one configuration root from `--config-dir`,
+`OPENCODE_DEPLOY_CONFIG_DIR`, or `opencode debug paths`, in that order.
 
-Install sources are fixed repository paths. A single configuration root is
-resolved from the CLI, one environment variable, or OpenCode's debug output;
-`agents/`, `plugins/`, `tools/`, `skills/`, and `rules/` are derived beneath
-it. One entry synchronizer handles files and directories in copy or symlink
-mode, including idempotence, collision backups, status, and safe removal. The
-plugins and session-fetch tool always install as copies, even in symlink mode,
-so their local state resolves from the selected configuration root.
+Agent files, the three governance tools, skills, and rules use the selected copy
+or symlink mode. All three plugins and `session_fetch.ts` always install as
+copies. The installer deploys SDK version `1.17.15` and Playwright version
+`1.58.2`; browser download is disabled during package installation. It populates
+a clean sibling staging tree, compares it with the live runtime, backs up any
+noncurrent live tree intact, and moves the staged tree into place before using
+`scripts/opencode-runtime-integrity.mjs` to recursively hash the whole installed
+`node_modules` dependency tree and store its SHA-256 plus entry, file, and symlink
+counts in `node_modules/.cuddly-winner-runtime-integrity.json`.
 
-For each current managed source, status compares content or the resolved link
-target and reports `current copy`, `stale or modified copy`, `current link`,
-`foreign link`, or `missing`. Equivalent relative links count as current. Status
-does not change files and returns a managed-entry summary with install-and-restart
-guidance when drift exists. Retired-agent, MCP, rule-instruction, and feedback-
-locator diagnostics retain their separate ownership-specific labels.
+The integrity helper includes relative paths, executable mode, byte length, and
+file bytes in the tree hash. A symlink contributes its relative path and link
+target and increments the recorded symlink count. The helper rejects a symlinked
+runtime root and unsupported entries. The state has schema and owner markers,
+its own checksum, and mode `0600`. `status` recomputes the tree and fails for
+missing, malformed, wrongly permissioned, modified, missing, or unsafe state or
+content. The live profile preflight invokes the same read-only `status`
+operation, so matching package versions cannot mask changed direct or transitive
+runtime code.
 
-Collision backups are written beneath `<config_dir>/backups/` with their managed
-relative path, not beside the live entry. This prevents a backed-up skill package
-from remaining discoverable. Status identifies legacy `<skill>.bak.*`
-directories beside current managed skills; install moves those directories into
-the central backup tree without deleting their contents.
+Every `agents/*.md`, `skills/*`, and `rules/*.md` source is discovered at run
+time. The current agent glob contains exactly the four files listed in Managed
+Components. Plugin and tool source arrays are fixed to the exact files in that
+table.
 
-The installer also synchronizes one namespaced MCP entry through a narrow JSON
-helper: a headless isolated research browser (`@playwright/mcp`, Node). It backs
-up before mutation, changes only its own keys, preserves unrelated entries, and
-prunes retired managed entries left by earlier installs.
-`scripts/opencode-browser-credentials.mjs` manages separate opt-in ChatGPT and
-Gemini profiles outside project repositories.
+The installer writes each rule to `<config_dir>/rules/` and uses
+`scripts/opencode-instructions.mjs` to add or remove its absolute path in the
+`instructions` array of `<config_dir>/opencode.json`. It changes no other config
+key. A separate helper owns one namespaced, headless Playwright MCP entry and the
+exact retired `notebooklm` shape in legacy `config.json`; other shapes survive.
 
-The installer installs the pinned Playwright library with browser download
-disabled. It does not launch a browser.
+`scripts/ci.sh` installs the CLI version named by `.opencode-cli-version` beneath
+its temporary profile and selects that exact binary through both `PATH` and
+`OPENCODE_E2E_BIN`.
+
+Plugins and workflow tools use the OpenCode session directory as the project
+root, falling back to the worktree only when no directory is available.
+
+Collision backups go beneath `<config_dir>/backups/`. Status distinguishes
+current copies, modified or stale copies, current links, foreign links, and
+missing entries. Remove deletes only current repository links and byte-identical
+copies. The managed-agent state file records source, mode, and SHA-256 so a later
+install removes an absent source only when ownership still matches. Modified and
+unrelated entries remain untouched.
+
+Retired agent files are removed only when the managed-agent state proves their
+recorded source and hash or link target. The three fixed retired artifact paths
+use exact known legacy hashes or exact managed links as their ownership proof.
+Any conflict survives install and removal. `status` continues across agents,
+plugins, tools, skills, rules, retired paths, instruction wiring, MCP state,
+feedback state, and runtime packages, then returns one nonzero result if any
+managed surface drifted.
 
 ### Python Runtime
 
-This project runs exactly one Python virtual environment, named by
-`.python-version` and provisioned by `scripts/ensure-venv.sh` (creating it if
-absent). Test execution uses that virtualenv. If pyenv is absent, resolution
-fails outright — there is no silent fallback to system Python, a different
-environment manager, or an attempt to install pyenv itself.
-
-Every file under `rules/` deploys, name preserved, to `<config_dir>/rules/`
-through the same synchronizer used for agents and skills. That alone does not
-make OpenCode load the file: OpenCode only auto-loads `<config_dir>/AGENTS.md`
-by fixed name, plus whatever paths are listed in the `instructions` array of
-`<config_dir>/opencode.json`. `scripts/opencode-instructions.mjs` closes that
-gap — a small Node helper, called by the installer after the file sync, that
-adds one absolute-path entry per deployed rule file to `instructions`, and
-removes it on `remove`. It edits only that one array: it parses the existing
-`opencode.json`, backs it up first, refuses to touch a file that fails to
-parse, and leaves every other key untouched. If `instructions` ends up empty
-on removal, the key is dropped rather than left as an empty array.
-
-Adding a rule therefore takes two steps that both happen automatically on
-install: drop a file in `rules/`, and the file sync plus the instructions
-helper each pick it up on their own. Nothing here compiles or concatenates
-rule files — each stays a separate file, separately deployed, separately
-wired.
-
-One tradeoff: this makes the installer write into `opencode.json`, which is
-also where models, providers, and every other OpenCode setting live. A bug in
-the helper risks that whole file, not just the rules feature. The helper is
-scoped tightly (one array, nothing else) and tested against a throwaway
-config before being pointed at a real one, but this is a larger blast radius
-than the rest of the installer, which only ever adds or removes whole files.
-
-Workflow tools and the immutability plugin treat the OpenCode session directory
-as the active project root. They use worktree only when no session directory is
-available, preventing a stale root worktree from redirecting scaffold artifacts
-or path enforcement to `/`.
-
-The installer records each managed agent's source, mode, and SHA-256 in an
-owner-only state file beneath `<config_dir>/agents/`. On a later install it
-reconciles that inventory against the current agent sources, removing a retired
-agent only when its copy still matches the recorded hash or its symlink still
-targets the recorded source. Status reports retained retired agents. Modified
-and unrelated entries remain untouched. A bootstrap inventory covers exact
-copies of agents retired before state tracking began.
-
-Remove always processes current managed groups. It accepts only a current
-repository symlink or byte-identical current copy and preserves everything else.
-
-Installation is platform-neutral. It never checks for or installs Bubblewrap,
-Lima, Docker, a VM image, or a supervisor.
+This repository's Python checks use one pyenv virtual environment named by
+`.python-version` and provisioned by `scripts/ensure-venv.sh`. There is no system
+Python fallback or alternate environment manager. These local test requirements
+are not deployed into target projects.
 
 ## Skills Architecture
 
-Non-core skills are packaged under `skills/` and deployed by default. The
-installer synchronizes every packaged skill directory into
-`<config_dir>/skills/`; it does not require an inventory in installer code.
+Every directory under `skills/` is deployed to
+`<config_dir>/skills/<skill_name>/`. OpenCode discovers each `SKILL.md` at
+startup. Skill text does not grant permissions; the immutability plugin and
+OpenCode permission engine remain authoritative. `docs/SKILLS.md` owns the skill
+inventory and package contract.
 
-Skills reside under `<config_dir>/skills/<skill_name>/SKILL.md`. OpenCode
-automatically discovers and loads skill packages at session startup. The
-immutability plugin, rather than skill text, enforces role edit-tool boundaries
-and command permissions. `docs/SKILLS.md` owns the inventory, package contract,
-and behavior for each skill; `CONTRIBUTING.md` owns the authoring process.
+### Feedback Locator
 
-### Local Feedback Locator
-
-The installer also manages one owner-only text locator at
+The installer manages one owner-only text file at
 `<config_dir>/feedback/cuddly-winner-feedback-root`. It contains the canonical
-`<clone>/feedback` path and lets the deployed recorder resolve its target from
-the lexical package path in both copy and symlink installs. The recorder reads a
-bounded report from standard input, creates owner-only inbox files atomically,
-and has no network behavior. It fails on missing, malformed, or stale locators;
-it does not scan the machine for another clone.
+`<clone>/feedback` path. The recorder reads bounded standard input and writes
+owner-only inbox files atomically without network access.
 
-Install replaces a conflicting locator only after backup and is idempotent for
-the same clone. Status classifies missing, current, stale, or modified locators
-without reading reports. Removal deletes only an exact current locator. The
-locator is deployment state, not a feedback store: the ignored clone-local
-`feedback/` tree and all backups remain user-owned.
+Install backs up a conflicting locator, status classifies it without reading
+reports, and removal deletes only an exact current locator. Feedback and backups
+remain user-owned.
 
-## Mutation Testing Framework
+## Mutation Testing
 
-`evals/mutation/run_mutation.py` is a standalone, opt-in Python mutation runner.
-Callers provide source files and a test command explicitly on its CLI. They may
-provide the result path and threshold directly or through `--config
-opencode-mutation.json`; explicit CLI values override policy values. The runner
-requires the unmutated baseline test command to pass before it mutates selected
-source files and classifies mutants.
+`evals/mutation/run_mutation.py` is an opt-in runner. It requires a passing
+unmutated baseline before changing selected source files and classifying mutants.
+Callers provide source files and a test command. An optional
+`opencode-mutation.json` supplies validated defaults that explicit CLI values may
+override.
 
-## Session Auditing System
+## Session Auditing
 
-`tests/audit_run.py` inspects selected historical session telemetry in OpenCode's
-SQLite database (`~/.local/share/opencode/opencode.db`). It reports observed
-agent switches, non-attributable root-session Bash observations, recursive
-descendant agents, current scaffold-file presence, completion/review tokens, and
-enabled run-KPI activity duration, token totals, and token rate. It is an investigative
-reporting aid, not proof of ancestry enforcement, tool-boundary compliance,
-scaffold validity, or fresh verification-command execution.
-
-Before live managed-agent scenarios invoke a model, `tests/verify_opencode.py`
-compares the complete active managed profile and effective agent metadata with
-this clone. Default repository-profile validation fails closed on drift. The
-explicit active-profile diagnostic mode labels its results separately and never
-claims that repository sources were validated. Feedback-derived live scenarios
-copy the active config to a temporary root, resolve a sentinel agent from that
-custom directory to prove it is loaded, and redirect the feedback locator before
-invoking a model.
+`tests/audit_run.py` reads selected OpenCode SQLite telemetry. It reports observed
+agent switches, descendant agents, root-session Bash observations, package-file
+presence, attributed Reviewer output, and enabled run-KPI measurements. Reviewer
+approval requires assistant text parts joined through their message records to a
+selected or descendant session whose agent is `reviewer`; the combined output's
+last non-empty line must equal `APPROVE`. Arbitrary root or user text does not
+qualify. The report is investigative, not proof of identity enforcement, package
+validity, or fresh final verification.

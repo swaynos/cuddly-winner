@@ -1,205 +1,211 @@
-# OpenCode Specialist Workflows
+# OpenCode Generated-Agent Workflows
 
-This project adds optional specialist agents and lightweight workflow tools to
-OpenCode. It does **not** replace, wrap, redirect, restrict, or require
-OpenCode's built-in Plan and Build modes.
+This project adds optional specialist agents, task-specific generated agents,
+plugins, workflow tools, skills, and shared rules to OpenCode. The
+generated-agent workflow does **not** replace, wrap, redirect, restrict, or
+require OpenCode's built-in Plan and Build modes. Installation does add global
+shared rules and plugin hooks, so cross-cutting governance and prompt or session
+hygiene can still affect native sessions.
 
-Use the extension when work benefits from stronger triage, an explicit
-implementation scaffold, bounded iterative execution, or scalar-metric
-optimization. Continue using native Plan and Build for ordinary work.
+Use native Plan and Build for ordinary work. Select Prometheus when a task needs
+a durable brief, explicit permissions, and a fresh generated-agent execution
+session.
 
 ## Documentation
 
-The durable source of truth for this project lives in `docs/`:
+The durable source of truth lives in `docs/`:
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md): System architecture, identity inheritance, workflow tools, manifest schemas, and skill packaging.
-- [REQUIREMENTS.md](docs/REQUIREMENTS.md): Product goals, permission models, agent profiles, and validation rules.
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md): System architecture, identity boundaries, plugins, tools, and deployment.
+- [REQUIREMENTS.md](docs/REQUIREMENTS.md): Product goals, permissions, agent roles, and validation rules.
 - [NEXT-ITERATION.md](docs/NEXT-ITERATION.md): Generated task-agent packages and fresh-context execution.
 - [SKILLS.md](docs/SKILLS.md): Skill contracts, catalog, and shared package rules.
-- [RESOURCE-SELECTION.md](docs/RESOURCE-SELECTION.md): Non-disruptive research and browser credential policy.
-- [TEST-PLAN.md](docs/TEST-PLAN.md): Evidence classes, test cases, and platform matrix.
-- [USE-CASES.md](docs/USE-CASES.md): Concrete use cases for native compatibility, identity, triage, execution, skills, and auditing.
-- [TESTING-METHODOLOGY.md](docs/TESTING-METHODOLOGY.md): Runtime investigation, SQLite log schema, verdict definitions, and harness conventions.
+- [RESOURCE-SELECTION.md](docs/RESOURCE-SELECTION.md): Research source and browser credential policy.
+- [TEST-PLAN.md](docs/TEST-PLAN.md): Evidence classes, test cases, and platform coverage.
+- [USE-CASES.md](docs/USE-CASES.md): Native compatibility, planning, execution, review, and auditing examples.
+- [TESTING-METHODOLOGY.md](docs/TESTING-METHODOLOGY.md): Runtime evidence, verdicts, and harness conventions.
 - [CONTRIBUTING.md](CONTRIBUTING.md): Process for adding or changing a packaged skill.
 
-## Design Boundary
+## Runtime Boundary
 
-This project defines agent roles, edit-tool boundaries, and small workflow
+The managed profile ships four agents: Ask, Grounder, Prometheus, and Reviewer.
+Prometheus creates task-specific project agents when requested. Generated agents
+are project-local output, not fixed agents installed by this repository.
+
+The project defines agent roles, edit-tool boundaries, and small workflow
 helpers. It does not provide a command sandbox, virtual machine, protected
-runner, custom completion engine, or autonomous supervisor.
+runner, custom completion engine, or completion supervisor. Native subprocess
+effects remain outside edit-tool path interception.
 
-It supports only the current scaffold schema version. An out-of-date scaffold is
-republished by Prometheus, not migrated (see `docs/REQUIREMENTS.md` § No Legacy
-Support).
-
-Command security belongs to OpenCode's native permission model:
-
-- Prometheus denies direct Bash and uses the approval-gated `spike` tool for contracted command-dependent research.
-- A registered project-local task agent receives only its manifest-declared Bash and edit access.
-- `opencode --auto` automatically approves `ask` requests.
-- Explicit `deny` permissions remain denied in auto mode.
-- Bash results are engineering evidence, not tamper-resistant proof.
+Only schema version 1 task packages are valid. Prometheus must republish a
+package that the current validator rejects.
 
 ## Installation
 
-The default installation deploys the complete managed profile: seven agent
-definitions, the managed-agent immutability plugin, four workflow tools and
-their pinned SDK, and all packaged non-core skills:
+The installer deploys the complete managed profile from the current source
+directories:
+
+- four agent definitions from `agents/`;
+- three plugins from `plugins/`;
+- four tools from `tools/`;
+- nine packaged skill directories from `skills/`;
+- two shared rule files from `rules/`.
+
+It also installs the pinned OpenCode plugin SDK and Playwright runtime, registers
+the isolated headless research-browser MCP, registers the shared rule files in
+OpenCode's instructions, and installs the local feedback locator.
 
 ```bash
 bash scripts/deploy-opencode-agents.sh install
 ```
 
-- `spike`, an approval-gated native command helper for contracted investigations
-- `validate_scaffold`, a static SPEC and manifest validator
-- `scaffold_gitignore`, the constrained generated-artifact exclusion helper
-- `session_fetch`, an approved interactive session bridge for configured owned
-  sites. The tool promises authenticated session continuity.
+OpenCode loads agents, plugins, and tools at startup. Quit and restart OpenCode
+after installation or any managed-profile change.
 
-See [SKILLS.md](docs/SKILLS.md) for the catalog and
-[CONTRIBUTING.md](CONTRIBUTING.md) for the process to add or change a skill.
+Use `status` to inspect every managed surface. It reports current copies, current
+repository links, stale or modified copies, foreign links, missing entries,
+retired conflicts, discoverable skill backups, rule registration, MCP
+configuration, runtime packages, and feedback locator state. It aggregates all
+drift instead of stopping at the first fault and exits nonzero when any managed
+surface drifts. Use `--mode symlink` for live development installs. Plugins and
+`session_fetch` remain copied so their runtime state resolves from the selected
+configuration root.
 
-Use `status` to inspect all managed entries. It distinguishes current copies,
-stale or modified copies, current repository links, foreign links, and missing
-entries, then states whether managed entries are current or require installation
-and restart. Backups are stored under `<config_dir>/backups/`, outside OpenCode's
-agent, plugin, tool, skill, and rule discovery directories. Status flags older
-managed skill backups that remain discoverable, and install relocates them
-without deleting them. `remove` deletes only current byte-identical copies or repository
-links while preserving modifications. Use `--mode symlink` for a live
-development install. Override the OpenCode root with `--config-dir` or
-`OPENCODE_DEPLOY_CONFIG_DIR`; all destination directories derive from that one
-root. OpenCode loads agents, tools, and plugins at startup, so restart it after
-changes.
+Backups live under `<config_dir>/backups/`, outside OpenCode's discovery
+directories. `remove` deletes only byte-identical managed copies or links to the
+current repository and preserves modified or unrelated entries. Retired files
+are deleted only when a recorded source and hash, a known legacy hash, or an
+exact managed link proves ownership. A conflict at a retired path survives
+install and removal and makes `status` nonzero. Set the root with `--config-dir`
+or `OPENCODE_DEPLOY_CONFIG_DIR` when OpenCode's debug output is not the desired
+target.
+
+## Shipped Agents
+
+- **Ask** answers focused questions from session context, gathers only the
+  smallest needed evidence, and may delegate broad research to Grounder. It is
+  read-only and points ordinary implementation requests to built-in Build.
+- **Grounder** gathers cited local and external evidence for another agent. It
+  is read-only and does not make product decisions.
+- **Prometheus** resolves material planning uncertainty, may run approved
+  contracted spikes, and publishes a registered generated-agent task package.
+  It stops before implementation.
+- **Reviewer** checks the current task brief and manifest or a supplied rubric
+  and diff. It is read-only, returns an advisory verdict, and does not own final
+  verification.
+
+These agents are selected explicitly. They do not alias or reroute native Plan
+or Build. Global shared rules and plugin hooks remain active independently of
+that routing boundary.
+
+## Generated-Agent Workflow
+
+For a planning-ready task, Prometheus publishes these project-local files:
+
+```text
+.opencode/agents/<task-id>.md
+.opencode/tasks/<task-id>.md
+.opencode/tasks/<task-id>.json
+.opencode/generated-agents.json
+```
+
+The Markdown task brief records the outcome, acceptance criteria, durable
+context, strategy, limits, escalation route, exact checks, and required fresh
+evidence. The JSON manifest uses schema version 1 and defines implementation
+scope, edit paths, Bash access, strategy settings, and final verification. The
+registry maps the generated agent name to that manifest.
+
+The shipped Prometheus prompt embeds the exact schema, so a copied installed
+profile does not need this repository's docs to publish a package. Prometheus
+validates the selected task id, then names the generated agent, brief, and
+manifest in its handoff. The user quits and restarts OpenCode, starts a new
+conversation, and selects that generated agent. The fresh session reads the
+brief and manifest, implements the task, and runs final verification within the
+manifest permissions. The generated agent cannot rewrite its published package
+or the profile's trusted control files.
+
+Reviewer may assess the resulting diff and evidence, but its verdict remains
+advisory. The generated agent still owns implementation and fresh final
+verification.
+
+## Shipped Plugins
+
+- **Immutability guard** (`plugins/immutability.ts`) keeps Ask, Grounder, and
+  Reviewer read-only; limits Prometheus writes to task-package and spike paths;
+  recognizes a generated agent only after registry-wide structural validation
+  and full schema-v1 validation of that agent's named package; and applies the
+  declared edit and Bash permissions to it and its descendants.
+- **Generated-agent KPI guard** reads an optional enabled `run_kpis` policy from
+  a named package that passes the same checks. It tracks completed
+  assistant usage for the generated-agent session tree, injects compact status
+  guidance, caps a response to the remaining token budget, and blocks new work
+  after budget exhaustion. It does not approve tools or keep a completed task
+  running. Malformed or duplicate registry entries, an incomplete named
+  manifest, and names reserved for native or shipped agents cannot activate
+  either generated policy. Package files for unselected entries are not loaded
+  by that check.
+- **Announce hygiene** (`plugins/announce-hygiene.ts`) applies only to provider
+  IDs beginning with `ollama`. It removes prior assistant turns that promised an
+  action but made no tool call, preserves turns containing tool parts, adds a
+  same-turn action rule, and writes a best-effort audit record.
+
+## Shipped Tools
+
+- `spike` runs an approval-gated command from a contracted `.spike/<id>`
+  directory. It enforces a timeout and output bound, records redacted results,
+  and reports `sandboxed: false`.
+- `validate_scaffold` performs registry-wide structural checks and full
+  schema-v1 validation of the named package without running project commands.
+  Its optional `agent_name` selects a package and is required when the registry
+  has more than one entry. Prometheus passes its selected task id.
+- `scaffold_gitignore` manages one root-anchored block for the generated-agent
+  registry, task files, and spike records. It preserves unrelated content and
+  permissions, refuses unsafe targets, and reports managed artifacts that Git
+  already tracks without changing the index.
+- `session_fetch` opens an explicitly approved interactive login for a configured
+  HTTPS site, then makes private `GET` or `HEAD` requests through an opaque
+  session handle. It restricts origins and redirects, bounds response size, and
+  removes session state on close or idle expiry.
 
 ## Local Feedback
 
 The deployed `cuddly-winner-feedback` skill records negative or mixed feedback
-from any project into the installing clone's local `feedback/inbox/` directory.
-This tree is Git-ignored because reports can contain private paths, session IDs,
-or excerpts. It never uploads, stages, commits, or force-adds feedback.
+from any project in the installing clone's local `feedback/inbox/` directory.
+This ignored tree can contain private paths, session IDs, or excerpts. The skill
+never uploads, stages, commits, or force-adds feedback.
 
-After deployment, restart OpenCode. The skill stores a private locator beneath
-the selected OpenCode configuration root so copied and symlinked packages both
-find the intended clone. If the clone moves or the recorder reports a stale
-locator, reinstall from that clone. `status` reports locator state and `remove`
-removes only an exact current locator. Neither command reads or deletes feedback.
-Ignore rules do not prevent an explicit `git add -f`; never force-add feedback.
-See [SKILLS.md](docs/SKILLS.md#cuddly-winner-feedback).
-
-## Optional Agents
-
-- **Prometheus** owns technical triage, planning readiness, measured spikes, and
-  publication of `SPEC.md` plus `opencode-autonomous.json`.
-- **Autonomous** owns implementation and final verification against the
-  published scaffold.
-- **Karpathy** advises one-change-at-a-time scalar optimization; Prometheus
-  recommends it when outcomes are measurable, and Autonomous remains the editor
-  and measurement runner.
-- **Reviewer** provides read-only rubric-based review.
-- **Grounder** gathers cited local and external evidence.
-- **Ask** answers focused questions without starting a workflow.
-
-These agents are entered explicitly. They are not aliases for Plan or Build.
-
-## Prometheus Workflow
-
-Prometheus runs a deliberation loop before asking the human anything. It
-receives a request at any level of context — from a thin idea to a formal
-requirements document — and investigates using whatever tools are available in
-the session: bash commands, web search, connected MCPs, and Grounder research.
-When a question can be answered through available tools or evidence, Prometheus
-resolves it internally. When context is too thin to constrain a decision,
-creative liberty is implied and Prometheus proceeds without asking. It escalates
-to the human only when it has genuinely exhausted available research paths and
-the answer is required to proceed.
-
-When Prometheus identifies that outcomes are measurable — a clear metric,
-direction, and evaluator exist — it recommends Karpathy mode in the scaffold.
-Autonomous follows that recommendation.
-
-Publication is structurally validated, not an execution attestation.
-Prometheus defines exact final verification commands; Autonomous runs them.
-Once planning-ready, Prometheus publishes `SPEC.md` and
-`opencode-autonomous.json` before its final response. It does not wait for a
-separate user request to write the scaffold.
-
-## Autonomous Workflow
-
-Autonomous reads the frozen planning scaffold, implements right-sized items,
-and runs exact final verification through native Bash. Normal sessions ask
-before each Bash invocation; users who intentionally choose `opencode --auto`
-get uninterrupted approval.
-
-After each bounded step or focused check, Autonomous rechecks every acceptance
-criterion, invariant, required output, and checklist item and continues with the
-next incomplete in-scope item. A passing focused, fixture, synthetic,
-phase-local, or batch check is a phase gate, not completion evidence while
-required work remains. It stops successfully only after all requested outcomes
-are complete and every exact final verification command passes freshly.
-
-Autonomous never stages or commits. Pending worktree changes remain the
-human-owned aggregate review artifact across repeated Prometheus and Autonomous
-runs. Its final handoff gives goals and validated outcomes plus a brief change
-summary; detailed PR Contract evidence and the fresh Implementation Validator
-report against `SPEC.md` remain in the delegated task result.
-
-Direct is the default strategy for ordinary feature and defect work. Karpathy is
-used only for explicit scalar optimization with a metric, evaluator, mutable and
-immutable targets, limits, noise policy, and stop criteria. Both strategies are
-bounded by the published manifest and agent instructions; there is no separate
-host coordinator or durable workflow state machine.
-
-Schema-v3 manifests may also opt into `run_kpis` for useful unattended duration
-and token burn. The block is absent by default. An enabled block requires an
-explicit active-duration target, token-rate target, and hard token budget; it
-never supplies package defaults. The KPI plugin observes completed-message usage
-for Autonomous and its descendants, favors concise useful work, and stops a new
-turn at the hard budget. It never pads work, bypasses approval, or delays valid
-completion to reach a duration target.
-
-## Managed-Agent Immutability
-
-The plugin applies fixed edit-tool boundaries only to the seven managed agents:
-
-- Prometheus may edit only `SPEC.md`, `opencode-autonomous.json`,
-  `.prometheus/evaluator/**`, and `.spike/**`.
-- Autonomous may edit ordinary project files but not the published scaffold or
-  this extension's trusted plugin/tool sources.
-- Ask, Karpathy, Reviewer, Grounder, and Implementation Validator are read-only.
-- Descendants inherit the originating managed identity.
-- Native Plan, native Build, unknown agents, and third-party agents bypass the
-  plugin.
-
-Native commands are outside file-edit interception. User approval and explicit
-agent instructions govern their effects.
+If the clone moves or the recorder reports a stale locator, reinstall from that
+clone. `status` reports locator state, and `remove` removes only an exact current
+locator. Neither command reads or deletes feedback.
 
 ## Validation
 
-Never use system Python in this repository:
+Never use system Python in this repository. Provision the pyenv virtual
+environment before running Python checks:
 
 ```bash
 PYTHON="$(bash scripts/ensure-venv.sh)"
 "$PYTHON" tests/verify_opencode.py --skip-llm
 node --test tests/plugins/*.test.mjs tests/integration/*.test.mjs
-"$PYTHON" -m unittest discover -s evals/mutation/tests -p 'test_*.py'
 "$PYTHON" tests/test_skill_coverage.py --skip-llm
-"$PYTHON" -m unittest discover -s tests -p 'test_audit_run.py'
-"$PYTHON" evals/seed_build/test_planning.py --dry-run
-"$PYTHON" evals/seed_build/test_build.py --dry-run
-"$PYTHON" tests/audit_run.py --help
 ```
 
-Skill coverage validates packaged skills and a temporary deployed copy without
-model credentials. The separate pressure suite remains optional live-model
-evidence. The audit command validates its CLI only; auditing a recorded session
-also requires `--project` and an OpenCode database.
+The deterministic OpenCode suite checks the shipped roster, generated-agent
+publication contract, permissions, installer output, and pinned tool runtime.
+The seed-build canonical input contains only the seed and generated-agent
+package, never oracle or reference implementation code. A build result requires
+an exact completed Bash tool event for every manifest verification command
+before the harness independently replays those commands. Dry-run reports and
+events are explicitly marked `DRY-RUN (STUB)` and prove plumbing only.
+These deterministic harness results do not prove model judgment or live-provider
+behavior.
 
-Live managed-agent scenarios fail before model invocation when the active
-profile differs from this clone. Run the installer and restart OpenCode first.
-`--active-profile-diagnostics` intentionally exercises a drifting active profile
-but never validates the repository profile. The five feedback-derived scenarios
-can be run alone with `tests/verify_opencode.py --feedback-regressions-only`.
-Platform results are recorded separately: missing macOS evidence prevents a
-macOS or cross-platform validation claim, not completion of Linux implementation
-and deterministic checks.
+The checked-in `examples/ml-loop` optimization package gives score ownership to
+the evaluator: it computes the score from the candidate artifact and held-out
+data, checks published immutable hashes, and ignores a forged score log.
+
+Optional live smoke checks require the current installed profile, reject
+discoverable retired profile agents, and require completed task-delegation
+events before attributing Reviewer or Grounder output to those children. These
+smokes do not replace the Phase 5 frozen behavioral fixtures. The live fixtures
+for Prometheus publication and generated-agent execution remain deferred and
+blocked until Phase 5.

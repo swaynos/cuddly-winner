@@ -99,7 +99,16 @@ test("installer manages only the current feedback locator and preserves feedback
   assert.match((await run("bash", [deploy, "status", "--config-dir", config], { env })).stdout, /Feedback locator: current/);
 
   await writeFile(locator, `${path.join(root, "removed-clone", "feedback")}\n`, { mode: 0o600 });
-  assert.match((await run("bash", [deploy, "status", "--config-dir", config], { env })).stdout, /Feedback locator: stale/);
+  let staleStatus;
+  await assert.rejects(
+    run("bash", [deploy, "status", "--config-dir", config], { env }),
+    error => {
+      staleStatus = error;
+      return error.code === 1;
+    },
+  );
+  assert.match(staleStatus.stdout, /Feedback locator: stale/);
+  assert.match(staleStatus.stdout, /Managed profile: drifted; run install, then restart OpenCode\./);
   const replacement = await run("bash", [deploy, "install", "--config-dir", config], { env });
   assert.match(replacement.stdout, /Backed up existing entry/);
   assert.match(replacement.stdout, /Feedback locator: installed/);

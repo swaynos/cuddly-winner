@@ -1,24 +1,21 @@
 #!/usr/bin/env python3
 """
-evals/seed_build/test_planning.py  —  Test 1: Loose idea → @prometheus → well-formed SPEC
+evals/seed_build/test_planning.py - Test 1: idea to generated-agent package
 
-Feeds the seed idea to a live @prometheus agent in a disposable workspace.
-Captures the SPEC.md it produces and scores it against the frozen planning oracle.
+Feeds the seed idea to a live Prometheus agent in a disposable workspace. It
+scores the registered schema-v1 package and fresh-context handoff Prometheus
+publishes before stopping.
 
 Usage:
     python3 evals/seed_build/test_planning.py [--out path/to/report.json]
 
 Exits:
-    0 = PASS or SKIPPED
-    1 = FAIL or PARTIAL
-    2 = internal error
+    0 = PASS
+    1 = FAIL, PARTIAL, or SKIPPED
 """
 from __future__ import annotations
 
 import argparse
-import json
-import re
-import shutil
 import tempfile
 import sys
 from pathlib import Path
@@ -29,16 +26,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _harness import (
     PASS, PARTIAL, FAIL, SKIPPED,
     TestReport, make_workspace, write_report, should_skip,
-    run_opencode_agent, dry_run_prometheus,
+    run_opencode_agent, dry_run_prometheus, opencode_text,
 )
+from planning_checks import score_package
 
-ORACLE   = Path(__file__).resolve().parent / "oracle"
 SEED     = Path(__file__).resolve().parent / "seed" / "idea.md"
 REPORTS  = Path(tempfile.gettempdir()) / "opencode-seed-build-reports"
 
 
 def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
-    report = TestReport(test_name="test_planning")
+    report = TestReport(
+        test_name="test_planning",
+        execution_mode="dry-run" if dry_run else "live",
+    )
 
     # Copy seed into workspace
     seed_text = SEED.read_text(encoding="utf-8")
@@ -47,10 +47,11 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     if dry_run:
         rc, stdout, stderr = dry_run_prometheus(workspace)
     else:
-        # Run @prometheus with the loose idea as the prompt
+        # Prometheus owns planning and publication, but not implementation.
         prompt = (
-            "Read idea.md and use the @prometheus workflow to plan this project. "
-            "Publish the complete canonical SPEC.md and opencode-autonomous.json directly in the workspace."
+            "Read idea.md and plan this project. Publish one complete registered "
+            "schema-v1 generated-agent package under .opencode, follow the documented "
+            "handoff, and stop before implementation."
         )
         rc, stdout, stderr = run_opencode_agent(
             agent="prometheus",
@@ -63,65 +64,13 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
     report.evidence["stdout_tail"] = stdout[-3000:] if stdout else ""
     report.evidence["stderr_tail"] = stderr[-1000:] if stderr else ""
     report.checks.append({
-        "name": "OpenCode run completed",
+        "name": "Prometheus run completed",
         "passed": rc == 0,
         "note": "" if rc == 0 else f"OpenCode exited with status {rc}.",
     })
 
-    spec_text: str | None = None
-    if (workspace / "SPEC.md").exists():
-        spec_text = (workspace / "SPEC.md").read_text(encoding="utf-8")
-        report.evidence["spec_source"] = "SPEC.md_on_disk"
-    else:
-        report.checks.append({
-            "name": "SPEC produced by @prometheus",
-            "passed": False,
-            "note": "No SPEC.md was written to the workspace.",
-        })
-        report.verdict = FAIL
-        return report
-
-    report.checks.append({
-        "name": "SPEC produced by @prometheus",
-        "passed": True,
-        "evidence": f"source={report.evidence['spec_source']} length={len(spec_text)}",
-    })
-
-    manifest_path = workspace / "opencode-autonomous.json"
-    if not manifest_path.exists():
-        report.checks.append({
-            "name": "Manifest produced by @prometheus",
-            "passed": False,
-            "note": "No opencode-autonomous.json was written to the workspace.",
-        })
-        report.verdict = FAIL
-        return report
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        commands = re.findall(r"^- `([^`\n]+)`\s*$", spec_text, re.M)
-        manifest_commands = manifest["verification"]["commands"]
-        valid_manifest = (
-            manifest.get("schema_version") == 3
-            and manifest.get("strategy") in {"direct", "karpathy"}
-            and commands == manifest_commands
-        )
-    except (json.JSONDecodeError, KeyError, TypeError):
-        valid_manifest = False
-    report.checks.append({
-        "name": "Manifest produced by @prometheus",
-        "passed": valid_manifest,
-        "note": "Manifest must be schema-v3 and match SPEC verification commands.",
-    })
-
-    # Score with planning_checks
-    import importlib.util
-    spec_path = Path(__file__).resolve().parent / "planning_checks.py"
-    mod_spec = importlib.util.spec_from_file_location("planning_checks", spec_path)
-    planning = importlib.util.module_from_spec(mod_spec)
-    sys.modules["planning_checks"] = planning  # register before exec for @dataclass compat
-    mod_spec.loader.exec_module(planning)
-
-    planning_report = planning.score_spec(spec_text)
+    handoff = opencode_text(stdout)
+    planning_report = score_package(workspace, handoff)
     for c in planning_report.checks:
         report.checks.append({
             "name": c.name,
@@ -130,8 +79,8 @@ def run_test(workspace: Path, dry_run: bool = False) -> TestReport:
             "evidence": c.evidence,
         })
 
-    # Write the SPEC to disk for inspection regardless
-    (workspace / "prometheus_output.md").write_text(spec_text, encoding="utf-8")
+    registry = workspace / ".opencode" / "generated-agents.json"
+    report.evidence["registry_path"] = str(registry) if registry.is_file() else ""
 
     # Overall verdict
     passed_count = sum(1 for c in report.checks if c.get("passed"))
@@ -160,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         if skip:
             report = TestReport(
                 test_name="test_planning",
+                execution_mode="live",
                 verdict=SKIPPED,
                 error=reason,
             )
@@ -172,7 +122,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         report = run_test(workspace, dry_run=args.dry_run)
     except Exception as e:
-        report = TestReport(test_name="test_planning", verdict=FAIL, error=str(e))
+        report = TestReport(
+            test_name="test_planning",
+            execution_mode="dry-run" if args.dry_run else "live",
+            verdict=FAIL,
+            error=str(e),
+        )
     finally:
         if not args.keep_workspace:
             import shutil as _shutil

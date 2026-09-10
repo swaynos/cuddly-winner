@@ -1,6 +1,6 @@
 /** Static validator for a Prometheus-generated task package. */
 import { tool } from "@opencode-ai/plugin";
-import { lstatSync, promises as fs } from "node:fs";
+import { lstatSync, promises as fs, realpathSync } from "node:fs";
 import path from "node:path";
 
 export type Strategy = "direct" | "ralph" | "optimization";
@@ -16,6 +16,10 @@ const PERMISSION_KEYS = new Set(["edit_paths", "bash"]);
 const DIRECT_KEYS = new Set(["work_selection"]);
 const RALPH_KEYS = new Set(["work_selection", "pass_budget", "state_paths", "progress_evidence_before", "progress_evidence_after", "pass_failure_treatment", "run_stop_conditions", "later_pass_starter"]);
 const OPTIMIZATION_KEYS = new Set(["work_selection", "objective", "direction", "evaluator", "score_extraction", "noise_policy", "mutable_targets", "immutable_targets", "experiment_budget", "keep_revert_rule", "stop_conditions"]);
+const RESERVED_AGENT_NAMES = new Set([
+  "build", "plan", "general", "explore", "compaction", "title", "summary",
+  "ask", "grounder", "prometheus", "reviewer",
+]);
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -104,6 +108,7 @@ export function validateManifest(raw: unknown): ValidationResult {
   rejectUnknown(raw, MANIFEST_KEYS, "manifest", push);
   if (raw.schema_version !== 1) push(`schema_version must be 1 (got ${JSON.stringify(raw.schema_version)})`);
   if (!taskID(raw.task_id)) push("task_id must be a lowercase hyphenated slug");
+  else if (RESERVED_AGENT_NAMES.has(raw.task_id)) push(`task_id must not use reserved agent identity "${raw.task_id}"`);
   if (raw.agent_name !== raw.task_id) push("agent_name must match task_id");
   if (taskID(raw.task_id)) {
     if (raw.agent_definition !== `.opencode/agents/${raw.task_id}.md`) push("agent_definition must match task_id");
@@ -143,34 +148,97 @@ export function validateManifest(raw: unknown): ValidationResult {
   return { valid: errors.length === 0, strategy, errors };
 }
 
-function regularFile(root: string, rel: string, errors: string[]): void {
+function inside(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+function regularFile(root: string, rel: string, errors: string[]): string | undefined {
+  const artifact = path.resolve(root, rel);
+  if (!inside(root, artifact)) {
+    errors.push(`package artifact escapes the project root: ${rel}`);
+    return;
+  }
   try {
-    const stat = lstatSync(path.resolve(root, rel));
-    if (stat.isSymbolicLink() || !stat.isFile()) errors.push(`package artifact must be a regular file: ${rel}`);
+    const parts = path.relative(root, artifact).split(path.sep);
+    let current = root;
+    for (let index = 0; index < parts.length; index += 1) {
+      current = path.join(current, parts[index]);
+      const stat = lstatSync(current);
+      if (stat.isSymbolicLink()) {
+        errors.push(`package artifact path contains a symlink: ${rel}`);
+        return;
+      }
+      if (index < parts.length - 1 && !stat.isDirectory()) {
+        errors.push(`package artifact parent must be a directory: ${rel}`);
+        return;
+      }
+      if (index === parts.length - 1 && !stat.isFile()) {
+        errors.push(`package artifact must be a regular file: ${rel}`);
+        return;
+      }
+    }
+    const resolved = realpathSync(artifact);
+    if (!inside(root, resolved)) {
+      errors.push(`package artifact resolves outside the project root: ${rel}`);
+      return;
+    }
+    return resolved;
   } catch { errors.push(`package artifact is missing: ${rel}`); }
+}
+
+export async function isRegisteredGeneratedAgent(root: string, agentName: string): Promise<boolean> {
+  if (!taskID(agentName) || RESERVED_AGENT_NAMES.has(agentName)) return false;
+  const rootPath = await fs.realpath(path.resolve(root));
+  const registryErrors: string[] = [];
+  const registryPath = regularFile(rootPath, ".opencode/generated-agents.json", registryErrors);
+  if (!registryPath) return registryErrors.some((error) => error.includes("symlink") || error.includes("outside"));
+  try {
+    const registry = JSON.parse(await fs.readFile(registryPath, "utf8"));
+    return record(registry) && Array.isArray(registry.agents) &&
+      registry.agents.some((item: unknown) => record(item) && item.name === agentName);
+  } catch {
+    return false;
+  }
 }
 
 export async function validateTaskPackage(root: string, agentName?: string): Promise<ValidationResult> {
   const errors: string[] = [];
   const rootPath = await fs.realpath(path.resolve(root));
-  let registry: Record<string, unknown>;
-  try { registry = JSON.parse(await fs.readFile(path.join(rootPath, ".opencode/generated-agents.json"), "utf8")); }
+  const registryPath = regularFile(rootPath, ".opencode/generated-agents.json", errors);
+  if (!registryPath) return { valid: false, errors };
+  let rawRegistry: unknown;
+  try { rawRegistry = JSON.parse(await fs.readFile(registryPath, "utf8")); }
   catch { return { valid: false, errors: ["generated-agent registry is missing or invalid JSON"] }; }
-  if (!record(registry) || registry.schema_version !== 1 || !Array.isArray(registry.agents)) return { valid: false, errors: ["generated-agent registry must use schema_version 1 and agents[]"] };
+  if (!record(rawRegistry) || rawRegistry.schema_version !== 1 || !Array.isArray(rawRegistry.agents)) {
+    return { valid: false, errors: ["generated-agent registry must use schema_version 1 and agents[]"] };
+  }
+  const registry = rawRegistry;
   const seen = new Set<string>();
   const entries = registry.agents.filter(record);
   if (entries.length !== registry.agents.length) errors.push("generated-agent registry entries must be objects");
   for (const entry of entries) {
     if (!taskID(entry.name) || !canonicalPath(entry.manifest)) errors.push("generated-agent registry entry is malformed");
+    else if (RESERVED_AGENT_NAMES.has(entry.name)) errors.push(`generated-agent registry name must not use reserved agent identity "${entry.name}"`);
     if (seen.has(entry.name as string)) errors.push(`generated-agent registry contains a duplicate name: ${entry.name}`);
     seen.add(entry.name as string);
   }
-  const entry = entries.find((item) => item.name === agentName) ?? (agentName === undefined && entries.length === 1 ? entries[0] : undefined);
-  if (!entry) errors.push(`generated-agent registry has no entry for ${agentName ?? "a unique agent"}`);
+  let entry: Record<string, unknown> | undefined;
+  if (agentName !== undefined) {
+    entry = entries.find((item) => item.name === agentName);
+    if (!entry) errors.push(`generated-agent registry has no entry named "${agentName}"`);
+  } else if (registry.agents.length === 1 && entries.length === 1) {
+    entry = entries[0];
+  } else if (registry.agents.length === 0) {
+    errors.push("generated-agent registry contains no entries");
+  } else {
+    errors.push(`generated-agent registry contains ${registry.agents.length} entries; agent_name is required`);
+  }
   if (!entry || !canonicalPath(entry.manifest)) return { valid: false, errors };
-  regularFile(rootPath, entry.manifest, errors);
+  const manifestPath = regularFile(rootPath, entry.manifest, errors);
+  if (!manifestPath) return { valid: false, errors };
   let manifest: unknown;
-  try { manifest = JSON.parse(await fs.readFile(path.join(rootPath, entry.manifest), "utf8")); }
+  try { manifest = JSON.parse(await fs.readFile(manifestPath, "utf8")); }
   catch { return { valid: false, errors: [...errors, "task manifest is missing or invalid JSON"] }; }
   const result = validateManifest(manifest);
   errors.push(...result.errors);
@@ -184,10 +252,12 @@ export async function validateTaskPackage(root: string, agentName?: string): Pro
 }
 
 export default tool({
-  description: "Validate a Prometheus-generated task package without running project commands.",
-  args: {},
-  async execute(_args, context) {
+  description: "Validate a named Prometheus-generated task package without running project commands. The name may be omitted for a one-entry registry.",
+  args: {
+    agent_name: tool.schema.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).optional().describe("Generated agent name; required when the registry has multiple entries"),
+  },
+  async execute(args, context) {
     const root = path.resolve(context.directory ?? context.worktree ?? process.cwd());
-    return JSON.stringify(await validateTaskPackage(root), null, 2);
+    return JSON.stringify(await validateTaskPackage(root, args.agent_name), null, 2);
   },
 });

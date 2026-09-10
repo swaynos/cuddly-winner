@@ -11,11 +11,11 @@
   "_notes": {
     "enabled": "Set false to disable the gate without removing the file.",
     "language": "Language of source files. Currently only 'python' is supported.",
-    "command": "Shell command to run the mutation runner. {files}, {result_path}, {score_threshold}, {mutant_cap}, {wall_clock_seconds} are interpolated by @autonomous before running.",
+    "command": "Shell command template for a generated task agent to run. Replace {files}, {result_path}, {score_threshold}, {mutant_cap}, and {wall_clock_seconds} with the declared values.",
     "result_path": "Path where the mutation runner writes its JSON artifact. The gate plugin reads this file — not the transcript.",
     "score_threshold": "Minimum kill ratio (0.0–1.0) required to pass. 0.70 is above the empirical AI-test baseline of ~0.35.",
     "mutant_cap": "Hard upper bound on mutants generated per run. Keeps cost bounded.",
-    "wall_clock_seconds": "Maximum seconds the mutation runner may run. Consistent with Karpathy's 5-minute experiment budget.",
+    "wall_clock_seconds": "Maximum seconds the mutation runner may run. Keep this within the task's bounded experiment budget.",
     "diff_scoped": "true = mutate only files changed in this task's diff. false = mutate all source files (expensive).",
     "_freeze_reminder": "After establishing mutation.json for a project, add it to opencode-immutable.json readonly so the implementer cannot lower the threshold or exclude files to game the score."
   }

@@ -3,475 +3,488 @@
 ## Product Goal
 
 This project is a lightweight, optional extension to OpenCode. It adds specialist
-roles and explicit planning-to-implementation workflows without replacing native
-Plan or Build and without implementing a second command-security or orchestration
+roles and an explicit planning-to-implementation workflow without replacing
+native Plan or Build or adding a second command-security or orchestration
 platform.
 
-`docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, and `docs/SKILLS.md` are the
-durable source of truth. `SPEC.md` and `opencode-autonomous.json` are transient
-task scaffolds.
+## Sources of Truth
 
-## Generated Execution Agents
+These documents divide the durable contract without duplicating it:
 
-The generated execution contract is documented in
-[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). Prometheus publishes a
-task-specific project-local execution agent, then requires an OpenCode restart
-and a new execution session. The managed `autonomous`, `karpathy`, and
-`implementation-validator` definitions are retired.
+- `docs/REQUIREMENTS.md` defines product behavior and policy.
+- `docs/ARCHITECTURE.md` defines runtime enforcement and the canonical generated
+  task-package schema.
+- `docs/NEXT-ITERATION.md` defines the current publication and handoff workflow
+  and links to the canonical schema.
+- `docs/SKILLS.md` defines the packaged skill inventory and skill behavior.
+
+## Current Contract
+
+The managed profile ships exactly four agents: `ask`, `grounder`, `prometheus`,
+and `reviewer`. A non-reserved project-local name listed in the generated-agent
+registry enters the immutability boundary, but it receives its generated policy
+only when the schema-v1 registry passes registry-wide structural validation and
+that agent's named package passes full schema-v1 validation. Failed validation
+blocks mutation and Bash for that registry-named identity instead of treating it
+as unmanaged. Reserved native and shipped names are rejected as generated
+entries and cannot replace those identities. Package files for unselected
+entries are outside the named validation call.
+
+Prometheus publishes one task package through these paths, where `<id>` is a
+lowercase hyphenated task id:
+
+```text
+.opencode/agents/<id>.md
+.opencode/tasks/<id>.md
+.opencode/tasks/<id>.json
+.opencode/generated-agents.json
+```
+
+The only manifest schema is version 1. The only strategies are `direct`,
+`ralph`, and `optimization`. After publication, the user must quit and restart
+OpenCode, start a new conversation, and select the generated agent. The handoff
+must name that agent, its brief, and its manifest. Restarting without starting a
+new conversation does not provide the required fresh context.
+
+## Rejected Contracts
+
+The fixed `Autonomous`, `Karpathy`, and `Implementation Validator` roles are not
+shipped. Packages based on `SPEC.md`, `opencode-autonomous.json`, or
+`.prometheus/evaluator/`, manifests marked schema v3, and the `karpathy` strategy
+are rejected.
 
 ## No Legacy Support
 
-This project supports exactly one current version of each contract it owns: the
-scaffold manifest `schema_version`, the manifest `strategy` vocabulary, and the
-feedback-report `schema_version`. Each has a single current value. An older or
-unknown value is rejected, never migrated, aliased, or auto-upgraded. There is no
-backward compatibility layer and no migration path.
+This project supports one current value for each versioned contract it owns.
+Older or unknown scaffold and feedback-report versions are rejected, never
+migrated, aliased, or upgraded in place. Prometheus republishes an outdated task
+package in the current shape.
 
-Consumers keep their own artifacts current. When a scaffold predates the current
-schema, Prometheus republishes it; the project never reads the old shape. Adding
-a second accepted version, reviving a retired strategy, or introducing a shim is
-a change to this policy, not an ordinary feature.
-
-Each contract versions independently, so "one current version" is per contract.
-The manifest and the feedback report do not share a version, and a
-repository-wide bump must never rewrite one to match the other.
+The manifest schema, manifest strategy vocabulary, registry schema, and feedback
+report schema version independently. A change to one does not imply a change to
+the others. Accepting a second version or strategy requires an explicit policy
+change here.
 
 ## Runtime Compatibility
 
-The repository supports Node.js `>=22.22.2 <25`. This floor matches the
-transitive `ini@7` dependency used by the OpenCode plugin runtime. CI uses
-Node.js `24.15.0`, and local deployment uses the active `node` and `npm` on
-the user's PATH.
+The repository supports Node.js `>=22.22.2 <25`. CI uses Node.js `24.15.0`.
+Deployment uses the active `node` and `npm` on the user's `PATH` and installs
+`@opencode-ai/plugin` version `1.17.15` and Playwright version `1.58.2`.
+Installation records owner-only integrity state for the full runtime dependency
+content trees. Status and live repository-profile preflight use that recorded
+state and fail on missing or invalid state or modified, missing, or unsafe
+runtime content; matching `package.json` versions alone are insufficient.
 
 ## Native Compatibility
 
-Built-in Plan and Build, future built-ins, unknown identities, and third-party
-agents remain outside this project's enforcement boundary. Installation must not alter
-their prompts, routing, tools, Bash access, permissions, or completion behavior.
-They never require a SPEC, specialist agent, plugin, or workflow tool.
+Built-in Plan and Build, future built-ins, unknown identities, unregistered
+project-local identities, and third-party agents remain outside this project's
+managed-identity enforcement boundary. The generated-agent workflow must not
+alias or reroute them, apply a generated manifest to them, or require a
+specialist or task package for their work. Installation does add shared global
+rules and plugin hooks; those hooks may enforce cross-cutting governance or
+prompt and session hygiene where their own contracts apply. Native compatibility
+therefore means that Plan and Build remain usable, not that every installed
+prompt, tool list, or session byte remains unchanged.
 
-The project must not install its repository `AGENTS.md` globally and must not
-direct ordinary planning to Prometheus or ordinary implementation to Autonomous.
+A registry entry that tries to use a reserved native name remains invalid and
+does not move that native identity into generated-agent enforcement. A reserved
+shipped name keeps its shipped policy and cannot receive registry policy.
+
+The project must not install its repository `AGENTS.md` globally. Ordinary
+planning remains available through Plan, and ordinary implementation remains
+available through Build. The generated-agent workflow starts only when the user
+explicitly selects Prometheus.
 
 ## Managed Agents
 
-The shipped managed identities are `ask`, `prometheus`, `reviewer`, and
-`grounder`. A generated identity is managed only when it is listed in the
-project's schema-v1 generated-agent registry and has a valid task manifest.
-Delegated sessions inherit the topmost managed identity so delegation cannot
-widen that agent's edit-tool boundary.
+A delegated session inherits the topmost managed identity in its ancestry. This
+prevents delegation from widening a managed agent's edit or Bash boundary. A root
+or session keeps its first effective managed identity and matching KPI policy for
+its lifetime; an initially unmanaged session adopts the first managed identity
+explicitly selected later. A cycle or a failed, missing, mismatched, or malformed
+session lookup makes ancestry unresolved, denies mutation and Bash, and leaves run
+KPIs inactive; it does not fall back to a descendant identity or unmanaged
+policy.
+After plugin reload, the plugins reconstruct the first managed root identity
+from user-message timestamps, falling back to API array order when complete
+timestamps are unavailable. Current session metadata may establish an identity
+only when valid history contains no managed selection; unavailable or malformed
+history fails closed.
 
 ### Ask
 
-Ask answers focused questions from session context and, when necessary, cited
-Grounder research. It is read-only, cannot execute commands, and does not start
-planning or implementation workflows.
-
-### Prometheus
-
-Prometheus owns planning readiness. It runs a deliberation loop before asking
-the human anything: it investigates using whatever tools are available in the
-session — bash commands, web search, connected MCPs, Grounder research — and
-resolves uncertainties internally. It escalates to the human only when available
-research paths are exhausted and the answer is required to proceed. When context
-is too thin to constrain a decision, creative liberty is implied and Prometheus
-proceeds without asking.
-
-An empty workspace is not a planning blocker. Prometheus treats a delivery
-medium, such as browser versus CLI, as an implementation mechanic unless the
-user makes it an outcome constraint. For an otherwise unspecified simple
-calculator request, it publishes a Direct scaffold for a zero-dependency static
-browser calculator rather than asking the user to choose a platform or basic
-operations.
-
-Prometheus may edit only `SPEC.md`, `opencode-autonomous.json`,
-`.prometheus/evaluator/**`, and `.spike/**`. It denies direct Bash and uses the
-approval-gated `spike` tool for contracted command-dependent research. Governance
-tools (`spike`, `validate_scaffold`, `scaffold_gitignore`) remain available when
-installed.
-
-Before publication, Prometheus establishes every load-bearing empirical
-prerequisite used by its acceptance criteria. It uses existing evidence or a
-contracted spike. If missing evidence eliminates a core requested outcome, it
-redesigns or reports a planning blocker; it does not relabel a degraded result as
-success. Acceptance criteria must mark any allowed degraded branch as optional.
-
-### Retired Fixed Executors
-
-Autonomous owns implementation and final verification. It reads the published
-scaffold, executes bounded right-sized work, makes reversible implementation
-decisions within scope, and returns only outcome-changing product or policy
-ambiguity to Prometheus. Absent implementation files and unspecified mechanics
-such as formats, thresholds, geometry, seeds, quotas, split ratios, and schemas
-are implementation work: Autonomous selects conservative, reversible,
-deterministic defaults that satisfy the scaffold. It is the only managed identity
-permitted to edit ordinary project files.
-
-Before it treats a tool-dependent item as blocked, Autonomous inspects the
-operations and parameters available in the current session. An unavailable
-optional API, output parameter, or convenience handoff is an implementation
-constraint: Autonomous selects a safe supported in-scope alternative and records
-the failure and fallback where reproducibility needs it. A structural blocker
-exists only when no safe in-scope path available to the current identity and
-permissions can satisfy the required outcome.
-
-Before candidate handoff, Autonomous verifies every acceptance criterion,
-invariant, required output, and checklist item against the implementation and
-fresh command evidence. Missing branches, disabled stages, placeholder tests,
-ignored verifier flags, or missing outputs mean the work remains incomplete.
-Autonomous continues ordinary in-scope work. A failed measured prerequisite that
-eliminates a core requested outcome is `Failed` and returns to Prometheus; an
-explicitly optional branch may be `Skipped`.
-
-After each bounded step or focused check, Autonomous repeats that complete-scope
-inspection and selects the next incomplete in-scope item without a user-facing
-progress handoff. A passing focused, fixture, synthetic, phase-local, or batch
-check is a phase gate, not completion evidence while required work remains.
-Metadata-only leads and intermediate records do not satisfy a required full
-result. A normal successful stop requires complete requested outcomes plus fresh
-passage of every exact final verification command; declared escalation
-conditions, failed core prerequisites, and structural blockers remain halt paths.
-
-When a checklist item is blocked by a structural prerequisite that no
-available identity or permission can satisfy, Autonomous stops at that item
-instead of completing downstream items that causally depend on it, so one
-blocked item never cascades into a wider red, half-migrated
-tree. A failed or blocked handoff states plainly that the worktree is left
-non-green and not committable as-is, and names the exact next action to reach
-green or revert. Reporting a failure honestly never licenses describing that
-same red or half-migrated tree as done, ready, or committable.
-
-After exhausting ordinary safe in-scope paths, Autonomous takes one creative
-pass at a safe, reversible alternative within the unchanged requested outcome,
-acceptance criteria, and permissions before a terminal `Blocked`, `Failed`, or
-escalation handoff. It never widens scope, weakens acceptance criteria, or
-bypasses controls to find one. On a confirmed block it reports plainly: the
-failed step, a concise blocker code, and the exact next human action, and
-records it with `cuddly-winner-feedback` when that skill is available.
-
-Autonomous uses native Bash with `ask` permission. OpenCode auto mode may approve
-those requests automatically. Autonomous never stages, commits, stashes, resets,
-switches branches, or initializes Git. It preserves pending worktree changes as
-the human-owned aggregate review artifact, gives Implementation Validator a
-detailed PR Contract with per-checklist evidence, and retains the full validator
-report in the delegated task result. Its user-facing handoff is concise: goals
-and validated outcomes, a brief change summary, fresh command exit codes, the
-validator verdict, material gaps and risks, worktree state, and one next human
-action. It does not emit a completion promise.
-
-After a complete candidate passes final verification, Autonomous delegates to
-Implementation Validator. If delegation is unavailable then, Autonomous reports
-a blocked handoff. It may report observed command results but must not call
-requested goals validated or report success.
-
-### Karpathy
-
-Karpathy is a read-only strategist for scalar optimization. When Prometheus
-identifies during deliberation that outcomes are measurable — a clear metric,
-direction, and evaluator exist — it recommends Karpathy mode in the scaffold.
-Autonomous follows that recommendation without further user invocation. Karpathy
-proposes and analyzes one bounded change at a time. Autonomous applies changes,
-runs measurements, and owns KEEP/REVERT decisions. Karpathy cannot edit or
-execute commands.
-
-### Reviewer
-
-Reviewer is read-only and advisory. It maps a supplied diff and verification
-summary to a rubric and ends with `APPROVE` or `REQUEST_CHANGES`. Its verdict
-never determines completion by itself.
+Ask answers focused questions from session context and, when needed, cited
+Grounder research. It is read-only, cannot execute Bash or governance tools, and
+does not start planning or implementation workflows.
 
 ### Grounder
 
-Grounder gathers cited local and external facts. It does not mutate, execute
-commands, delegate, or make product decisions. External claims identify their
-URL, and private repository contents or secrets must not be sent to third-party
+Grounder gathers cited local and external facts. It does not mutate files,
+execute commands, delegate, or make product decisions. External claims identify
+their URL. Private repository content and secrets must not be sent to third-party
 services.
 
-Grounder follows the resource order in `docs/RESOURCE-SELECTION.md`. It uses a
-visible browser only after explaining the target and lower-impact failures and
+Grounder follows `docs/RESOURCE-SELECTION.md`. It uses a visible browser only
+after naming the target, explaining why lower-impact sources failed, and
 receiving explicit user approval.
 
-### Implementation Validator
+### Reviewer
 
-Implementation Validator is read-only and objective. It operates with a clean
-context window after Autonomous reaches candidate completion, compares codebase
-state against SPEC.md, and generates a severity-grouped gap report. A critical
-or major gap permits one bounded Autonomous correction followed by fresh
-verification and validation; unresolved gaps prohibit a successful status.
+Reviewer is read-only and advisory. It maps supplied changes and verification
+evidence to a rubric and ends with `APPROVE` or `REQUEST_CHANGES`. Its verdict
+does not determine completion by itself, and it does not execute verification
+commands.
+
+### Prometheus
+
+Prometheus is the explicit planning entry point. It reads repository evidence,
+uses Grounder when research needs delegation, compares credible approaches, and
+publishes a task-specific generated agent when the work is planning-ready. It
+asks the human only when an unresolved answer would change the requested
+outcome, acceptance criteria, material scope, policy, trust boundary, safety
+posture, or an irreversible choice.
+
+An empty workspace is not a planning blocker. When implementation mechanics are
+open, Prometheus chooses conservative, reversible, and testable defaults. It
+does not ask the user to choose formats, thresholds, geometry, seeds, quotas, or
+other mechanics that a bounded implementation plan can decide.
+
+Prometheus denies direct Bash. Its mutation tools are restricted to
+`.opencode/agents/**`, `.opencode/tasks/**`,
+`.opencode/generated-agents.json`, and `.spike/**`. The approval-gated `spike`
+tool is its only command facility. The `scaffold_gitignore` tool may separately
+manage its exact block in the project `.gitignore`.
+
+Prometheus must establish each load-bearing empirical prerequisite used as a
+completion gate. It uses existing evidence or a contracted spike. If the
+evidence removes a core requested outcome, Prometheus redesigns the plan or
+reports a concrete blocker. It must label an allowed degraded branch as
+optional in the acceptance criteria.
+
+Before publication, Prometheus inspects existing project-local agent and task
+files, chooses a lowercase hyphenated task id, and preserves unrelated local
+definitions. It asks before replacing a user-owned or materially different
+agent definition.
+
+For every planning-ready run, Prometheus publishes the four task-package paths,
+invokes `scaffold_gitignore` and `validate_scaffold` when installed, and stops
+before implementation. Static validation does not execute project commands and
+does not prove that final verification passes.
+
+The shipped Prometheus prompt contains the exact schema and is self-contained;
+an installed profile does not need this repository's docs. Prometheus passes the
+selected task id through `validate_scaffold.agent_name`. The argument is optional
+only when the registry has one entry.
+
+If a top-level Prometheus session becomes idle while
+`.opencode/generated-agents.json` is absent, the immutability plugin sends one
+continuation prompt to that same session. The prompt asks it to publish if the
+task is ready or state one focused blocker. The reminder fires at most once per
+session and never fires for a descendant that only inherits Prometheus's
+boundary.
+
+## Generated Task Package
+
+`docs/ARCHITECTURE.md` is the canonical field-level contract for the schema-v1
+registry and manifest. A complete package contains:
+
+- one primary OpenCode agent definition at `.opencode/agents/<id>.md`;
+- one durable task brief at `.opencode/tasks/<id>.md`;
+- one task manifest at `.opencode/tasks/<id>.json`;
+- one matching entry in `.opencode/generated-agents.json`.
+
+The definition must read the matching brief and manifest before work. Its
+frontmatter permissions must not exceed the manifest. The brief must contain the
+outcome, acceptance criteria, durable context, selected strategy procedure,
+limits, escalation route, exact final checks, required fresh evidence, and rules
+for incomplete results.
+
+A generated `task_id` or registry name must not reuse a native OpenCode identity
+or one of the four shipped agent identities.
+
+The package must be sufficient for a new session with no access to the planning
+transcript. Generated agents cannot rewrite any published task-package file.
+
+## Strategy Selection
+
+Prometheus selects the smallest strategy supported by the task evidence.
+
+### Direct
+
+`direct` is the default for ordinary features, defects, and technical debt. Its
+work-selection rule identifies the next bounded in-scope item. The generated
+agent continues until the requested outcome and final evidence are complete or
+a declared stop or escalation condition applies.
+
+### Ralph
+
+`ralph` is for incremental work where every pass has independent before-and-after
+progress evidence. The package names the pass budget, durable state paths,
+progress evidence on both sides of each pass, failure treatment, run-wide stop
+conditions, and the launcher for later passes. A useful pass is not final
+delivery.
+
+### Optimization
+
+`optimization` is for a scalar objective with a direction, evaluator, extraction
+rule, noise policy, mutable and immutable targets, experiment budget,
+keep-or-revert rule, and stop conditions. One experiment changes one bounded
+lever. The generated agent records the hypothesis, measurement, and decision.
+
+In the checked-in `examples/ml-loop` package, editable code produces only a
+candidate artifact. The evaluator owns the score and derives it from that
+artifact plus separate held-out data. Verification checks published immutable
+hashes and proves that a forged score log cannot supply the accepted score.
+
+## Generated Agent Execution
+
+A generated agent implements only the published task. It uses exact
+manifest-listed edit paths and the declared Bash capability. It may delegate,
+but descendants retain its boundary. It cannot invoke the Prometheus-only
+governance tools.
+
+After each bounded change or focused check, the generated agent inspects the
+whole task again and selects the next incomplete in-scope item. A passing focused
+or phase-local check is not completion evidence while required work remains.
+Missing branches, disabled required stages, placeholder tests, ignored verifier
+flags, and missing outputs keep the task incomplete.
+
+A successful result requires every requested outcome and acceptance criterion,
+plus fresh evidence from every final check declared by the task. A declared
+escalation condition, failed core prerequisite, exhausted safe path, or required
+scope expansion produces an incomplete or blocked result instead. The agent must
+state the failed step and the next action needed to proceed.
+
+Independent judgment is task-specific. Prometheus may require human review, the
+shipped advisory Reviewer, or a generated project-local read-only reviewer. No
+fixed validation handoff is part of the runtime.
 
 ## Permission Model
 
-OpenCode permissions are the command-security boundary. Normal `ask` permissions
-prompt the user. `opencode --auto` automatically approves requests that would
+OpenCode permissions remain the command-security boundary. Normal `ask`
+permissions prompt the user. `opencode --auto` approves requests that would
 otherwise ask, while explicit `deny` remains enforced.
 
-The immutability plugin governs OpenCode edit/write/patch tools, not arbitrary
-filesystem effects caused by native commands. Prometheus's `spike` command and
-Autonomous Bash can technically access host resources available to OpenCode.
-Documentation and agent prompts must state this honestly and must never describe
-their results as sandboxed, protected, or tamper-resistant.
+The immutability plugin intercepts OpenCode `write`, `edit`, `patch`,
+`apply_patch`, and `bash` tool calls for managed identities. It is not a
+filesystem sandbox. A native command can affect any host resource available to
+the OpenCode process. Documentation and prompts must not describe command output
+as confined, protected, or tamper-resistant.
 
-Resource selection is guidance, not a second permission system. The managed
-deployment configures its research browser headless and isolated by default, but
-users may retain unrelated MCP entries. Diagnostics report their mode without
-rewriting them.
+For a generated agent, `permissions.bash: false` creates an explicit plugin
+deny. A true value allows the call to continue to OpenCode's own permission
+decision. The plugin checks mutation targets against the manifest's exact
+`edit_paths`; it does not interpret them as globs. Delegation cannot widen either
+rule.
 
-Prometheus and Autonomous never provision, install, or activate a runtime or
-dependency manager for a target project. Before Prometheus writes exact
-verification commands, it checks the target project for its own declared
-toolchain — a version-pin file, lockfile, or README-documented setup — and
-encodes that invocation into the command; absent such a signal, it writes the
-bare command. Whatever the command resolves to at execution time depends on
-the OpenCode session's ambient `PATH` and environment state, which neither
-agent detects or corrects further. This is a deliberate, documented limit, not
-an oversight: it applies to every target project, including this repository's
-own `.python-version` and `scripts/ensure-venv.sh`, which govern only
-cuddly-winner's own test execution and are never deployed to, or assumed for,
-any other project.
+Prometheus and generated task packages do not provision a target project's
+runtime or dependency manager. Prometheus first looks for the target project's
+version pin, lockfile, or documented setup and records commands that use that
+toolchain. Without such a signal, it records the bare command. The session's
+ambient environment determines what the command resolves to.
 
-## Prometheus Profile
+## Optional Run KPIs
 
-### Triage
+A schema-v1 manifest may omit `run_kpis`. Omission or `enabled: false` leaves the
+KPI plugin inert. Prometheus enables the policy only after an explicit user
+request and records positive values for unattended runtime, target tokens per
+active minute, and the hard token budget. There are no defaults.
 
-Before publication, Prometheus:
+For an enabled policy, `plugins/autonomous-kpis.ts` tracks completed assistant
+messages for the generated root session and its descendants. Token totals include
+input, output, reasoning, cache-read, and cache-write tokens. Active time is the
+union of completed assistant-message intervals, so overlapping child activity is
+not counted twice.
 
-1. Identifies the user or business outcome independently of the requested solution.
-2. Classifies the request and establishes current behavior from evidence.
-3. Distinguishes reported symptoms from demonstrated causes.
-4. Tests whether no change, documentation, configuration, reuse, or a narrower correction is sufficient.
-5. Resolves uncertainties through available tools — bash, web search, connected MCPs, Grounder research, or measured spikes — before asking the human.
-6. Escalates to the human only when available research paths are exhausted and the answer is required to proceed; applies creative liberty when context is too thin to constrain a decision.
-7. Compares genuinely credible approaches without manufacturing alternatives.
-8. Recommends one approach with evidence, consequences, and tradeoffs.
-9. Records informed non-safety overrides without reopening settled debate.
-10. Publishes only when implementation can proceed without inventing product intent, and writes the scaffold before its final response rather than waiting for a separate publication request.
+The plugin adds compact guidance with the duration target, observed token use,
+and observed active token rate. Before each response, it caps `maxOutputTokens`
+to the remaining hard budget and rejects new work once no budget remains.
+Duration and token-rate targets are observations, not delivery gates. The agent
+must not sleep, pad work, widen scope, skip checks, or continue after valid
+completion to improve a KPI.
 
-Prometheus refuses unsafe, destructively unauthorized, internally inconsistent,
-unboundedly lossy, or unverifiable work. These are planning readiness failures,
-not command-sandbox decisions.
+The KPI plugin does not approve tools, create durable run state, prompt idle
+sessions, or extend a completed task.
 
-### Measured Spikes
+## Optional Generated Task Loop
 
-A spike exists only for a load-bearing technical uncertainty. Prometheus creates
-`.spike/<id>/QUESTION.md` containing a question and kill criterion before calling
-the `spike` tool. The tool:
+`scripts/task-loop.mjs` is an optional developer script for a registered
+generated agent. The installer does not deploy it, and no managed agent, plugin,
+or tool depends on it.
 
-- requires a safe spike identifier and the contract file;
-- runs natively from `.spike/<id>`;
-- applies finite concurrency, timeout, and output limits;
-- uses a reduced environment and redacts common secret shapes;
-- records command, timestamps, exit status, bounded output, and `sandboxed: false`;
-- does not claim confinement and does not prevent the command from escaping its working directory.
+For each configured pass, the script starts a fresh
+`opencode run --agent <id> --dir <project>` session and sends no message. The
+published package is the sole task input. An optional project-supplied
+`--state-cmd` prints JSON counters before and after each pass; the script records
+the per-key numeric delta without assigning domain meaning to it.
 
-The tool permission is `ask`, so each invocation prompts normally and auto mode
-may approve it. A failed kill criterion requires redesign or a planning blocker.
+The script appends one JSONL evidence record per pass. By default it records a
+failed pass and continues. It stops when the pass budget is exhausted, after the
+configured number of measured zero-delta passes, or after a non-zero exit when
+`--stop-on-failure` is set. For an optional wall budget, it measures elapsed time
+after a completed pass and stops before starting the next once the budget has
+been reached. It does not predict whether that next pass would overrun.
 
-### Retired Scaffold
+Each pass is independent. Continuity comes only from the target worktree and its
+durable state. The JSONL log is evidence, not a run-state machine, protected
+store, checkpoint service, or accepted final outcome.
 
-Every published scaffold contains:
+## Workflow Tools
 
-- one `SPEC.md` with Grounding, Approaches Considered, Acceptance Criteria,
-  Verification, and Implementation Checklist sections;
-- one schema-v3 `opencode-autonomous.json` declaring strategy, invariants,
-  implementation scope, escalation triggers, evaluator inventory, exact
-  verification commands, and optional limits;
-- an optimization block for Karpathy work;
-- optional evaluator and spike assets.
+### Spike
 
-`validate_scaffold` performs static shape, path, inventory, section, and command
-consistency checks. It executes no project command and does not certify that
-verification passes. When governance tools are installed, Prometheus invokes
-`scaffold_gitignore` and `validate_scaffold` before completing handoff.
-`scaffold_gitignore` reports a no-op outside a Git worktree and does not create
-`.gitignore` or initialize Git. A
-planning-ready Prometheus run must write `SPEC.md` and
-`opencode-autonomous.json` before its final response; only a concrete planning
-blocker or a focused, decision-changing question may end the run without a
-scaffold. If a root, top-level Prometheus session becomes idle without both
-files, the plugin sends one continuation prompt to that same session that
-restates this gate. The continuation does not override a concrete blocker or
-focused question and is limited to once per session to prevent a feedback
-loop. A managed descendant that only inherits Prometheus's edit restrictions
-is not itself Prometheus and never receives this reminder.
+`spike` runs one approved command natively from `.spike/<id>`. Prometheus must
+first write `.spike/<id>/QUESTION.md` with the question and kill criterion. The
+tool applies a finite timeout and output bound, uses a reduced environment,
+redacts common secret shapes, and records `sandboxed: false`. It is not a
+security boundary.
 
-## Retired Autonomous Profile
+### Static Package Validation
 
-Direct is the default for ordinary feature, defect, and technical-debt work.
-Autonomous works one right-sized item at a time, verifies relevant increments,
-runs all final commands before claiming completion, and stops when declared
-verification passes or a required step proves impossible to complete with any
-tool or permission available in this session.
+`validate_scaffold` performs registry-wide structural validation of the current
+schema-v1 registry, then fully validates one named schema-v1 task package. Its
+optional `agent_name` selects that package and is required when more than one
+entry exists. It executes no project command and does not load package files for
+unselected entries. Its exact checks and limits are defined in
+`docs/ARCHITECTURE.md`.
 
-Karpathy applies only to explicit scalar optimization with a complete metric,
-direction, evaluator, baseline protocol, noise policy, mutable and immutable
-targets, experiment limits, and stop criteria. Karpathy proposes; Autonomous
-edits and measures. One experiment changes one lever. Autonomous records each
-hypothesis, command, score, decision, and relevant reviewer advice in its report.
+Both generated-policy plugins require the same validation before recognizing a
+generated policy or enabling run KPIs. A non-reserved identity named in the
+registry remains inside the immutability gate when malformed entries, duplicate
+names, or an incomplete named package make validation fail, so mutation and Bash
+are denied. Native or shipped reserved entries fail validation and never hijack
+the reserved identity.
 
-### Optional Run KPIs
+### Git Exclusion
 
-The schema-v3 manifest may omit `run_kpis`; omission and `enabled: false` leave
-Autonomous unchanged. Prometheus adds an enabled policy only after an explicit
-user request and requires explicit active-duration, token-rate, and hard-token-
-budget values. There are no package defaults.
-
-Enabled KPIs favor sustained useful unattended work and a token rate at or below
-the declared target. Completion, verification, scope, permissions, safety,
-strategy stops, and existing hard limits take precedence. Autonomous must not
-sleep, pad work, widen scope, skip checks, or continue after valid completion to
-improve a KPI. The hard token budget stops new work at the next observable
-completed-message boundary. Token-rate and duration results remain operational
-observations, not delivery acceptance gates.
-
-The workflow is agent-led. There is no custom supervisor, durable run-state
-machine, protected evidence store, automatic checkpoint service, or cross-session
-resume guarantee. The worktree and current OpenCode session are the durable
-engineering context. When invoked, Autonomous leaves all Git publication
-decisions to the human. Its session evidence and validator report describe the
-aggregate pending changeset.
-
-### Generated Task Loop
-
-`scripts/task-loop.mjs` is an optional external loop controller for a registered
-generated task agent. It is a developer tool that lives beside the other repository
-scripts. The installer never deploys it, it is not part of the managed profile,
-and no agent, plugin, or tool depends on it. It does not run inside an OpenCode
-session and does not change any agent prompt, permission, or completion rule.
-
-The wrapper treats the named task agent as a black box. For each configured pass
-it starts one fresh `opencode run --agent <task-id>` session and sends no message,
-so the published task package is the sole driver of the work. The wrapper only
-decides whether to start another pass.
-
-The wrapper owns loop control and progress measurement, and the agent never sees
-either. An optional `--state-cmd` runs a project-supplied command that prints
-JSON counters before and after each pass, and the wrapper records the per-key
-delta without knowing what the counters mean. It writes one append-only JSONL
-evidence record per pass and, by default, continues after a failed or
-unproductive pass. It stops when the pass count is exhausted, an optional
-consecutive-idle or wall-clock limit is reached, or `--stop-on-failure` sees a
-non-zero exit.
-
-This does not reintroduce a custom supervisor, durable run-state machine,
-protected evidence store, or cross-session resume guarantee. Each pass is
-independent and starts fresh, and continuity between passes comes only from the
-target project's own worktree and durable state, the same way a Ralph-style
-runner works. The JSONL log is plain developer evidence, not run state returned
-to the agent. Per-session analysis still uses `tests/audit_run.py`.
-
-## Deployment
-
-Default installation deploys the complete managed profile: the four retained agents, the
-immutability plugin, `spike`, `validate_scaffold`, `scaffold_gitignore`, the
-pinned OpenCode tool SDK, and all non-core skills. This ensures the shipped
-Prometheus agent always has its declared command and governance tools available.
-
-The installer accepts one configuration root from `--config-dir`,
-`OPENCODE_DEPLOY_CONFIG_DIR`, or `opencode debug paths`, in that order. Agent,
-plugin, tool, and skill destinations are fixed subdirectories of that root.
-Copy and symlink modes are supported. Status and removal inspect every current
-managed entry. Status distinguishes current copies, stale or modified copies,
-current repository links (including equivalent relative links), foreign links,
-and missing entries, and reports whether installation plus restart is required.
-Collision backups live outside runtime discovery. Status flags older managed
-skill backups that remain under `skills/`, and install preserves them by moving
-them to the non-discoverable backup tree.
-Removal deletes only links to current repository sources or current
-byte-identical copies; modified and unrelated entries are preserved.
-
-The retired `--with-autonomous`, `--with-tools`, `--with-workflow-tools`,
-`--with-skills`, per-category path overrides, source overrides, and local
-deployment environment file are unsupported. The installer records managed
-agent ownership and removes a retired agent during a later install only when
-its copy matches the recorded hash or its symlink targets the recorded source.
-Modified and unrelated entries are preserved. It does not migrate retired
-runner or supervisor artifacts.
-
-## Governance Tools
-
-The governance tools — `spike` (contracted investigation helper),
-`validate_scaffold` (static scaffold checker), and `scaffold_gitignore`
-(generated-artifact exclusion helper) — and the managed-agent immutability
-plugin are part of the default managed profile and described in
-`docs/ARCHITECTURE.md`. Native Plan and Build workflows do not require them.
+`scaffold_gitignore` accepts no paths and manages only the exact block defined in
+`docs/ARCHITECTURE.md`. Outside a Git worktree it skips without creating
+`.gitignore` or initializing Git. It reports tracked matching artifacts but does
+not change the Git index.
 
 ### Session Fetch
 
-The managed `session_fetch` workflow tool supports an explicit interactive
-browser bootstrap, completion, read-only request, and close lifecycle for a
-named site profile. A profile declares allowed HTTPS origins, a login URL, and
-a completion URL or selector outside project repositories. The tool returns an
-opaque handle, never session material, and accepts only `GET` and `HEAD` to the
-profile's origins. Interactive bootstrap requires explicit user approval before
-the visible browser opens. The tool promises authenticated session continuity.
+`session_fetch` supports an explicit interactive browser bootstrap, completion,
+private read-only request, and close lifecycle for a configured site. A profile
+defines allowed HTTPS origins and login completion outside project repositories.
+The tool returns an opaque handle, accepts only `GET` and `HEAD`, and requires
+explicit approval before opening a visible browser.
+
+## Deployment
+
+Default installation deploys this exact managed profile:
+
+| Group | Count | Sources |
+| --- | ---: | --- |
+| Agents | 4 | `agents/ask.md`, `agents/grounder.md`, `agents/prometheus.md`, `agents/reviewer.md` |
+| Plugins | 3 | `plugins/immutability.ts`, `plugins/autonomous-kpis.ts`, `plugins/announce-hygiene.ts` |
+| Tools | 4 | `tools/session_fetch.ts`, `tools/scaffold_gitignore.ts`, `tools/spike.ts`, `tools/validate_scaffold.ts` |
+
+The three governance tools are `scaffold_gitignore`, `spike`, and
+`validate_scaffold`. `session_fetch` is installed as a separate workflow tool.
+Plugins and `session_fetch` always install as copies. Agent files, governance
+tools, packaged skills, and rule files use the selected `copy` or `symlink`
+mode.
+
+The installer also deploys every directory under `skills/`, every Markdown file
+under `rules/`, the pinned SDK packages, one managed research-browser MCP entry,
+rule instruction wiring, and the feedback locator. It builds the runtime in a
+clean staging tree, backs up a noncurrent live tree intact before replacement,
+then records a recursive hash plus entry, file, and symlink counts for the whole
+`node_modules` dependency tree in a checksummed mode-`0600` state file beneath
+`<config_dir>/node_modules/`.
+
+The configuration root resolves in this order: `--config-dir`,
+`OPENCODE_DEPLOY_CONFIG_DIR`, then `opencode debug paths`. The supported actions
+are `install`, `status`, and `remove`; the supported install modes are `copy` and
+`symlink`.
+
+CI installs the exact `.opencode-cli-version` package under its temporary
+profile, prepends that local binary directory to `PATH`, and passes its absolute
+path to the installed-product test.
+
+Status compares every managed surface and reports missing, current, stale,
+modified, foreign, and retired-conflict state. It completes all checks and exits
+nonzero if any agent, plugin, tool, skill, rule, instruction, MCP entry, feedback
+locator, runtime package, runtime-integrity state, or retired path drifts. Runtime
+status checks both pinned metadata and the recorded full content trees, including
+code below package roots, so unchanged top-level versions cannot hide code
+tampering; it also rejects an exact retired managed `notebooklm` entry in legacy
+`config.json`, while preserving user-owned variations. Collision backups live
+under `<config_dir>/backups/`, outside runtime
+discovery. Removal deletes only a link to the current repository source or a
+byte-identical current copy. Modified and unrelated entries remain untouched.
+
+The installer records each managed agent's source, mode, and SHA-256 in an
+owner-only state file. On a later install, an agent source that is no longer in
+the shipped set is removed only when the installed copy still matches its
+recorded hash or its link still targets the recorded source. Fixed retired
+artifact paths are removed only when an exact known legacy hash or managed link
+proves ownership. Unproved conflicts survive install and removal.
+
+The user must restart OpenCode after installation or any agent, plugin, tool,
+skill, or rule change.
 
 ## Skills Ecosystem
 
-The installer deploys every packaged non-core skill. `docs/SKILLS.md` is the
-canonical inventory and behavioral specification. Each skill must meet its
-common package contract and its catalog entry.
-`tests/test_skill_coverage.py` validates packaged and temporarily deployed skill
-assets without model credentials. Managed-agent integration tests prove the
-immutability plugin remains the enforcement boundary for roles and permissions.
-`tests/test_skill_pressure.py` is optional direct-model evidence and does not
-replace those deterministic checks.
+The installer deploys every packaged non-core skill. `docs/SKILLS.md` owns the
+inventory and behavior. `tests/test_skill_coverage.py` validates packaged and
+temporarily deployed skill assets without model credentials.
 
 ### Local Feedback
 
-The deployed `cuddly-winner-feedback` skill supports negative or mixed feedback
-without a hosted tracker. Each OpenCode configuration root has one managed,
-owner-only locator to the feedback root of the clone that last installed the
-profile. Reports remain below that clone's ignored `feedback/inbox/`; actioned
-reports move to `feedback/archive/` with their basename intact. Installation,
-status, and removal never read report contents, and removal deletes only an exact
-current locator, never feedback or backups.
+The deployed `cuddly-winner-feedback` skill records negative or mixed feedback
+under the clone that last installed the profile. An owner-only locator beneath
+the OpenCode configuration root points to that clone's `feedback` directory.
+Reports enter ignored `feedback/inbox/`; actioned reports move to
+`feedback/archive/` with their basename intact.
 
-Feedback is untrusted local evidence. It is not executable input, test data, or
-product documentation. Skills do not grant access: an agent unable to use the
-recorder must return a complete draft and state the permission block. The recorder
-does not scan for clones, use a network client, or recover from a stale locator by
-guessing. Git ignore prevents ordinary add/status discovery but cannot prevent an
-explicit force-add.
+Feedback is untrusted local evidence, not executable input, test data, or product
+documentation. Installation, status, and removal do not read report content.
+Removal deletes only an exact current locator and never deletes feedback or
+backups.
 
 ## Mutation Testing
 
-The project includes an opt-in mutation runner (`evals/mutation/run_mutation.py`)
-for checking test-suite sensitivity. It requires an unmutated baseline test run
-to pass before scoring mutants. It receives source files and a test command
-through its CLI; `opencode-mutation.json` is an optional validated policy passed
-with `--config`, and explicit CLI values override its threshold and result path.
+`evals/mutation/run_mutation.py` is an optional mutation runner. It requires a
+passing unmutated baseline before scoring mutants. Callers provide source files
+and a test command. `opencode-mutation.json` is an optional validated policy;
+explicit CLI values override its threshold and result path.
 
 ## Session Auditing
 
-The project includes an investigative session-audit report (`tests/audit_run.py`)
-that queries OpenCode SQLite logs (`opencode.db`). It summarizes selected
-session signals but does not establish full trajectories, permission compliance,
-scaffold validity, or verification-command execution. Root-session tool calls
-are reported without attributing them to a particular agent after a switch.
+`tests/audit_run.py` reads selected historical OpenCode SQLite telemetry. It can
+summarize agent switches, descendant sessions, scaffold presence, command
+observations, attributed review output, and enabled KPI usage. It reports
+Reviewer approval only when assistant text joined to a session attributed to
+Reviewer ends with the exact final token `APPROVE`. Root or user text that merely
+contains that word is not Reviewer approval. The audit does not prove ancestry
+enforcement, permission compliance, package validity, or fresh execution of
+verification commands.
 
 ## Validation
 
-Release validation separately proves native compatibility, identity inheritance,
-role permissions, Prometheus triage and deliberation behavior, generated-agent
-approval-gated Bash, task-package strategy contracts, deterministic skill and
-audit checks, mutation-runner behavior, additive deployment and
-safe removal, and documentation consistency, following the evidence requirements
-defined in `docs/TEST-PLAN.md` and `docs/TESTING-METHODOLOGY.md`. No release check may require Bubblewrap, Lima, a
-protected runner, or a custom supervisor.
+Deterministic release checks cover native-agent managed-boundary bypass, managed
+identity inheritance, role permissions, registry and manifest rejection,
+generated edit and Bash boundaries, run KPIs, the optional task loop, workflow
+tools, deployment, skills, feedback, mutation tests, session auditing, the
+scripted installed-product flow, and documentation consistency. These checks do
+not prove model judgment or live-provider behavior.
 
-Release validation also proves the installed product end to end: the installer,
-the effective per-agent permissions OpenCode resolves, the Prometheus-to-
-generated-agent handoff across separate processes, native command execution,
-manifest-scoped edit and Bash boundaries, and each refused boundary probe. That
-evidence comes from a scripted loopback provider, so it establishes wiring,
-deployment, and permission policy, never agent judgement.
+The optional current-role smoke harness rejects discoverable retired profile
+agents and requires completed delegation events before it attributes Reviewer or
+Grounder output to those children. Its observable events can prove the selected
+child output and recorded tool use, not broad non-disclosure, model quality, or
+the complete Reviewer and Grounder contracts. The live fixtures for Prometheus
+publication and generated-agent execution remain deferred and blocked until
+Phase 5.
 
-Live repository-profile validation compares the complete managed installation,
-including agents and their effective metadata, plugins, tools, skills, rules and
-instruction wiring, pinned runtime packages, the managed research-browser entry,
-and the feedback locator. Drift fails before model invocation and requires
-installation plus OpenCode restart. An explicit active-profile diagnostic mode
-may exercise drift, but its result is not repository-profile validation.
-Behavioral evidence is platform-specific: a missing run leaves that platform
-unproven and does not invalidate deterministic or behavioral evidence recorded
-on another platform.
+Live repository-profile validation compares the active installation with the
+complete source profile before model invocation and invokes the canonical
+runtime-integrity status helper against the recorded dependency content tree.
+Missing or invalid integrity state and changed or missing runtime code are drift,
+even when package versions match. Drift fails closed and requires installation
+followed by an OpenCode restart. Behavioral evidence remains
+platform-specific; a missing live run leaves that platform unproven without
+invalidating deterministic evidence from another platform.

@@ -1,75 +1,76 @@
 # Use Cases
 
-[`docs/TEST-PLAN.md`](TEST-PLAN.md) defines the test scenarios, observable evidence, and pass
-conditions for each use case below.
+[`docs/TEST-PLAN.md`](TEST-PLAN.md) defines the test scenarios, observable
+evidence, and pass conditions for each use case below.
 
 Evidence classes:
 
-- **U**: unit test
-- **F**: filesystem/deployment integration test
-- **S**: static source/configuration check
+- **U**: deterministic unit test
+- **F**: filesystem or deployment integration test
+- **S**: static source, configuration, or documentation check
 - **B**: behavioral agent evaluation
 - **O**: optional live OpenCode smoke test
+- **E**: deterministic installed-product end-to-end test
 
-## Approved Next Iteration
+## Generated Agent Workflow
 
-The following cases specify the current generated-execution-agent design in
-[`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). The older fixed-agent cases below
-are retired history and do not describe the runtime.
+These are the current planning-to-execution cases. Prometheus publishes a
+task-specific project-local agent for each planning-ready task.
 
 ### UC-NEXT-01: Prometheus publishes a scoped local executor
 
 - **Given:** Prometheus has a planning-ready task.
-- **When:** it selects an execution strategy.
-- **Then:** publish a task-specific definition under `.opencode/agents/` and a
-  durable task brief containing scope, permissions, strategy, verification,
-  evidence, stops, and escalation.
-- **Never:** rely on the planning transcript or publish an unrestricted unknown
-  agent.
-- **Evidence:** F generated files; S definition and boundary contract; B fresh
-  execution scenario.
+- **When:** it selects `direct`, `ralph`, or `optimization` from the task evidence.
+- **Then:** publish a schema-v1 registry, agent definition, task manifest, and
+  durable task brief under `.opencode/`.
+- **Never:** edit ordinary implementation files, omit context needed by a fresh
+  session, or publish an agent with permissions wider than its manifest.
+- **Evidence:** F generated files; S package contract; B publication and fresh
+  execution scenarios.
 
 ### UC-NEXT-02: Publication creates a fresh-context handoff
 
 - **Given:** Prometheus has published a generated executor.
-- **When:** it hands off.
-- **Then:** stop before implementation and tell the user to restart OpenCode,
-  start a new conversation, and select the named local agent.
-- **Never:** state that restart alone clears resumed-session history or require
-  the execution agent to recover the planning transcript.
+- **When:** it hands off the task.
+- **Then:** name the agent, brief, and manifest, stop before implementation, and
+  tell the user to quit and restart OpenCode, start a new conversation, and
+  select the named local agent.
+- **Never:** claim that restart clears a resumed conversation or require the
+  generated agent to recover the planning transcript.
 - **Evidence:** B handoff transcript; O startup discovery and new-session run.
 
 ### UC-NEXT-03: A Ralph-style executor measures pass progress
 
-- **Given:** Prometheus selects an incremental loop strategy.
-- **When:** the generated executor completes a pass.
-- **Then:** collect declared independent before-and-after progress evidence and
-  follow the declared pass and run-wide stop rules.
-- **Never:** treat a useful pass, agent prose, or process exit status as final
-  outcome completion.
-- **Evidence:** B multipass fixture; F retained pass evidence.
+- **Given:** Prometheus selects `ralph` for incremental work.
+- **When:** a generated executor completes a pass.
+- **Then:** retain declared before-and-after progress evidence and apply the
+  declared pass and run-wide stop rules.
+- **Never:** treat a useful pass, agent prose, or process exit status as proof of
+  the final outcome.
+- **Evidence:** B multi-pass fixture; F retained pass evidence.
 
 ### UC-NEXT-04: Validation is task-defined
 
 - **Given:** Prometheus publishes a generated executor.
 - **When:** it defines completion evidence.
 - **Then:** state the required outcome evidence, freshness rule, and failure or
-  incomplete result. Specify independent review only when the task needs it.
-- **Never:** require an Implementation Validator handoff by default or label
-  unproved work delivered.
-- **Evidence:** S task-brief contract; B pass, fail, and independent-review
+  incomplete result. Require independent review only when the task needs it.
+- **Never:** require one universal validation role for every task or call unproved
+  work delivered.
+- **Evidence:** S task-manifest contract; B pass, fail, and independent-review
   scenarios.
 
 ### UC-NEXT-05: Local definitions preserve ownership and boundaries
 
 - **Given:** a target name collides with an existing local agent, or a generated
-  agent attempts a protected action.
-- **When:** Prometheus publishes or the executor runs.
+  agent requests a protected action.
+- **When:** Prometheus publishes or the generated executor runs.
 - **Then:** ask before replacing a user-owned definition and enforce the
-  generated agent's declared path and tool boundary.
-- **Never:** overwrite unrelated definitions or classify generated agents as
-  unmanaged identities.
-- **Evidence:** F collision fixture; U permission-resolution matrix.
+  registered agent's declared edit and Bash boundaries.
+- **Never:** overwrite unrelated definitions, rewrite the published task
+  package during execution, or treat an unregistered local agent as managed.
+- **Evidence:** F collision and package fixtures; U permission matrix; E
+  installed-product boundary probes.
 
 ## Native Compatibility
 
@@ -77,17 +78,22 @@ are retired history and do not describe the runtime.
 
 - **Given:** Plan, Build, an unknown agent, or a third-party agent is selected.
 - **When:** it reads, edits, or executes commands.
-- **Then:** the plugin returns before applying managed-agent rules.
-- **Never:** require a SPEC, workflow tool, or specialist handoff.
+- **Then:** the identity-scoped plugins return before applying a generated or
+  shipped-agent permission envelope. Shared global rules and other applicable
+  plugin hooks may still run.
+- **Never:** require a generated task package, workflow tool, or specialist
+  handoff, let a reserved registry entry hijack a native identity, or claim that
+  installation leaves native prompt and session bytes unchanged.
 - **Evidence:** U identity bypass matrix; F default deployment.
 
 ### UC-NATIVE-02: Specialist workflows are explicit
 
 - **Given:** ordinary planning or implementation work.
 - **When:** no specialist is selected.
-- **Then:** use native OpenCode behavior.
-- **Never:** route automatically to Prometheus or Autonomous.
-- **Evidence:** S agent/project instructions; B direct native scenarios.
+- **Then:** keep native Plan and Build available without specialist routing or a
+  generated package.
+- **Never:** route ordinary work to Prometheus or a generated executor.
+- **Evidence:** S project instructions; B direct native scenarios.
 
 ## Identity And Permissions
 
@@ -95,43 +101,56 @@ are retired history and do not describe the runtime.
 
 - **Given:** direct or delegated managed sessions.
 - **When:** a descendant requests a tool.
-- **Then:** apply the topmost managed ancestor's fixed boundary.
-- **Never:** widen permissions through delegation or identity spoofing.
+- **Then:** apply the topmost managed ancestor's defined boundary and fail closed
+  when an ancestry cycle prevents safe resolution.
+- **Never:** widen permissions through delegation, switching, spoofing, or an
+  ancestry cycle.
 - **Evidence:** U ancestry and cycle matrix.
 
-### UC-ID-02: Prometheus is scaffold-scoped
+### UC-ID-02: Prometheus is publication-scoped
 
 - **Given:** Prometheus requests mutation or command execution.
-- **When:** permissions evaluate it.
-- **Then:** permit scaffold edits and `bash: ask` for research commands; set governance tools to ask when installed.
-- **Never:** permit ordinary production file edits.
-- **Evidence:** U permission/path matrix; S frontmatter check.
+- **When:** permissions evaluate the request.
+- **Then:** allow writes only to generated package and spike paths, deny direct
+  Bash, and approval-gate contracted spikes.
+- **Never:** permit ordinary production edits or command access outside the
+  declared governance tools.
+- **Evidence:** U path and permission matrix; S agent frontmatter.
 
-### UC-ID-03: Autonomous owns implementation
+### UC-ID-03: Registered executors are manifest-scoped
 
-- **Given:** a published scaffold.
-- **When:** Autonomous implements it.
-- **Then:** permit ordinary edits and set native Bash to ask.
-- **Never:** permit edit-tool changes to the scaffold or extension sources.
-- **Evidence:** U path matrix; S frontmatter check.
+- **Given:** a project-local agent is registered with a valid schema-v1 task
+  manifest.
+- **When:** it requests an edit, Bash, a governance tool, or delegation.
+- **Then:** enforce its declared edit paths and Bash policy through the topmost
+  managed ancestry.
+- **Never:** allow package rewrites, trusted control-plane edits, out-of-scope
+  edits, undeclared Bash, or Prometheus-only governance tools. A non-reserved
+  registry-named identity with an invalid package must stay blocked rather than
+  become unmanaged, while reserved entries must not replace native or shipped
+  identities.
+- **Evidence:** U generated-identity matrix; E boundary probes.
 
-### UC-ID-04: Read-only roles remain read-only
+### UC-ID-04: Shipped read-only roles remain read-only
 
-- **Given:** Ask, Karpathy, Reviewer, or Grounder.
-- **When:** it requests mutation or command execution.
+- **Given:** Ask, Reviewer, or Grounder is active.
+- **When:** it requests mutation, command execution, or delegated
+  implementation.
 - **Then:** deny the request.
-- **Never:** let advisory delegation become implementation.
-- **Evidence:** U role matrix.
+- **Never:** let advisory or research delegation become implementation.
+- **Evidence:** U role matrix; S agent frontmatter.
 
-### UC-ID-05: Auto mode approves asks, not denies
+### UC-ID-05: Automatic approval honors explicit denies
 
-- **Given:** OpenCode starts with `--auto`.
-- **When:** Autonomous requests Bash or Prometheus requests a spike.
-- **Then:** OpenCode may approve without prompting.
-- **Never:** bypass explicit denies for read-only roles.
-- **Evidence:** S permission contract against OpenCode documentation; O smoke test.
+- **Given:** OpenCode starts in documented automatic-approval mode.
+- **When:** a generated executor requests allowed Bash or Prometheus requests an
+  allowed spike.
+- **Then:** OpenCode may approve an action that would otherwise ask.
+- **Never:** bypass a manifest Bash denial, Prometheus direct-Bash denial, or a
+  read-only role's denial.
+- **Evidence:** U policy matrix; E generated-agent run; O permission smoke test.
 
-## Prometheus Triage
+## Prometheus Research And Readiness
 
 ### UC-PRO-01: Outcome is separated from solution
 
@@ -143,570 +162,427 @@ are retired history and do not describe the runtime.
 
 ### UC-PRO-02: Questions are decision-changing
 
-- **Given:** ambiguity may alter scope, safety, policy, architecture, or acceptance.
-- **When:** Prometheus cannot resolve it from evidence.
+- **Given:** ambiguity may alter scope, safety, policy, architecture, or
+  acceptance.
+- **When:** available evidence and bounded defaults cannot resolve it.
 - **Then:** ask one focused question or a coherent small batch.
-- **Never:** issue generic discovery questionnaires or interview clear work.
-- **Evidence:** B ambiguous and clear request scenarios.
+- **Never:** issue a generic discovery questionnaire or interview clear work.
+- **Evidence:** B ambiguous and complete-request scenarios.
 
 ### UC-PRO-03: Credible alternatives are compared
 
-- **Given:** reuse, configuration, documentation, no change, or narrower work may satisfy the outcome.
-- **When:** approaches are selected.
-- **Then:** compare credible options and recommend the smallest sufficient result.
+- **Given:** reuse, configuration, documentation, no change, or narrower work
+  may satisfy the outcome.
+- **When:** Prometheus selects an approach.
+- **Then:** compare credible options and recommend the smallest sufficient
+  result.
 - **Never:** manufacture alternatives as template ceremony.
-- **Evidence:** B reuse/no-build and sound-request scenarios.
+- **Evidence:** B reuse, no-build, narrower-fix, and direct-build scenarios.
 
 ### UC-PRO-04: Readiness vetoes remain bounded
 
-- **Given:** work is unsafe, destructively unauthorized, inconsistent, unboundedly lossy, or lacks a deterministic completion path.
+- **Given:** work is unsafe, destructively unauthorized, inconsistent,
+  unboundedly lossy, or lacks a deterministic completion path.
 - **When:** publication is requested.
-- **Then:** report a planning blocker.
-- **Never:** convert user insistence into a valid scaffold.
+- **Then:** report the concrete planning blocker.
+- **Never:** convert user insistence into a ready task package.
 - **Evidence:** B veto matrix.
 
-### UC-PRO-05: Self-resolution through deliberation
+### UC-PRO-05: Deliberation resolves available evidence first
 
-- **Given:** a request containing uncertainties or ambiguities.
+- **Given:** a request contains uncertainty.
 - **When:** Prometheus begins deliberation.
-- **Then:** investigate using available tools — bash, web search, connected MCPs, Grounder — and resolve uncertainties internally before asking the human.
-- **Never:** ask the human a question that available tools could have answered.
-- **Evidence:** B deliberation scenario with resolvable and unresolvable uncertainties.
+- **Then:** use local evidence, direct web sources, connected services, Grounder,
+  or a contracted spike before asking the human.
+- **Never:** ask for a fact that an available safe evidence path can establish.
+- **Evidence:** B resolvable and unresolvable uncertainty scenarios.
 
-### UC-PRO-06: Creative liberty with thin context
+### UC-PRO-06: Thin context permits bounded defaults
 
-- **Given:** a request too thin to constrain key decisions (e.g. "create a world class recipe").
-- **When:** Prometheus finds no evidence to narrow the decision.
-- **Then:** apply creative liberty and proceed without asking.
-- **Never:** stall or issue a generic discovery questionnaire when context is intentionally open-ended.
-- **Evidence:** B thin-context scenario.
-
-### UC-PRO-07: Prometheus recommends Karpathy for measurable outcomes
-
-- **Given:** Prometheus identifies a clear metric, direction, and evaluator during deliberation.
-- **When:** it selects a strategy.
-- **Then:** recommend Karpathy mode in the scaffold; Autonomous follows without further user invocation.
-- **Never:** require the user to explicitly invoke Karpathy when Prometheus has identified measurable outcomes.
-- **Evidence:** B measurable-outcome scenario; S prompt/schema check.
+- **Given:** a request leaves implementation mechanics open.
+- **When:** no evidence makes those mechanics outcome constraints.
+- **Then:** choose conservative, reversible, testable defaults and proceed.
+- **Never:** stall on routine formats, thresholds, schemas, or delivery
+  mechanics.
+- **Evidence:** B thin-context and empty-workspace scenarios.
 
 ### UC-PRO-08: Load-bearing empirical prerequisites must hold
 
-- **Given:** a required core outcome depends on a measured acquisition, corpus,
+- **Given:** a core outcome depends on a measured acquisition, corpus,
   calibration, or scale prerequisite.
 - **When:** local evidence or a contracted spike disproves that prerequisite.
 - **Then:** redesign or report a concrete planning blocker.
-- **Never:** publish the disproven scale or an undeclared degraded result as the
+- **Never:** publish a disproved scale or an undeclared degraded result as the
   required outcome.
-- **Evidence:** B `prometheus-load-bearing-prerequisite.md` fixture scenario; S
-  prompt contract.
+- **Evidence:** B failed-prerequisite scenario; S prompt contract.
 
-## Scaffold Publication
+## Generated Package Publication
 
-### UC-PUB-01: Scaffold shape is exact
+### UC-PUB-01: Package shape is exact and current
 
-- **Given:** SPEC, manifest, and optional evaluators.
+- **Given:** a registry, task manifest, agent definition, and task brief.
 - **When:** `validate_scaffold` runs.
-- **Then:** validate schema, canonical paths, inventory, required sections, and exact command-list agreement.
-- **Never:** execute project commands or certify passing behavior.
-- **Evidence:** U positive/negative fixtures.
+- **Then:** perform registry-wide structural validation, select `agent_name`, and
+  fully validate that named schema-v1 package; require the argument when the
+  registry has multiple entries. Validate matching task identity, canonical
+  package paths, strategy contract, scope, permissions, limits, and verification
+  fields for the named package.
+- **Never:** execute project commands, accept another version or unknown field,
+  accept malformed, duplicate, or reserved registry entries, treat an unselected
+  package as validated, let invalid registry-named packages escape immutability,
+  let reserved entries hijack existing identities, or migrate an old package.
+- **Evidence:** U positive and negative package fixtures.
 
 ### UC-PUB-02: Git exclusion is constrained
 
 - **Given:** Prometheus invokes `scaffold_gitignore` without arguments.
 - **When:** the workspace is a Git worktree and `.gitignore` is absent or valid.
-- **Then:** atomically manage only the canonical four-path block and preserve unrelated bytes/modes.
-- **Never:** follow symlinks, accept malformed markers, or alter the Git index.
-- **Evidence:** F target/marker/idempotence/index fixtures.
+- **Then:** atomically manage only the current generated-task block, preserve
+  unrelated bytes and modes, and report tracked generated artifacts.
+- **Never:** follow symlinks, accept malformed markers, alter the Git index,
+  create `.gitignore` outside a Git worktree, or initialize Git.
+- **Evidence:** F target, marker, idempotence, and index fixtures.
 
-For a non-Git workspace, the tool reports a skip and does not create `.gitignore`
-or initialize Git.
+### UC-PUB-03: Planning-ready publication is mandatory
 
-### UC-PUB-03: Publication hands off final verification
-
-- **Given:** Prometheus has resolved planning readiness without a concrete blocker.
+- **Given:** Prometheus has resolved planning readiness without a concrete
+  blocker or required question.
 - **When:** it prepares its final response.
-- **Then:** write `SPEC.md` and `opencode-autonomous.json` before that response, then tell the user to invoke Autonomous, which owns command execution.
-- **Never:** wait for a separate publication request or describe static publication as proof that final tests pass.
-- **Evidence:** S prompt/doc contract; B automatic-publication handoff scenario.
-
-### UC-PUB-04: An explicitly different request supersedes a stale scaffold
-
-- **Given:** an existing scaffold for task A, and an explicit user request for a materially different task B.
-- **When:** Prometheus inspects the existing scaffold before publishing.
-- **Then:** write a complete replacement `SPEC.md` and manifest for task B, reconcile any obsolete `.prometheus/evaluator/**` assets left by task A, and hand off normally without asking the user to confirm the switch first.
-- **Never:** silently run task A, refuse to publish because a scaffold already exists, or claim the switch validates or discards task A's prior ordinary implementation changes.
-- **Evidence:** B `prometheus-supersede-scaffold.md` fixture scenario.
-
-## Autonomous Execution
-
-
-### UC-AUT-01: Direct is the ordinary default
-
-- **Given:** feature, defect, or technical-debt work without explicit scalar optimization.
-- **When:** Autonomous reads the manifest.
-- **Then:** execute bounded right-sized Direct iterations.
-- **Never:** select Karpathy merely because evaluator files exist.
-- **Evidence:** S prompt/schema check; B strategy scenario.
-
-### UC-AUT-02: Native Bash is approval-gated
-
-- **Given:** implementation needs a focused or final command.
-- **When:** Autonomous invokes Bash.
-- **Then:** use OpenCode's `ask` permission and report the observed result.
-- **Never:** call the removed runner or claim tamper-resistant evidence.
-- **Evidence:** S permission check; B verification report scenario.
-
-### UC-AUT-03: Exact final verification gates claims
-
-- **Given:** implementation appears complete.
-- **When:** Autonomous prepares its final status.
-- **Then:** run every exact manifest/SPEC command freshly and report failures or blockers.
-- **Never:** substitute prose, checklist edits, or Reviewer verdicts.
-- **Evidence:** B pass/fail verification scenarios; seed build evaluation.
-
-### UC-AUT-03A: Passing a phase gate continues the loop
-
-- **Given:** a focused, fixture, synthetic, phase-local, or batch check passes
-  while required outputs remain absent.
-- **When:** Autonomous finishes that bounded step.
-- **Then:** inspect every acceptance criterion, invariant, required output, and
-  checklist item, then continue with the next incomplete in-scope item without a
-  progress handoff. The check is a phase gate, not completion evidence.
-- **Never:** present metadata-only leads or intermediate records as a required
-  full result, or stop before every requested outcome and exact final command
-  pass are complete.
-- **Evidence:** B `autonomous-multiphase-continuation.md` and
-  `autonomous-runtime-entrypoint-completion.md` live scenarios; S contract
-  checks.
-
-### UC-AUT-04: Material ambiguity returns to planning
-
-- **Given:** execution would change outcome, acceptance, evaluator, immutable targets, material scope, trust boundary, policy, or an irreversible tradeoff.
-- **When:** Autonomous detects it.
-- **Then:** stop and request renewed Prometheus planning.
-- **Never:** invent product intent or escalate ordinary local debugging.
-- **Evidence:** B boundary scenarios.
-
-### UC-AUT-05: Work is bounded and user-owned
-
-- **Given:** declared verification passes or a required step proves impossible to complete with any tool or permission available in this session.
-- **When:** either condition occurs.
-- **Then:** stop successfully only when every requested outcome, acceptance
-  criterion, invariant, required output, and checklist item is complete and each
-  exact final verification command passes freshly; otherwise use the applicable
-  honest failed or blocked status and leave the worktree visible.
-- **Never:** loop indefinitely; stage, commit, stash, reset, switch branches, or initialize Git; or hide unverified edits.
-- **Evidence:** B stopping scenarios; S prompt check.
-
-### UC-AUT-06: Candidate completion is independently validated
-
-- **Given:** Autonomous has implemented every bounded checklist item and run declared verification.
-- **When:** it prepares the human handoff.
-- **Then:** provide Implementation Validator a detailed PR Contract with a clean context, retain its full report in the delegated task result, and make at most one bounded correction for critical or major gaps. The parent response states goals and validated outcomes, command exit codes, validator verdict, gaps, and a brief change summary.
-- **Never:** claim validation without fresh verification and a final `VALIDATED` report, silently hide material validator findings, or emit a completion promise.
-- **Evidence:** S prompt/permission checks; B validator-handoff scenario.
-
-### UC-AUT-07: Missing validator delegation blocks success
-
-- **Given:** a candidate has passed its readiness check and declared commands, but the task tool or Implementation Validator is unavailable.
-- **When:** Autonomous prepares its handoff.
-- **Then:** return a concise blocked status with observed command results and the next action.
-- **Never:** call requested goals validated or claim a successful handoff.
-- **Evidence:** B validator-unavailable scenario.
-
-### UC-AUT-08: Incomplete work cannot reach candidate handoff
-
-- **Given:** an implementation has a placeholder test, disabled required stage, ignored verifier flag, missing required output, or missing acceptance branch.
-- **When:** Autonomous completes a local command or discovers a failed measured prerequisite.
-- **Then:** continue ordinary in-scope work, or report the core outcome as failed and return to Prometheus when the prerequisite makes it impossible.
-- **Never:** label partial work a candidate, report validator availability as the primary failure, or present an undeclared degraded branch as the requested outcome.
-- **Evidence:** B partial-pipeline and failed-prerequisite scenarios.
-
-### UC-AUT-09: A stale scaffold either continues or routes to the top level
-
-- **Given:** a loaded scaffold and the active user request's requested outcome.
-- **When:** Autonomous compares them before any edit, command, or validation.
-- **Then:** for a matching scaffold, treat an explicit run-or-continue request as authorization to continue all in-scope work without asking again merely because work remains; for a material mismatch, edit nothing, run no stale verification, claim neither task complete, and name the top-level route (`@prometheus` for managed-loop supersession, native Build for ordinary work).
-- **Never:** silently execute a mismatched scaffold, rewrite it, or suggest Bash deletion as a reset mechanism.
-- **Evidence:** B `autonomous-continue-incomplete.md` (matching) and `scaffold-task-switch.md` (mismatch) fixture scenarios.
-
-### UC-AUT-10: A blocked step halts before it cascades into red work
-
-- **Given:** a checklist item is blocked by a structural prerequisite that no available identity or permission can satisfy.
-- **When:** Autonomous reaches that item during execution.
-- **Then:** stop at that item instead of completing downstream checklist items that causally depend on it, and report the blocker naming the exact worktree state and the next action needed to reach green or revert.
-- **Never:** keep editing unrelated downstream items that cannot pass until the blocker clears, or describe the resulting red or half-migrated tree as done, ready, or committable merely because the failure was reported honestly.
-- **Evidence:** S prompt/doc contract; B `autonomous-blocked-step.md` scenario.
-
-### UC-AUT-11: Missing optional tool capabilities trigger a supported fallback
-
-- **Given:** a scaffold prefers a tool operation or parameter that the current session does not expose, while another safe in-scope operation can produce the required result.
-- **When:** Autonomous reaches that tool-dependent item.
-- **Then:** inspect the available operation contract, use the supported fallback, and record the failed operation and fallback when they affect reproducibility.
-- **Never:** treat a missing convenience API as a structural blocker or stop before testing safe in-scope alternatives.
-- **Evidence:** S prompt/doc contract; B `autonomous-capability-fallback.md`
-  scenario.
-
-### UC-AUT-12: Confirmed blocks receive one safe recovery attempt
-
-- **Given:** Autonomous exhausts safe in-scope paths for a terminal negative outcome.
-- **When:** it reaches the terminal handoff.
-- **Then:** take one creative pass at a safe, reversible alternative within the
-  unchanged requested outcome, acceptance criteria, and permissions; on
-  confirmed block, report the failed step, a concise blocker code, and the exact
-  next human action.
-- **Never:** loop, widen scope, relax acceptance criteria, bypass permissions, or
-  treat an ordinary approval or planning handoff as a confirmed block.
-- **Evidence:** S agent prompt contract; B
-  `autonomous-confirmed-block-recovery.md` scenario.
-
-### UC-AUT-13: Optional run KPIs preserve delivery rules
-
-- **Given:** a schema-v3 manifest omits, disables, or explicitly enables
-  `run_kpis` with duration, token-rate, and hard-token-budget values.
-- **When:** Autonomous executes the scaffold.
-- **Then:** omitted or disabled policies change nothing; an enabled policy favors
-  useful in-scope work, reports operational telemetry, and stops a new turn when
-  the hard budget is exhausted.
-- **Never:** use hidden KPI defaults, auto-approve tools, sleep, pad work, widen
-  scope, skip verification, or continue after valid completion to meet a KPI.
-- **Evidence:** U schema/plugin/audit tests; S prompt and deployment checks; B
-  enabled-policy fixture.
-
-## Karpathy And Review
-
-### UC-KAR-01: Optimization requires a complete contract
-
-- **Given:** explicit scalar intent with objective, direction, evaluator, noise policy, targets, limits, and stop criteria.
-- **When:** Autonomous delegates strategy advice.
-- **Then:** Karpathy proposes one change and analyzes Autonomous-supplied measurements.
-- **Never:** let Karpathy edit, execute commands, or select itself for ordinary work.
-- **Evidence:** U manifest fixtures; S permission check; B optimization scenario.
-
-### UC-KAR-02: Autonomous owns measurements and decisions
-
-- **Given:** one proposed optimization change.
-- **When:** it is evaluated.
-- **Then:** Autonomous edits, runs native Bash, and applies the declared KEEP/REVERT policy.
-- **Never:** treat strategist prose or Reviewer advice as a metric.
-- **Evidence:** B experiment trace.
-
-### UC-REV-01: Reviewer remains advisory
-
-- **Given:** a rubric, diff, and verification summary.
-- **When:** Reviewer evaluates them.
-- **Then:** return a cited report ending in APPROVE or REQUEST_CHANGES.
-- **Never:** edit, execute, delegate, or determine completion alone.
-- **Evidence:** S permission/format checks; B review scenario.
-
-### UC-VAL-01: Implementation Validator remains independent
-
-- **Given:** candidate implementation, `SPEC.md`, and an Autonomous PR Contract.
-- **When:** Implementation Validator evaluates the pending codebase.
-- **Then:** return a severity-grouped report grounded in repository evidence and end with `VALIDATED` or `GAPS_FOUND`.
-- **Never:** edit, execute commands, delegate, or grant completion authority.
-- **Evidence:** U role matrix; B validator-handoff scenario.
+- **Then:** publish and statically validate the complete generated package before
+  issuing the fresh-context handoff.
+- **Never:** wait for another publication request, implement the task, or present
+  static validation as passing outcome verification.
+- **Evidence:** S prompt and plugin contract; B publication scenario; E installed
+  handoff.
 
 ## Ask
 
-### UC-ASK-01: Focused questions are answered from session context
+### UC-ASK-01: Focused questions use the smallest evidence path
 
 - **Given:** a focused question is posed to Ask.
-- **When:** the answer is available in session context or reachable by minimal local evidence.
-- **Then:** answer directly using the documented escalation ladder: session context first, then minimal direct evidence (read, grep, glob, list), then Grounder delegation for multi-step or cross-system evidence.
-- **Never:** start a planning or implementation workflow, create or edit files, generate commands for the user to run manually, or blame the environment for role-based limits.
-- **Evidence:** B focused-question scenario; S frontmatter check.
+- **When:** the answer is in session context or reachable through narrow local
+  evidence.
+- **Then:** answer directly, checking session context before read, grep, glob, or
+  list operations.
+- **Never:** start planning or implementation, modify files, dump proxy commands,
+  or blame the environment for role limits.
+- **Evidence:** B focused-question scenario; S frontmatter.
 
-### UC-ASK-02: Delegation is restricted to Grounder
+### UC-ASK-02: Broad research delegates only to Grounder
 
-- **Given:** a question requires multi-step, broad, or external evidence gathering.
-- **When:** Ask determines that direct evidence collection is insufficient.
-- **Then:** delegate to @grounder and return a concise synthesis of the result.
-- **Never:** delegate to any agent other than @grounder; produce proxy implementation instructions when the answer requires file edits or Bash commands.
-- **Evidence:** B delegation scenario; S permission frontmatter (task: grounder: allow, "*": deny).
+- **Given:** a question requires broad, multi-step, or external evidence.
+- **When:** direct evidence collection is insufficient.
+- **Then:** delegate to Grounder and return a concise synthesis.
+- **Never:** delegate to another role or use delegation to proxy implementation.
+- **Evidence:** B delegation scenario; S task permissions.
 
 ## Grounder
 
-### UC-GROUNDER-01: Every claim is cited
+### UC-GROUNDER-01: Every substantive claim is cited
 
 - **Given:** Grounder returns research findings.
 - **When:** it reports a fact or inference.
-- **Then:** cite every substantive claim with a file path and line number or a URL; label inferences and weak evidence explicitly.
-- **Never:** present guesses as facts or recommend code changes not supported by cited evidence.
-- **Evidence:** B research scenario; S frontmatter check.
+- **Then:** cite each substantive claim with a file and line or a URL, and label
+  inferences and weak evidence.
+- **Never:** present guesses as facts or recommend unsupported code changes.
+- **Evidence:** B local and external research scenarios; S output contract.
 
-### UC-GROUNDER-02: Private data is not sent to third-party services
+### UC-GROUNDER-02: Private data stays local
 
-- **Given:** Grounder is gathering evidence for a question.
-- **When:** the evidence path would require sending private repository contents, credentials, or secrets to an external service.
-- **Then:** return local-only evidence and explicitly state that external corroboration was not performed.
-- **Never:** send private repository code, credentials, or secrets to any third-party service; sub-delegate to another agent.
-- **Evidence:** B private-data scenario; S permission frontmatter (task: "*": deny).
+- **Given:** Grounder is gathering evidence.
+- **When:** external corroboration would disclose private code, credentials, or
+  secrets.
+- **Then:** return local-only evidence and state that external corroboration was
+  not performed.
+- **Never:** send private content to a third-party service or sub-delegate.
+- **Evidence:** B private-data scenario; S permissions.
 
-## End-to-End Scenarios
+## Reviewer
 
-### UC-E2E-01: Prometheus scaffold is consumed and executed by Autonomous
+### UC-REV-01: Reviewer remains read-only and advisory
 
-- **Given:** Prometheus has published a complete, validate_scaffold-passing scaffold for a defined implementation task.
-- **When:** Autonomous is invoked with that scaffold.
-- **Then:** Autonomous reads the unmodified scaffold, executes the declared implementation checklist, runs every exact verification command freshly, and reports an honest result.
-- **Never:** fail to consume a structurally valid scaffold; skip verification commands; or require re-planning for work already scoped.
-- **Evidence:** B end-to-end handoff scenario using evals/seed_build/test_build.py.
+- **Given:** a rubric, change evidence, and verification summary.
+- **When:** Reviewer evaluates them.
+- **Then:** return a cited report ending in `APPROVE` or `REQUEST_CHANGES`.
+- **Never:** edit, execute commands, delegate, or determine task completion by
+  itself.
+- **Evidence:** S permission and format checks; B approval and rejection
+  scenarios.
 
-### UC-E2E-02: Full Karpathy optimization loop runs to a KEEP/REVERT decision
+## Generated Task Loop
 
-- **Given:** a published scaffold with a complete Karpathy optimization contract (objective, direction, evaluator, baseline, noise policy, mutable/immutable targets, limits, stop criteria).
-- **When:** Autonomous executes it.
-- **Then:** Autonomous delegates strategy advice to Karpathy, applies one bounded change, runs the measurement command through native Bash, and makes a KEEP or REVERT decision according to the declared policy.
-- **Never:** let Karpathy edit files or run commands; substitute strategist prose for the measured metric; or omit the KEEP/REVERT decision from the final report.
-- **Evidence:** B Karpathy loop scenario.
+### UC-LOOP-01: Each configured pass starts fresh
 
-### UC-E2E-03: Autonomous consumes the superseding scaffold, not the superseded one
+- **Given:** `scripts/task-loop.mjs` receives a registered generated-agent name
+  and a pass budget.
+- **When:** the loop runs.
+- **Then:** start one fresh `opencode run --agent <name>` process per pass with no
+  prompt message and leave continuity to project state.
+- **Never:** deploy the loop as part of the managed profile, inject hidden task
+  context, or create a cross-session state machine.
+- **Evidence:** U argument and process tests; F pass log.
 
-- **Given:** Prometheus has superseded task A's scaffold with task B's, per UC-PUB-04.
-- **When:** Autonomous is invoked afterward with an explicit run request.
-- **Then:** Autonomous reads and executes task B's scaffold; no trace of task A's implementation scope, acceptance criteria, or verification commands appears in its plan or edits.
-- **Never:** implement task A because its scaffold existed first, or blend both tasks' scope.
-- **Evidence:** B `prometheus-supersede-scaffold.md` fixture, continued into an Autonomous invocation.
+### UC-LOOP-02: Loop evidence does not accept the outcome
 
-## Documentation Consistency
+- **Given:** an optional state command and loop stop settings.
+- **When:** passes succeed, fail, make progress, or remain idle.
+- **Then:** record before and after counters, deltas, duration, and exit status in
+  append-only JSONL and apply only the configured pass, idle, wall-time, and
+  failure stops. Check elapsed wall time after a completed pass and before
+  starting the next.
+- **Never:** infer domain meaning, treat exit code as completion, stage or commit
+  work, hide failed and unproductive passes, or predict whether a future pass
+  would cross the wall limit.
+- **Evidence:** U delta and stop-rule matrix; F JSONL fixture.
 
-### UC-DOC-01: Durable docs match behavior
+## Generated Runtime Policy
 
-- **Given:** changes to roles, permissions, tools, deployment, strategies, or validation.
-- **When:** release validation runs.
-- **Then:** README, requirements, architecture, use cases, agents, scripts, and tests agree.
-- **Never:** retain claims about retired runners, supervisors, Bubblewrap, Lima, or old profile flags.
-- **Evidence:** S repository text checks; full CI.
+### UC-KPI-01: Optional run KPIs remain subordinate to delivery
+
+- **Given:** a registered generated agent whose schema-v1 manifest omits,
+  disables, or explicitly enables `run_kpis`.
+- **When:** the runtime observes completed assistant messages and prepares a new
+  response.
+- **Then:** remain inert when absent or disabled; when enabled, report usage and
+  cap output against the declared hard token budget.
+- **Never:** apply hidden defaults, affect an unregistered identity, approve
+  tools, create work, delay valid completion, or override scope, safety,
+  verification, or strategy stops.
+- **Evidence:** U manifest and runtime-plugin tests; S package contract.
 
 ## Resource Selection
 
 ### UC-RESOURCE-01: Research avoids desktop disruption by default
 
-- **Given:** local evidence, direct web pages, public APIs, or text-only search can answer a question.
+- **Given:** local evidence, direct web pages, public APIs, or text-only search
+  can answer a question.
 - **When:** a managed agent gathers evidence.
 - **Then:** use those sources before browser automation.
-- **Never:** open a visible browser without stating the target, lower-impact failures, and user approval.
-- **Evidence:** S agent/rule contract; B resource-order scenario.
+- **Never:** open a visible browser without stating the target, lower-impact
+  failures, and receiving user approval.
+- **Evidence:** S agent and rule contract; B resource-order scenario.
 
 ### UC-RESOURCE-03: Image credentials are opt-in and provider-scoped
 
-- **Given:** a browser image-generation request for ChatGPT or Gemini.
+- **Given:** a browser image-generation request.
 - **When:** managed credential state is selected.
-- **Then:** default to ephemeral headless state; require confirmation for visible auth and keep persistent profiles provider-specific.
-- **Never:** use a personal browser profile, preserve credentials by default, or silently fall back to headed operation.
-- **Evidence:** U credential state and filesystem fixture; F managed deployment fixture.
+- **Then:** default to ephemeral headless state, require confirmation for visible
+  authentication, and keep persistent profiles provider-specific.
+- **Never:** use a personal browser profile, preserve credentials by default, or
+  silently fall back to visible operation.
+- **Evidence:** U credential state tests; F managed deployment fixture.
 
 ### UC-RESOURCE-04: Managed MCP configuration preserves user state
 
 - **Given:** an OpenCode configuration with unrelated MCP entries.
 - **When:** managed install, status, diagnose, or remove runs.
-- **Then:** update only Cuddly-Winner-owned entries and report unmanaged modes read-only.
+- **Then:** update only project-owned entries and report unmanaged modes
+  read-only.
 - **Never:** overwrite unrelated entries or expose profile contents.
-- **Evidence:** U configuration synchronizer fixture; F installer fixture.
+- **Evidence:** U configuration synchronizer tests; F installer fixture.
 
-### UC-RESOURCE-05: Owned-site session fetch remains private and read-only
+### UC-RESOURCE-05: Session fetch remains private and read-only
 
-- **Given:** a configured owned site requires an interactive login before an
-  authenticated retrieval.
+- **Given:** a configured site requires interactive login before authenticated
+  retrieval.
 - **When:** the user approves the named visible-browser bootstrap.
-- **Then:** the tool returns an opaque session handle and allows only `GET` or
-  `HEAD` to the profile's configured origins until close or expiry.
-- **Never:** return session material, use an unconfigured origin, or make a
-  write request.
-- **Evidence:** U session lifecycle fixture; F profile and deployment fixture.
+- **Then:** return an opaque handle and allow only `GET` or `HEAD` to configured
+  HTTPS origins until close or expiry.
+- **Never:** return session material, use an unconfigured origin, follow a
+  foreign redirect, or make a write request.
+- **Evidence:** U session lifecycle tests; F profile and deployment fixture.
 
 ## Skills Ecosystem
 
-### UC-SKILL-01: Skill frontmatter and content structure are release-validated
+### UC-SKILL-01: Skill structure is release-validated
 
 - **Given:** packaged skill assets under `skills/`.
-- **When:** the deterministic validation suite checks packaged skills and a temporary deployed copy.
-- **Then:** verify YAML frontmatter schema, package path structure, and the catalog's required static content.
-- **Never:** allow invalid or unparseable skills to be deployed.
-- **Evidence:** U packaged/deployed skill validation suite.
+- **When:** deterministic validation checks packaged skills and a temporary
+  deployed copy.
+- **Then:** verify frontmatter, package paths, and required catalog content.
+- **Never:** deploy invalid or unparseable skills.
+- **Evidence:** U packaged and deployed skill validation.
 
 ### UC-SKILL-02: Role boundaries hold under skill pressure
 
-- **Given:** an active managed agent loaded with non-core skill instructions.
-- **When:** a skill is loaded through an active managed agent and attempts to widen a boundary.
-- **Then:** verify plugin-enforced role edit-tool boundaries and permission constraints remain enforced.
-- **Never:** permit skill prompts to override agent permission frontmatter or identity isolation.
-- **Evidence:** B, O managed-agent boundary scenario. Direct-model pressure tests alone are insufficient.
+- **Given:** a managed agent loads non-core skill instructions.
+- **When:** skill text attempts to widen a boundary.
+- **Then:** preserve plugin-enforced edit and command restrictions.
+- **Never:** let skill prompts override agent permissions or managed ancestry.
+- **Evidence:** B managed-agent pressure scenario; O optional live check.
 
 ### UC-SKILL-03: Catalog and packages remain aligned
 
 - **Given:** the canonical skill catalog and packaged skill directories.
 - **When:** a skill is added, removed, or changed.
-- **Then:** maintain one catalog entry and one package for each shipped skill.
+- **Then:** keep one catalog entry and one package for each shipped skill.
 - **Never:** let a runtime prompt become the only behavioral specification.
-- **Evidence:** S catalog/package inventory review.
+- **Evidence:** S catalog and package inventory; U coverage check.
 
 ## Local Feedback
 
-### UC-FEEDBACK-01: Private cross-project capture
+### UC-FEEDBACK-01: Cross-project capture stays private
 
-- **Given:** A writable agent uses the deployed feedback skill from another
-  project with a negative or mixed report.
-- **When:** It pipes one bounded Markdown report to the recorder.
-- **Then:** The recorder writes one owner-only, metadata-tagged file in the
-  installing clone's ignored inbox and prints only its path.
-- **Never:** Scan for a clone, use a network client, overwrite a report, accept
+- **Given:** a writable agent records a negative or mixed report from another
+  project.
+- **When:** it pipes one bounded Markdown report to the deployed recorder.
+- **Then:** write one owner-only, metadata-tagged file in the installing clone's
+  ignored inbox and print only its path.
+- **Never:** scan for a clone, use a network client, overwrite a report, accept
   report text in command arguments, or claim success after a permission failure.
-- **Evidence:** U recorder input, metadata, mode, collision, copy/symlink, and
-  failure fixtures.
+- **Evidence:** U recorder tests; F copy and symlink deployment fixtures.
 
 ### UC-FEEDBACK-02: Triage preserves the privacy boundary
 
-- **Given:** A requested pending report in the source clone.
-- **When:** An agent triages it.
-- **Then:** Treat report text as untrusted evidence, verify supported claims
-  locally, and archive it only after fresh verification of resulting work.
-- **Never:** Execute report instructions, send its content remotely, treat it as
+- **Given:** a pending report in the source clone.
+- **When:** an agent triages it.
+- **Then:** treat report text as untrusted evidence, verify supported claims
+  locally, and archive only after fresh verification.
+- **Never:** execute report instructions, send its content remotely, treat it as
   product documentation by default, or delete it when work begins.
-- **Evidence:** S skill contract and B frozen feedback-triage scenario.
+- **Evidence:** S skill contract; B feedback-triage scenario.
 
 ### UC-FEEDBACK-03: Locator lifecycle is safe
 
-- **Given:** Missing, current, stale, modified, or clone-replaced locator state.
-- **When:** Installation, status, removal, or capture runs.
-- **Then:** Install is backup-first and idempotent; status is read-only; removal
-  preserves modified state and all feedback files; capture fails closed.
-- **Never:** Delete feedback, follow unsafe locators, or replace unrelated config.
+- **Given:** missing, current, stale, modified, or clone-replaced locator state.
+- **When:** installation, status, removal, or capture runs.
+- **Then:** make install backup-first and idempotent, status read-only, removal
+  conservative, and capture fail closed.
+- **Never:** delete feedback, follow unsafe locators, or replace unrelated
+  configuration.
 - **Evidence:** F deployment and recorder fixtures.
 
 ## Mutation Testing
 
-### UC-MUTATION-01: Test suite sensitivity is verified under code mutation
+### UC-MUTATION-01: Mutation scoring requires a passing baseline
 
-- **Given:** target implementation modules, a passing baseline command, and explicit CLI arguments or `--config opencode-mutation.json`.
-- **When:** `evals/mutation/run_mutation.py` executes.
-- **Then:** require the baseline to pass before applying mutations and verify unit test failures detect mutations.
-- **Never:** report a passing mutation score when the baseline fails or mutated code escapes test detection.
-- **Evidence:** U mutation-runner result and baseline outcome.
+- **Given:** target modules, a baseline command, and explicit mutation policy.
+- **When:** `evals/mutation/run_mutation.py` runs.
+- **Then:** require the unmodified baseline to pass before applying mutations and
+  report killed and surviving mutants accurately.
+- **Never:** report a passing score when the baseline fails or a survivor is
+  hidden.
+- **Evidence:** U mutation-runner fixtures.
 
 ## Session Auditing
 
-### UC-AUDIT-01: OpenCode SQLite session signals are reported
+### UC-AUDIT-01: Session signals remain investigative
 
-- **Given:** an executed OpenCode session recorded in `~/.local/share/opencode/opencode.db`.
-- **When:** `tests/audit_run.py` inspects the session.
-- **Then:** report documented root-session and recursive-descendant signals,
-  including agent switches, non-attributable root-session Bash observations,
-  current scaffold-file presence, completion/review tokens, and enabled-KPI
-  activity and token telemetry.
-- **Never:** attribute a post-switch root-session tool call to a specific agent or represent the report as proof of ancestry enforcement, scaffold validity, or fresh verification-command execution.
-- **Evidence:** U auditor fixtures and report output, including `PASS`, `PARTIAL`, `FAIL`, `NOT_APPLICABLE`, `NOT_SELECTED`, and missing-data errors where applicable.
-
-
-
+- **Given:** an OpenCode session recorded in `opencode.db`.
+- **When:** `tests/audit_run.py` inspects the selected root and descendants.
+- **Then:** report available session, agent, message, tool, and usage signals and
+  label missing or non-applicable evidence. Report Reviewer approval only from
+  attributed Reviewer assistant output whose last non-empty line is exactly
+  `APPROVE`.
+- **Never:** attribute a root-session call to a switched agent, or present the
+  word `APPROVE` in arbitrary root or user text as Reviewer approval, or present
+  the report as proof of permission enforcement, package validity, model
+  judgment, or fresh verification.
+- **Evidence:** U recorded-database fixtures and report output.
 
 ## Deployment
 
 ### UC-DEP-01: Default profile is complete
 
-- **Given:** a clean OpenCode configuration.
+- **Given:** an empty OpenCode configuration root.
 - **When:** default installation runs.
-- **Then:** install seven agents, `immutability.ts`, all workflow tools and their SDK, and all packaged skills.
-- **Never:** install repository `AGENTS.md`, a runner, or a supervisor.
+- **Then:** install exactly Ask, Grounder, Prometheus, and Reviewer, plus all
+  three plugins, all four workflow tools, pinned runtime dependencies, packaged
+  skills, managed rules, and owner-only integrity state for the recursive runtime
+  content tree.
+- **Never:** install repository `AGENTS.md`, the optional task loop, a protected
+  command runner, or a supervisor.
 - **Evidence:** F deployment fixture.
 
-### UC-DEP-02: Retired profile flags are rejected
+### UC-DEP-02: Unsupported deployment options fail
 
-- **Given:** `install --with-workflow-tools` or `install --with-skills`.
+- **Given:** an alternate profile flag, source override, or per-category
+  destination override.
 - **When:** installation parses arguments.
-- **Then:** reject the command as an unknown argument.
-- **Never:** retain alternate installation profiles.
-- **Evidence:** F deployment fixture.
-
-### UC-DEP-03: Installation is additive from one config root
-
-- **Given:** a config root.
-- **When:** installation runs in copy or symlink mode.
-- **Then:** derive all destinations beneath the root and install every managed group.
-- **Never:** accept per-category/source overrides or alternate profile flags.
-- **Evidence:** F copy/symlink/additive fixture.
-
-### UC-DEP-04: Status and removal cover current managed entries safely
-
-- **Given:** current managed copies, repository symlinks, modifications, and unrelated entries.
-- **When:** status or remove runs without profile flags.
-- **Then:** inspect every group; distinguish current copies, stale or modified
-  copies, current links, foreign links, and missing entries; record managed-agent
-  ownership; flag and relocate discoverable managed-skill backups outside runtime
-  discovery; and remove only current matching copies or links plus a recorded
-  retired agent during install when its copy or symlink remains unchanged.
-- **Never:** remove modified or unrelated entries or migrate retired artifacts.
-- **Evidence:** F status/removal fixture.
-
-### UC-DEP-05: Retired and granular options fail
-
-- **Given:** a retired profile flag, source override, or per-category destination override.
-- **When:** argument parsing runs.
-- **Then:** reject it as unknown and identify the supported single-root interface in help.
-- **Never:** retain hidden precedence or local deployment-env behavior.
+- **Then:** reject it as unknown and show the supported single-root interface.
+- **Never:** retain hidden option precedence or an alternate profile.
 - **Evidence:** F argument matrix; S help contract.
+
+### UC-DEP-03: Installation is additive from one root
+
+- **Given:** a configuration root containing unrelated user state.
+- **When:** installation runs in copy or symlink mode.
+- **Then:** derive managed destinations beneath that root, preserve user state,
+  and install every managed group.
+- **Never:** replace unrelated entries or split destinations across roots.
+- **Evidence:** F copy, symlink, collision, and idempotence fixtures.
+
+### UC-DEP-04: Status and removal are conservative
+
+- **Given:** current, stale, modified, linked, missing, and unrelated entries.
+- **When:** status, install reconciliation, or removal runs.
+- **Then:** classify every managed group, keep status read-only, back up
+  collisions outside discovery, aggregate every managed-surface drift into the
+  status exit, and remove current or retired entries only when ownership and
+  unchanged content are proved. Check recorded runtime hashes and content as well
+  as package versions.
+- **Never:** remove modified or unrelated state, delete feedback, or migrate an
+  unsupported artifact. Preserve conflicts at retired paths and report them as
+  nonzero status drift.
+- **Evidence:** F status, backup, reconciliation, and removal fixtures.
 
 ### UC-DEP-06: Restart loads profile changes
 
 - **Given:** OpenCode is already running.
-- **When:** agents, plugins, or tools change.
-- **Then:** documentation instructs the user to restart.
+- **When:** managed agents, plugins, tools, skills, or rules change.
+- **Then:** instruct the user to restart OpenCode.
 - **Never:** claim hot reload.
-- **Evidence:** S documentation check.
+- **Evidence:** S deployment documentation and installer output.
 
-### UC-DEP-07: Live validation refuses stale repository-profile claims
+### UC-DEP-07: Live validation refuses profile drift
 
-- **Given:** the active managed profile differs from the source clone.
+- **Given:** the active managed profile differs from the source clone, its
+  runtime-integrity state is missing or invalid, or recorded runtime code changed
+  or disappeared while package versions stayed fixed.
 - **When:** repository-profile live validation starts.
-- **Then:** stop before model invocation with install-and-restart guidance; an
-  explicit diagnostic mode may run but labels the result as active-profile-only.
+- **Then:** stop before model invocation with install-and-restart guidance. An
+  explicit diagnostic mode may run but must label its scope.
 - **Never:** claim repository-profile validation from a drifting installation.
-- **Evidence:** U preflight/mode tests; B live profile run.
+- **Evidence:** U preflight tests; B current-profile scenario.
 
 ## Measured Spikes
 
 ### UC-SPIKE-01: A spike requires a contract and approval
 
-- **Given:** a load-bearing technical uncertainty.
+- **Given:** a load-bearing command-dependent uncertainty.
 - **When:** Prometheus invokes `spike`.
-- **Then:** require `.spike/<id>/QUESTION.md`, a safe ID, and normal OpenCode approval.
+- **Then:** require `.spike/<id>/QUESTION.md`, a safe identifier, and normal
+  OpenCode approval.
 - **Never:** expose direct Bash or execute an uncontracted spike.
-- **Evidence:** U contract/permission tests.
+- **Evidence:** U contract and permission tests.
 
-### UC-SPIKE-02: Native execution is bounded and honest
+### UC-SPIKE-02: Native spike execution is bounded and honest
 
 - **Given:** an approved spike command.
-- **When:** it runs on macOS or Linux.
-- **Then:** use the spike directory, reduced environment, finite timeout/output, redaction, and atomic result files containing `sandboxed: false`.
-- **Never:** claim filesystem confinement, host isolation, or protected evidence.
-- **Evidence:** U cross-platform process/error/output tests.
+- **When:** it runs on a supported platform.
+- **Then:** use the spike directory, a reduced environment, finite timeout and
+  output, redaction, and atomic result files containing `sandboxed: false`.
+- **Never:** claim filesystem confinement, host isolation, or protected
+  evidence.
+- **Evidence:** U and F process, error, timeout, and output tests.
 
 ### UC-SPIKE-03: Failed kill criteria change the plan
 
 - **Given:** measured output violates the declared kill criterion.
 - **When:** Prometheus evaluates the result.
-- **Then:** redesign or block and record the evidence.
-- **Never:** publish optimistic assumptions as facts.
+- **Then:** redesign or block and cite the evidence.
+- **Never:** publish the disproved assumption as fact.
 - **Evidence:** B failed-spike scenario.
 
-## Scaffold Publication Tools
+## Documentation Consistency
 
-### UC-PUB-01: Scaffold shape is exact
+### UC-DOC-01: Durable docs match shipped behavior
 
-- **Given:** SPEC, manifest, and optional evaluators.
-- **When:** `validate_scaffold` runs.
-- **Then:** validate schema, canonical paths, inventory, required sections, and exact command-list agreement.
-- **Never:** execute project commands or certify passing behavior.
-- **Evidence:** U positive/negative fixtures.
-
-### UC-PUB-02: Git exclusion is constrained
-
-- **Given:** Prometheus invokes `scaffold_gitignore` without arguments.
-- **When:** the workspace is a Git worktree and `.gitignore` is absent or valid.
-- **Then:** atomically manage only the canonical four-path block and preserve unrelated bytes/modes.
-- **Never:** follow symlinks, accept malformed markers, or alter the Git index.
-- **Evidence:** F target/marker/idempotence/index fixtures.
-
-For a non-Git workspace, the tool reports a skip and does not create `.gitignore`
-or initialize Git.
+- **Given:** changes to roles, permissions, tools, deployment, strategies, or
+  validation.
+- **When:** release validation runs.
+- **Then:** README, durable docs, use cases, agents, scripts, and tests agree with
+  the four-agent roster and generated-agent workflow.
+- **Never:** keep unsupported role requirements, duplicate contract
+  versions, or examples that validate a different workflow.
+- **Evidence:** S repository text checks; full deterministic CI.

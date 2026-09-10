@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "task_id": "workflow-rules-engine",
+  "agent_name": "workflow-rules-engine",
+  "agent_definition": ".opencode/agents/workflow-rules-engine.md",
+  "task_brief": ".opencode/tasks/workflow-rules-engine.md",
+  "strategy": "direct",
+  "permissions": {
+    "edit_paths": [
+      "rules_engine.py"
+    ],
+    "bash": true
+  },
+  "implementation_scope": [
+    "rules_engine.py"
+  ],
+  "durable_context": [
+    "idea.md",
+    ".opencode/tasks/workflow-rules-engine.md",
+    ".opencode/tasks/workflow-rules-engine.json"
+  ],
+  "verification": {
+    "commands": [
+      "PYTHONDONTWRITEBYTECODE=1 python -c 'import ast, pathlib; ast.parse(pathlib.Path(\"rules_engine.py\").read_text())'",
+      "PYTHONDONTWRITEBYTECODE=1 python -c 'import rules_engine as r; rule=r.Rule(\"r1\", \"u1\", r.Condition(\"event_type_matches\", {\"value\": \"property_sold\"}), r.ActionSpec(\"send_notification\", {})); actions=r.evaluate(r.TriggerEvent(\"property_sold\", {}), r.UserContext(\"u1\"), [rule]); assert len(actions) == 1 and actions[0].rule_id == \"r1\"'"
+    ],
+    "success_evidence": [
+      "rules_engine.py parses successfully",
+      "the self-contained rules-engine smoke check passes",
+      "the outer failure-mode evaluator reports no prohibited pattern"
+    ],
+    "freshness": "Run both commands in the generated-agent session after the final edit.",
+    "failure_conditions": [
+      "either verification command exits non-zero",
+      "rules_engine.py is missing",
+      "the hidden acceptance suite or outer failure-mode evaluator reports a failure"
+    ],
+    "independent_review": null
+  },
+  "limits": {
+    "stop_conditions": [
+      "Both verification commands pass after the final edit and rules_engine.py exists.",
+      "A material ambiguity or proven blocker requires returning to Prometheus."
+    ]
+  },
+  "escalation_triggers": [
+    "The acceptance criteria conflict with one another",
+    "The bare Python verification command is unavailable",
+    "Completing the task requires a path outside the declared implementation scope"
+  ],
+  "strategy_config": {
+    "work_selection": "Implement rules_engine.py against the durable contract, then run both declared verification commands."
+  }
+}

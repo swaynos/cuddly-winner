@@ -1,5 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { isRegisteredGeneratedAgent, validateTaskPackage } from "../tools/validate_scaffold.ts";
+
+const SHIPPED_AGENTS = new Set(["ask", "prometheus", "reviewer", "grounder"]);
 
 export type RunKpiPolicy = {
   unattendedRuntimeSeconds: number;
@@ -71,6 +74,52 @@ function usageFor(message: AssistantMessage): Usage | undefined {
   };
 }
 
+function resolvedSession(result: unknown, sessionID: string): Record<string, any> | undefined {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return;
+  const response = result as Record<string, unknown>;
+  const value = Object.prototype.hasOwnProperty.call(response, "data") ? response.data : result;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const session = value as Record<string, any>;
+  if (session.id !== sessionID) return;
+  if (Object.prototype.hasOwnProperty.call(session, "parentID") && (typeof session.parentID !== "string" || !session.parentID)) return;
+  return session;
+}
+
+type AgentSelection = { agent: string; created?: number; index: number };
+type HistoryResolution = { valid: true; selections: AgentSelection[] } | { valid: false };
+
+function userAgentSelections(result: unknown): HistoryResolution {
+  const messages = Array.isArray(result)
+    ? result
+    : result && typeof result === "object" && !Array.isArray(result) && Array.isArray((result as Record<string, unknown>).data)
+      ? (result as Record<string, unknown>).data as unknown[]
+      : undefined;
+  if (!messages) return { valid: false };
+  const selections: AgentSelection[] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (!message || typeof message !== "object" || Array.isArray(message)) return { valid: false };
+    const info = (message as Record<string, unknown>).info;
+    if (!info || typeof info !== "object" || Array.isArray(info) || typeof (info as Record<string, unknown>).role !== "string") {
+      return { valid: false };
+    }
+    const messageInfo = info as Record<string, unknown>;
+    if (messageInfo.role !== "user") continue;
+    const agent = messageInfo.agent;
+    if (typeof agent !== "string" || !agent) return { valid: false };
+    const time = messageInfo.time;
+    const rawCreated = time && typeof time === "object" && !Array.isArray(time) ? (time as Record<string, unknown>).created : undefined;
+    const created = typeof rawCreated === "number" && Number.isFinite(rawCreated)
+      ? rawCreated
+      : undefined;
+    selections.push({ agent, created, index });
+  }
+  if (selections.every((selection) => selection.created !== undefined)) {
+    selections.sort((left, right) => left.created! - right.created! || left.index - right.index);
+  }
+  return { valid: true, selections };
+}
+
 export function summarizeUsage(messages: Iterable<Usage>): any {
   if (!messages || typeof messages !== "object" || (!Array.isArray(messages) && typeof (messages as any)[Symbol.iterator] !== "function")) {
     return {};
@@ -110,55 +159,105 @@ export function summarizeUsage(messages: Iterable<Usage>): any {
 export const AutonomousKpis = async ({ directory, worktree, client }: { directory: string; worktree: string; client: any }) => {
   const rootDirectory = resolve(directory || worktree);
   const roots = new Map<string, string>();
+  const invalidAncestry = new Set<string>();
   const rootAgents = new Map<string, string>();
-  const policies = new Map<string, RunKpiPolicy | undefined>();
+  const managedAgents = new Map<string, Promise<boolean>>();
+  const policies = new Map<string, Promise<RunKpiPolicy | undefined>>();
   const messages = new Map<string, Map<string, Usage>>();
 
-  async function rootFor(sessionID: string, visited = new Set<string>()): Promise<string> {
-    if (roots.has(sessionID)) return roots.get(sessionID)!;
-    if (visited.has(sessionID)) return sessionID;
+  function isManaged(agent: string): Promise<boolean> {
+    if (SHIPPED_AGENTS.has(agent)) return Promise.resolve(true);
+    const cached = managedAgents.get(agent);
+    if (cached) return cached;
+    const pending = isRegisteredGeneratedAgent(rootDirectory, agent).catch(() => false);
+    managedAgents.set(agent, pending);
+    return pending;
+  }
+
+  async function stickyManagedAgent(root: string, candidate?: string): Promise<string | undefined> {
+    const cached = rootAgents.get(root);
+    if (cached || !candidate || !await isManaged(candidate)) return cached;
+    const resolved = rootAgents.get(root);
+    if (resolved) return resolved;
+    rootAgents.set(root, candidate);
+    return candidate;
+  }
+
+  async function reconstructRootAgent(root: string): Promise<boolean> {
+    if (rootAgents.has(root)) return true;
+    try {
+      const result = await client?.session?.get?.({ path: { id: root } });
+      const session = resolvedSession(result, root);
+      if (!session) return false;
+      const history = userAgentSelections(await client?.session?.messages?.({ path: { id: root } }));
+      if (!history.valid) return false;
+      for (const selection of history.selections) {
+        if (await stickyManagedAgent(root, selection.agent)) return true;
+      }
+      const current = typeof session.agent === "string" && session.agent ? session.agent : undefined;
+      await stickyManagedAgent(root, current);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  type RootResolution = { valid: true; root: string } | { valid: false };
+  async function rootFor(sessionID: string, visited = new Set<string>()): Promise<RootResolution> {
+    if (invalidAncestry.has(sessionID)) return { valid: false };
+    if (roots.has(sessionID)) return { valid: true, root: roots.get(sessionID)! };
+    if (visited.has(sessionID)) {
+      for (const id of visited) invalidAncestry.add(id);
+      invalidAncestry.add(sessionID);
+      return { valid: false };
+    }
     visited.add(sessionID);
     try {
       const result = await client?.session?.get?.({ path: { id: sessionID } });
-      const session = result?.data ?? result;
-      if (typeof session?.agent === "string" && session.agent && !rootAgents.has(sessionID)) {
-        rootAgents.set(sessionID, session.agent);
-      }
+      const session = resolvedSession(result, sessionID);
+      if (!session) throw new Error("unresolved session");
       if (typeof session?.parentID === "string" && session.parentID) {
-        const root = await rootFor(session.parentID, visited);
-        roots.set(sessionID, root);
-        return root;
+        const parent = await rootFor(session.parentID, visited);
+        if (!parent.valid) {
+          invalidAncestry.add(sessionID);
+          return parent;
+        }
+        roots.set(sessionID, parent.root);
+        return parent;
       }
-    } catch {}
+    } catch {
+      for (const id of visited) invalidAncestry.add(id);
+      return { valid: false };
+    }
     roots.set(sessionID, sessionID);
-    return sessionID;
+    return { valid: true, root: sessionID };
   }
 
   async function policyFor(root: string, agent: string | undefined): Promise<RunKpiPolicy | undefined> {
-    if (policies.has(root)) return policies.get(root);
-    let policy: RunKpiPolicy | undefined;
-    try {
-      if (agent) {
-        const registry = JSON.parse(await readFile(resolve(rootDirectory, ".opencode/generated-agents.json"), "utf8"));
-        const entry = registry?.schema_version === 1 && Array.isArray(registry.agents) ? registry.agents.find((item: any) => item?.name === agent) : undefined;
-        if (typeof entry?.manifest === "string") policy = parseRunKpis(JSON.parse(await readFile(resolve(rootDirectory, entry.manifest), "utf8")));
+    if (!agent) return;
+    const key = `${root}\0${agent}`;
+    const cached = policies.get(key);
+    if (cached) return cached;
+    const pending = (async () => {
+      try {
+        const result = await validateTaskPackage(rootDirectory, agent);
+        if (!result.valid) return;
+        const parsed = parseRunKpis(JSON.parse(await readFile(resolve(rootDirectory, `.opencode/tasks/${agent}.json`), "utf8")));
+        if (parsed && "hardBudgetTokens" in parsed) return parsed as RunKpiPolicy;
+      } catch {
+        return;
       }
-    } catch {}
-    policies.set(root, policy);
-    return policy;
+    })();
+    policies.set(key, pending);
+    return pending;
   }
 
-  async function enabledPolicy(sessionID: string): Promise<{ root: string; policy: RunKpiPolicy } | undefined> {
-    const root = await rootFor(sessionID);
-    if (!rootAgents.has(root)) {
-      try {
-        const result = await client?.session?.get?.({ path: { id: root } });
-        const session = result?.data ?? result;
-        if (typeof session?.agent === "string" && session.agent) {
-          rootAgents.set(root, session.agent);
-        }
-      } catch {}
-    }
+  async function enabledPolicy(sessionID: string, candidate?: string): Promise<{ root: string; policy: RunKpiPolicy } | undefined> {
+    const resolution = await rootFor(sessionID);
+    if (!resolution.valid) return;
+    const root = resolution.root;
+    if (!await reconstructRootAgent(root)) return;
+    if (candidate && root === sessionID) await stickyManagedAgent(root, candidate);
     const policy = await policyFor(root, rootAgents.get(root));
     return policy ? { root, policy } : undefined;
   }
@@ -192,9 +291,7 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
       input: { sessionID: string; agent: string },
       output: { maxOutputTokens: number | undefined },
     ) => {
-      const root = await rootFor(input.sessionID);
-      if (root === input.sessionID) rootAgents.set(root, input.agent);
-      const enabled = await enabledPolicy(input.sessionID);
+      const enabled = await enabledPolicy(input.sessionID, input.agent);
       if (!enabled) return;
       const used = summary(enabled.root).tokens;
       const remaining = Math.floor(enabled.policy.hardBudgetTokens - used);

@@ -1,5 +1,5 @@
 ---
-description: Planning SDE that resolves uncertainty with research and approved measured spikes, then writes canonical SPEC.md.
+description: Planning SDE that resolves material uncertainty, then publishes a registered schema v1 generated-agent task package for fresh-session execution.
 mode: primary
 permission:
   read: allow
@@ -50,8 +50,8 @@ an irreversible tradeoff, and neither repository evidence nor a reasonable
 bounded default can resolve it. Use a spike only when a command-dependent
 assumption must be measured before handoff. A spike at
 `.spike/<id>/QUESTION.md` contains the question and kill criterion; record its
-result in the SPEC. A failed kill criterion requires redesign, not optimistic
-planning.
+result in the task brief. A failed kill criterion requires redesign, not
+optimistic planning.
 
 Before publishing, establish every load-bearing empirical prerequisite that the
 scaffold uses as a completion gate, such as a minimum reference corpus or a
@@ -78,9 +78,9 @@ Publish one self-contained package in this order:
    a metric, direction, evaluator, mutable and immutable targets, noise policy,
    experiment budget, and KEEP/REVERT rule.
 2. Define exact final verification commands. First check the target project
-   for its own declared toolchain — a version-pin file (`.python-version`,
+   for its own declared toolchain, such as a version-pin file (`.python-version`,
    `.tool-versions`, `.nvmrc`), a lockfile (`poetry.lock`, `Pipfile.lock`,
-   `package-lock.json`), or README-documented setup — and write commands that
+   `package-lock.json`), or README-documented setup, and write commands that
    invoke it (e.g. `poetry run pytest`), not a bare interpreter that only works
    by PATH coincidence. Absent any such signal, a bare command is the correct
    default; do not invent a toolchain the project does not declare. Use a
@@ -93,19 +93,105 @@ Publish one self-contained package in this order:
    arguments). It manages the scaffold exclusion block only in a Git worktree;
    retain any tracked-artifact warnings and report a non-Git skip without
    initializing Git or creating `.gitignore`.
-5. Write `.opencode/tasks/<task-id>.json` with schema version 1 and the exact
-   task-package fields described in `docs/NEXT-ITERATION.md`. Its declared edit
-   paths must be a subset of implementation scope.
+5. Write `.opencode/tasks/<task-id>.json` from the exact schema version 1 contract below.
 6. Write `.opencode/agents/<task-id>.md` as a primary OpenCode agent that reads
    the matching brief and manifest before work. Its frontmatter permissions must
-   not exceed the manifest.
+   not exceed the manifest. Its body must make the generated agent responsible
+   for implementation and fresh final verification within those permissions.
 7. Add the matching name and manifest path to `.opencode/generated-agents.json`
-   (schema version 1). When `validate_scaffold` is installed, invoke it and
-   correct structural errors before handoff. Static validation executes no project
-   command and does not prove final verification passes.
+   without removing unrelated entries. When `validate_scaffold` is installed,
+   invoke it with `agent_name: "<task-id>"` and correct structural errors before
+   handoff. Static validation executes no project command and does not prove final
+   verification passes.
+
+The registry is one JSON object in this shape. Each entry is an object, names are
+unique lowercase hyphenated ids, and each manifest path is canonical and matches
+its id:
+
+```json
+{
+  "schema_version": 1,
+  "agents": [
+    { "name": "<task-id>", "manifest": ".opencode/tasks/<task-id>.json" }
+  ]
+}
+```
+
+Do not use an OpenCode built-in identity (`build`, `plan`, `general`, `explore`,
+`compaction`, `title`, or `summary`) or a shipped identity (`ask`, `grounder`,
+`prometheus`, or `reviewer`) as the task id. The selected manifest, agent
+definition, and brief must be regular files, not symlinks.
+
+Every manifest key below is required except `run_kpis`; use no other top-level
+keys. Replace every placeholder with a concrete value:
+
+```json
+{
+  "schema_version": 1,
+  "task_id": "<task-id>",
+  "agent_name": "<task-id>",
+  "agent_definition": ".opencode/agents/<task-id>.md",
+  "task_brief": ".opencode/tasks/<task-id>.md",
+  "strategy": "direct",
+  "permissions": {
+    "edit_paths": ["src/exact-file.ts"],
+    "bash": true
+  },
+  "implementation_scope": ["src/exact-file.ts"],
+  "durable_context": ["README.md"],
+  "verification": {
+    "commands": ["node --test"],
+    "success_evidence": ["Fresh passing output from every final command."],
+    "freshness": "Run every final command after the final edit.",
+    "failure_conditions": ["A required command fails."],
+    "independent_review": null
+  },
+  "limits": {
+    "stop_conditions": ["Required work exceeds implementation scope."]
+  },
+  "escalation_triggers": ["The requested outcome becomes ambiguous."],
+  "strategy_config": {
+    "work_selection": "Complete the next bounded unmet acceptance criterion."
+  }
+}
+```
+
+`task_id` and `agent_name` must match. `permissions` contains only `edit_paths`
+and boolean `bash`; every exact edit path must also appear in
+`implementation_scope`, and edit paths are not globs. `verification` contains
+only the five shown keys. `freshness` and any non-null `independent_review` must
+be non-blank strings. `limits.stop_conditions` is a non-empty string array.
+
+Every list used for scope, context, edits, verification commands or evidence,
+escalation, Ralph evidence or stops, and optimization targets or stops must be a
+non-empty array of unique non-empty strings. Each string must be worktree
+relative and canonical: no absolute or drive-prefixed value, backslash, empty
+path segment, `.` segment, or `..` segment.
+
+Use exactly the keys for the selected `strategy_config`:
+
+- `direct`: non-blank string `work_selection`.
+- `ralph`: non-blank strings `work_selection`, `pass_failure_treatment`, and
+  `later_pass_starter`; positive integer `pass_budget`; validated lists
+  `state_paths`, `progress_evidence_before`, `progress_evidence_after`, and
+  `run_stop_conditions`.
+- `optimization`: non-blank strings `work_selection`, `objective`, `evaluator`,
+  `noise_policy`, and `keep_revert_rule`; `direction` equal to `minimize` or
+  `maximize`; `score_extraction` equal to `first float on stdout` or `last float
+  on stdout`; positive integer `experiment_budget`; validated lists
+  `mutable_targets`, `immutable_targets`, and `stop_conditions`. The evaluator
+  must be a canonical worktree-relative path. Targets must be exact paths with
+  no `*`, `?`, `[` or `]`, and the mutable and immutable lists must not overlap.
+
+Omit `run_kpis` unless explicitly requested. If present, it must contain boolean
+`enabled`. When enabled, it must also contain positive finite numbers at
+`unattended_runtime.target_seconds`,
+`token_burn.target_tokens_per_active_minute`, and
+`token_burn.hard_budget_tokens`; there are no defaults.
 
 Publication is mandatory for every planning-ready run. Prometheus stops before
-implementation. Its final response names the generated agent and brief, tells
-the user to quit and restart OpenCode, then start a new conversation and select
-the named local agent. It may finish without a package only for a concrete
-planning blocker or a focused decision-changing question.
+implementation. Its final response names the generated agent, task brief, and
+manifest; tells the user to quit and restart OpenCode; then tells the user to
+start a new conversation and select the named local agent. It may finish without
+a package only for a concrete planning blocker or a focused decision-changing
+question.

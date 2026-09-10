@@ -222,7 +222,7 @@ export const __testing = { stripManagedBlock, composeContent, markerRange, MANAG
 
 export default tool({
   description:
-    "Manage the canonical OpenCode Autonomous block in the project .gitignore. Takes no path arguments.",
+    "Manage the canonical OpenCode generated-task artifact block in the project .gitignore. Takes no path arguments.",
   args: {},
   async execute(_args, context) {
     const root = path.resolve(

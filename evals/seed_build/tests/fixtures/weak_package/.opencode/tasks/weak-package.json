@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "task_id": "weak-package",
+  "agent_name": "different-agent",
+  "agent_definition": ".opencode/agents/weak-package.md",
+  "task_brief": ".opencode/tasks/weak-package.md",
+  "strategy": "direct",
+  "permissions": {
+    "edit_paths": [
+      "README.md"
+    ],
+    "bash": true
+  },
+  "implementation_scope": [
+    "rules_engine.py"
+  ],
+  "durable_context": [],
+  "verification": {
+    "commands": [],
+    "success_evidence": [],
+    "freshness": "later",
+    "failure_conditions": [],
+    "independent_review": null
+  },
+  "limits": {
+    "stop_conditions": []
+  },
+  "escalation_triggers": [],
+  "strategy_config": {
+    "work_selection": ""
+  }
+}

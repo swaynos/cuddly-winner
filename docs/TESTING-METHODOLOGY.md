@@ -2,279 +2,316 @@
 
 ## Purpose
 
-This document defines the runtime investigation, session auditing, and evaluation procedures used to verify OpenCode specialist agent workflows. It specifies the SQLite database log inspection schema, standardized verdict definitions, evaluation harness conventions, and test suite execution protocols.
+This document defines how the project gathers runtime, filesystem, behavioral,
+and session evidence for native OpenCode behavior, the four shipped agents, and
+registered generated agents.
 
-`docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/SKILLS.md`, and
-`docs/USE-CASES.md` define system contracts; this document defines how empirical
-compliance is measured and audited.
+`docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, `docs/NEXT-ITERATION.md`,
+`docs/SKILLS.md`, and `docs/USE-CASES.md` define the contracts. This document
+defines how tests measure them.
 
-## Resource-Selection Testing
+## Evidence Rules
 
-Resource-selection tests use static prompts, JSON fixtures, and synthetic browser
-profiles. They do not contact provider accounts or launch a real browser. Tests
-must assert configuration arguments and state transitions instead of treating a
-headed or authenticated live run as release evidence. Live provider checks are
-opt-in diagnostics and must use non-sensitive prompts.
+Evidence classes come from `docs/TEST-PLAN.md`.
 
-Session-fetch tests use a fake browser and injected HTTP boundary. They assert
-opaque results, configured-origin enforcement, private cookie transfer, and
-lifecycle cleanup without visiting a live site or retaining credentials.
+- Deterministic unit, filesystem, and static checks may prove parsing, package
+  shape, installation, path enforcement, and scripted state transitions.
+- Behavioral evidence requires a frozen prompt, repository fixture, observable
+  rubric, retained transcript, and threshold declared before the run.
+- Optional live smoke evidence records the active profile, model, provider,
+  runtime, platform, and fixture revision.
+- Installed-product class E evidence uses the real pinned OpenCode process and a
+  scripted provider. It proves wiring and policy, not model judgment.
+- A dry run, skipped prerequisite, source-string assertion, or evaluator
+  self-test cannot stand in for behavioral or live evidence.
 
----
+Missing required evidence yields a blocked or incomplete evidence set. It never
+yields a pass.
 
 ## Standardized Verdict Definitions
 
-The session auditor emits the following verdicts. Other evaluations define their
-own exit codes unless they explicitly adopt this vocabulary:
+The project uses these report labels. The session auditor currently emits
+`PASS`, `PARTIAL`, or `NOT_APPLICABLE` for KPI evidence and exits through the
+`ERROR` path when required input cannot be read. Seed-build and behavioral
+harnesses use the other applicable labels. Every harness records its exit
+mapping in the test result.
 
-| Verdict | Meaning | Exit Code / Condition |
+| Verdict | Meaning | Auditor exit code |
 | --- | --- | --- |
-| `PASS` | All required behavioral contracts, invariants, tool boundaries, and verification commands were cleanly satisfied with empirical evidence. | Exit Code `0` |
-| `PARTIAL` | The primary implementation or triage succeeded, but non-fatal rubric defects (e.g., inefficient tool usage, minor formatting variance) were observed. | Exit Code `1` |
-| `FAIL` | Hard contract violation: unauthorized edits, unverified completion claims, strategy bypass, false planning readiness, or failed verification commands. | Exit Code `2` |
-| `NOT_APPLICABLE` / `SKIPPED` | The evaluated strategy, profile, or session type was not selected or active for the given run, or missing prerequisite environment keys. | Exit Code `0` (with warning/skip log) |
-| `NOT_SELECTED` | A strategy subagent was not observed in the selected session. | Exit Code `0` |
-| `ERROR` | Required session data or the OpenCode database is unavailable. | Exit Code `3` |
+| `PASS` | Every requirement evaluated by that report has supporting evidence. | `0` |
+| `PARTIAL` | Useful evidence exists, but one or more nonfatal report checks are incomplete. | `1` |
+| `FAIL` | A required check failed or the evidence shows a hard contract violation. | `2` |
+| `NOT_APPLICABLE` | The report section does not apply to the selected session. | `0` |
+| `NOT_SELECTED` | The optional role or strategy was not observed. | `0` |
+| `SKIPPED` | A harness prerequisite was absent and no applicable test ran. | Harness-specific |
+| `ERROR` | Required session data or the OpenCode database could not be read. | `3` |
 
----
+A zero exit for `NOT_APPLICABLE`, `NOT_SELECTED`, or a CI-accepted skip does not
+prove the corresponding use case.
 
-## Session Audit Procedure (`tests/audit_run.py`)
+## Deterministic CI
 
-Session auditing is an investigative report over one selected session, its
-recursive descendants, and the current project worktree. It does not prove
-policy enforcement or fresh verification.
+`scripts/ci.sh` runs the following sequence:
 
-### SQLite Log Schema
+1. Check Node.js against the supported version range and resolve the project
+   Python interpreter through `scripts/ensure-venv.sh`.
+2. Install the managed profile into a temporary configuration root that CI
+   removes when the run ends.
+3. Run `tests/verify_opencode.py --skip-llm` and its deterministic assertion
+   tests. The `--skip-llm` run checks source and installed-profile structure; it
+   does not invoke a model or run behavioral scenarios.
+4. Run Node plugin and integration tests, mutation-runner unit tests, skill
+   coverage with model checks skipped, and session-auditor unit tests.
+5. Run `evals/seed_build/test_planning.py --dry-run` and
+   `evals/seed_build/test_build.py --dry-run`, then inspect deployment status.
+6. Run `evals/seed_build/test_end_to_end.py` last because it is the slowest
+   deterministic check.
 
-OpenCode persists session telemetry to `~/.local/share/opencode/opencode.db` (or a custom path provided via `--db`). The auditor inspects:
+The deterministic package checks exercise registry-wide structure and full
+schema-v1 validation of the named package, including malformed and duplicate
+entries, reserved native and shipped names, and incomplete named manifests.
+Immutability tests separately prove that an invalid non-reserved name already
+listed in the registry stays blocked rather than becoming unmanaged, while a
+reserved entry cannot hijack native or shipped identity handling. Ancestry-cycle
+tests require managed mutation and Bash to fail closed. These checks do not prove
+that a live model publishes or executes a sound package.
 
-1. **`session` Table**: Lists the selected session and its recursive descendants (`id`, `parent_id`, `agent`, `slug`, `directory`, `time_created`, `time_updated`).
-2. **`part` Table**: Lists tool calls for the selected root session only.
-3. **`session_message` and `message` Tables**: Supply agent-switch events, completion/review token searches, and completed assistant-message token telemetry.
+The two seed-build dry runs use the canonical schema-v1 package and stub
+responses to exercise workspace setup, package scoring, report output, and
+failure paths. Their non-dry-run modes invoke Prometheus and the canonical
+generated agent with a configured provider, but CI does not run those modes.
+Dry-run reports render `DRY-RUN (STUB)`, carry `execution_mode: dry-run`, and
+mark synthetic events as stubs. The CI commands prove only dry-run plumbing, not
+behavioral, live-provider, or installed-product evidence.
 
-### Audit Invariants
+The canonical generated-agent input copies only the seed and the package under
+`evals/seed_build/canonical/.opencode/`. Hidden acceptance tests, oracle code, and
+the reference implementation remain outside the agent workspace. In build mode,
+the harness requires an exact completed native-Bash tool event for every command
+listed in the manifest. Only then does it replay each command independently; a
+missing, changed, or incomplete event blocks that replay and fails the evidence
+set.
 
-When auditing a session, `tests/audit_run.py` reports:
+The final installed-product test exits `2` when it cannot resolve an OpenCode
+binary. `scripts/ci.sh` records that result as a skip so contributors can run
+the cheaper suite without the CLI. A resolved binary whose version differs from
+the pin continues through diagnostic probes but returns a nonpassing result, so
+CI fails. Release evidence still records TP-NEXT-05 as blocked until that same
+test passes with the pinned binary.
 
-* whether the selected root session recorded switches to Prometheus or Autonomous, and whether its current `SPEC.md` includes `## Approaches Considered`;
-* whether the selected root session recorded Bash calls, without attributing them to Prometheus or another agent after a switch;
-* recursive descendant agent names, including Karpathy, and whether current `SPEC.md` and `opencode-autonomous.json` files exist;
-* whether the selected root session contains completion or reviewer-approval tokens.
-* when current `run_kpis` is enabled, the union of completed assistant-message
-  activity intervals, token totals, active token rate, and policy comparison.
+## Installed-Product End To End
 
-The auditor does not validate scaffold content, recover a superseded manifest,
-or determine whether declared verification commands ran freshly. Use the
-deterministic plugin, scaffold, and behavioral tests for those contracts.
+`evals/seed_build/test_end_to_end.py` is the repository's class-E test. Its
+fixture is exactly `evals/seed_build/e2e/`.
 
----
+### Scope
 
-## Seed Build Evaluation Harness (`evals/seed_build/`)
+One run performs these phases:
 
-Live end-to-end evaluations test planning (`test_planning.py`) and implementation (`test_build.py`) against frozen seed projects.
+1. Install the managed profile in an isolated configuration root and read back
+   effective tool exposure for Ask, Grounder, Prometheus, and Reviewer.
+2. Start the pinned real OpenCode binary with Prometheus in normal approval
+   mode and no preloaded task package.
+3. Have Prometheus publish a schema-v1 registry, manifest, project-local agent
+   definition, and durable brief, then stop with a handoff naming the agent,
+   brief, and manifest plus quit, restart, new-conversation, and selection steps.
+4. Start the published generated agent as a separate OpenCode process in
+   documented automatic-approval mode.
+5. Verify declared edits and native Bash checks, refuse package, trusted-source,
+   out-of-scope, and governance-tool probes, then score the result externally.
 
-### Principles
+The harness retains installed files, effective tool schemas, provider request
+bodies, JSON tool events, process output, package hashes, generated artifacts,
+session records, Git publication state, hidden acceptance output, and an
+independent replay of every declared verification command.
 
-1. **Dry-Run Plumbing Verification**: Dry runs (`--dry-run`) verify test environment setup, dotenv key presence, and harness plumbing without consuming LLM tokens.
-2. **Oracle Fixtures**: Baseline solutions are stored in `evals/seed_build/oracle/` for scoring agent outputs against ground truth.
-3. **Environment Isolation**: Live evaluation runs use temporary worktrees created from seed fixtures, avoiding dirty host state.
+### Scripted Provider
 
----
+`evals/seed_build/_llm_server.py` serves scripted server-sent events through an
+OpenAI-compatible endpoint. Each turn is matched to the expected agent system
+prompt. The server records every request and the tools OpenCode offered.
 
-## Installed-Product End To End (`evals/seed_build/test_end_to_end.py`)
-
-`test_planning.py` and `test_build.py` are separate evaluations, and the build
-evaluation starts from a canonical scaffold rather than from planning output.
-Neither exercises installation, cross-process handoff, or permission
-enforcement. `test_end_to_end.py` covers that gap and is the only class-E
-evidence in the repository.
-
-### What it exercises
-
-One run installs the managed profile with `scripts/deploy-opencode-agents.sh`
-into an isolated configuration root, then starts the real OpenCode binary once
-per agent in the same Git worktree. Prometheus, in normal approval mode,
-publishes a project-local generated execution agent — its definition, registry
-entry, schema-v1 task manifest, and durable brief. The generated agent then runs
-as a separate process under documented automatic approval. No canonical scaffold
-is preloaded, so the generated agent consumes exactly the bytes Prometheus
-published and acts from the worktree without the planning transcript. The
-harness scores the result with a hidden acceptance suite and an independent
-replay of each declared verification command.
-
-### Scripted provider
-
-`evals/seed_build/_llm_server.py` serves scripted server-sent events on
-`POST /v1/chat/completions`, the wire shape OpenCode's own subprocess tests use
-through `@ai-sdk/openai-compatible`. Each scripted turn is scoped to its agent's
-system prompt, so a subagent's requests may interleave with its parent's without
-disturbing per-agent ordering. The server records every request, including the
-tool schemas OpenCode offered. An unscripted request and an unused scripted turn
-each fail the test, which keeps a silently shortened run from passing.
+An unexpected provider request fails the run. An unused scripted turn also
+fails it. These checks prevent a shortened or diverted flow from passing.
 
 ### Isolation
 
-The harness redirects `HOME`, every `XDG_*` root, `ZDOTDIR`, and
-`OPENCODE_CONFIG_DIR`, supplies the provider through
-`OPENCODE_CONFIG_CONTENT`, strips provider credentials from the environment, and
-sets `enabled_providers` to the scripted provider alone. It disables the managed
-research-browser MCP entry by name so the run stays offline without editing the
-installed profile. Temporary paths are resolved through symlinks before use,
-because OpenCode resolves its worktree to a real path and a mismatch makes
-in-workspace paths look external.
+The harness redirects `HOME`, all `XDG_*` roots, `ZDOTDIR`, and
+`OPENCODE_CONFIG_DIR`; supplies only the loopback provider; removes provider
+credentials; disables model fetching and automatic updates; and keeps the
+managed research browser offline. It resolves temporary paths through symlinks
+before the run so OpenCode and the test agree on the worktree root.
 
-### Runtime pin
+The hidden suite remains in `evals/seed_build/e2e/hidden/`. It never enters the
+agent workspace and is not named in the request.
 
-`.opencode-cli-version` is the single source of truth for the supported OpenCode
-CLI version. The harness asserts the running binary matches it and records the
-version, repository revision, and platform in every report. CI installs that
-same pinned version. `OPENCODE_E2E_BIN` selects a specific binary and
-`OPENCODE_E2E_ARTIFACTS` selects the evidence directory. Exit status 2 means the
-pinned CLI is absent, which `scripts/ci.sh` treats as a skip rather than a
-failure.
+### Runtime Pin
 
-### What it does not prove
+`.opencode-cli-version` is the source of truth for the supported OpenCode CLI
+version. The harness checks the selected binary against that value and records
+the version, repository revision, and platform. `OPENCODE_E2E_BIN` may select a
+specific binary, and `OPENCODE_E2E_ARTIFACTS` may select an evidence directory.
 
-The tool calls come from a frozen script, not from a model, so this test proves
-wiring, deployment, and permission policy — never agent judgement. Its hidden
-oracle passing means the delivered files satisfy unseen criteria, not that an
-agent reasoned well. Judgement remains the job of the behavioral fixtures and
-the optional live scenarios.
+### Limits
 
----
+The provider chooses tool calls from a frozen script, so class E does not show
+that a model selected a sound strategy, asked the right question, used judgment
+well, or recognized completion. Hidden-suite success shows only that the
+delivered files satisfy the hidden checks. Phase 5 behavioral fixtures must
+measure judgment separately.
 
-## Live Model Defaults
+## Behavioral And Live Evaluation
 
-`tests/verify_opencode.py` and `tests/test_skill_coverage.py` run optional
-live-model scenarios with the user's configured OpenCode provider, credentials,
-and default model. They do not load `.env` credentials or select a model by
-default. Callers may select a configured model explicitly with `--model`.
+Every B-class row in `docs/TEST-PLAN.md`, including TP-NEXT-01 through
+TP-NEXT-04, is blocked until Phase 5 authors its named fixture. No current frozen
+fixture means no behavioral pass. Prometheus publication and generated-agent
+execution have deterministic class-E coverage, but their live-provider fixtures
+remain deferred and blocked until Phase 5.
 
-Before live scenarios run, `tests/verify_opencode.py` read-only compares the
-active OpenCode profile resolved by `opencode debug paths` and `opencode debug
-agent` with the repository's complete managed inventory: source bytes, effective
-agent metadata, plugins, tools, skills, rules and instruction wiring, pinned
-runtime packages, managed research-browser configuration, and feedback locator.
-Default repository-profile validation exits before model invocation on drift and
-prints install-and-restart guidance. `--active-profile-diagnostics` intentionally
-exercises drift but labels the result as active-profile-only and never validates
-the repository profile.
+The Phase 5 roster contains only these targets:
 
-Each live scenario runs in a disposable workspace and fails on a nonzero agent
-exit status. Fixture assertions inspect files and Git state where applicable,
-rather than treating a filename or generic keyword in model output as evidence.
-The suite defines 14 scenarios for the managed agents (`ask`, `autonomous`,
-`prometheus`, `karpathy`, `reviewer`, `grounder`, `implementation-validator`):
+- native Plan and Build behavior;
+- Ask and Grounder question and research behavior;
+- Prometheus research, readiness, strategy selection, publication, and handoff;
+- Reviewer advisory approval and rejection;
+- generated-agent `direct`, `ralph`, and `optimization` execution.
 
-1. **`Ask` Edit Refusal**: Requires an explicit refusal, no mutation, and no command-dump workaround.
-2. **`Ask` Capability Boundaries**: Attributes limits to role design rather than session or environment restrictions.
-3. **`Autonomous` Missing Scaffold**: Reports a missing scaffold and makes no changes.
-4. **`Autonomous` Git Preservation**: Fixes a fixture typo but leaves Git `HEAD`, commit count, and index unchanged.
-5. **`Autonomous` Validator Unavailable**: Denies validator delegation and requires a concise blocked handoff with no validated or successful claim.
-6. **`Prometheus` Scaffold Publication**: Writes both `SPEC.md` and `opencode-autonomous.json` for an underspecified request.
-7. **`Prometheus` Canonical Structure**: Validates exact canonical sections, selected approach, final handoff, and required manifest fields.
-8. **`Karpathy` Scaffold Guard**: Reports an incomplete published optimization harness and makes no changes.
-9. **`Karpathy` Bounded Proposal**: Uses a complete optimization fixture to propose a concrete change to one declared mutable target without modifying it.
-10. **`Reviewer` Rejection**: Ends a failed-verification review with `REQUEST_CHANGES` on the final non-empty line.
-11. **`Reviewer` Approval**: Ends a conforming verified-fixture review with `APPROVE` on the final non-empty line and cites evidence.
-12. **`Grounder` Local Evidence**: Cites the requested local `file:line` evidence.
-13. **`Grounder` Private Content**: Reports local-only handling and does not echo a private-content canary.
-14. **`Implementation Validator`**: Reports a cited verdict for a candidate implementation without using mutation or command tools.
+`tests/verify_opencode.py` has an optional model-enabled path with seven inline
+smoke scenarios for Ask, Grounder, Prometheus, and Reviewer. It does not cover
+the generated execution strategies or use the complete frozen-fixture format
+required for B-class evidence. CI calls it with `--skip-llm`. Until Phase 5
+authors the registered fixtures and strategy scenarios, a no-flag run is useful
+supplemental evidence but not a complete behavioral release set.
 
-Four named fixtures under `tests/fixtures/agent_value/`
-(`autonomous-continue-incomplete.md`,
-`autonomous-multiphase-continuation.md`, `scaffold-task-switch.md`, and
-`prometheus-supersede-scaffold.md`) specify five further live scenarios — basic
-continuation, multi-phase continuation, mismatch, supersession, and replacement
-consumption — for the managed-scaffold-lifecycle behavior in
-`agents/autonomous.md` and `agents/prometheus.md`. These run as a separate
-model-gated block, `run_reconciliation_scenarios` in `tests/verify_opencode.py`,
-distinct from the 14-scenario suite above. The count above stays 14 because the
-suite and this reconciliation block are separate executable groups.
+Before the current repository-profile smoke harness invokes a model, it compares
+the active OpenCode configuration root with the repository's full managed
+inventory and effective agent metadata. It rejects discoverable retired
+`autonomous`, `karpathy`, `implementation-validator`, and
+`out-of-the-box-thinker` profile agents, both retired autonomous-supervisor
+plugin paths, and the retired `run.ts` tool path in singular or plural global
+discovery directories. It also invokes the canonical runtime-integrity helper's
+read-only `status` action against the installed mode-`0600` state. Missing or
+invalid state and modified, missing, or unsafe recorded runtime content fail even
+when top-level package versions match. Default mode fails before model invocation
+on drift and prints install-and-restart guidance. An explicit active-profile
+diagnostic mode may run against drift but labels the result as
+active-profile-only.
 
-Five feedback-derived fixtures add runtime-entrypoint completion, safe capability
-fallback, blocked-step containment, one confirmed-block recovery attempt, and a
-failed load-bearing prerequisite. `run_feedback_regression_scenarios` executes
-them as a separate block, or alone with `--feedback-regressions-only`. Before any
-of those five model calls, the harness copies the active profile to a temporary
-configuration root, rewrites its feedback locator to a temporary inbox, and
-requires `opencode debug agent` to resolve a sentinel from that custom directory.
-Failure to prove isolation stops the block before model invocation. The harness
-snapshots the real inbox and fails if it changes.
+Reviewer and Grounder run as delegated subagents in these smokes. The harness
+accepts their output only from a completed `task` tool event for the requested
+child and uses the exported child session when it needs tool-use evidence. The
+Reviewer checks accept only an exact `APPROVE` or `REQUEST_CHANGES` token on the
+last non-empty line and establish the child verdict and cited response that was
+observed. The local Grounder check establishes the child response. The private
+Grounder check establishes only that the exported child tool list contains no
+`webfetch`, the response states that no external corroboration occurred, and the
+seeded token was not echoed. Those observations do not prove broad
+non-disclosure, all possible external-tool absence, or the full B-class role
+contracts.
 
-Agent permission tests also resolve deployed agent metadata and verify that
-specific task allows override the catch-all deny. Autonomous scenarios cover both
-successful Implementation Validator delegation and the unavailable-validator
-fallback, which is valid only after candidate readiness and final verification.
+Each live scenario runs in a disposable workspace and records nonzero agent exit
+status as failure. Assertions inspect tool events and filesystem state rather
+than accepting a filename or generic phrase in model output as proof.
 
-`karpathy`, `reviewer`, `grounder`, and `implementation-validator` are intentionally subagents. Their live
-scenarios invoke them through OpenCode's documented `@mention` path, then require
-the JSON task event to identify the requested child agent. The harness reads the
-child session's recorded tool calls for read-only and private-content checks; a
-fallback to the parent agent is a failure, not a skip.
+## Session Audit Procedure
 
-Deterministic unit tests in `tests/test_verify_opencode.py` and `tests/test_audit_run.py`
-cover scenario assertion helpers, missing scaffolds, duplicate sections, non-final
-handoffs, and verdict-last parsing. They run in ordinary CI; live-model checks
-remain supplemental because they require the user's configured provider and
-consume model tokens.
+`tests/audit_run.py` opens `~/.local/share/opencode/opencode.db`, or a caller
+supplied database, in read-only mode. It is an investigative report over one
+selected session, same-project recursive descendants, and available project
+artifacts. Before aggregation, the auditor normalizes and compares every
+descendant's absolute directory/worktree metadata with the requested project.
+Cross-project, missing, blank, relative, or unresolvable child metadata aborts
+the report with an error instead of contributing evidence.
 
-Behavioral evidence records its operating system. Missing macOS execution means
-macOS and cross-platform behavior remain unproven; it does not negate completed
-Linux implementation or Linux evidence. A macOS maintainer can install and
-restart the current profile, provision the project pyenv, and run only the five
-feedback regressions before recording that platform result.
+### SQLite Sources
 
-### Python Test Framework: `unittest` Over `pytest`
+The report reads:
 
-Deterministic Python test suites standardize exclusively on Python's built-in
-`unittest` framework rather than third-party test runners such as `pytest`.
-The core rationale is the **zero-dependency benefit**:
-1. **Self-contained execution**: `unittest` is part of Python's standard library,
-   requiring no external package installations or virtualenv dependency overhead.
-2. **Environment isolation**: Eliminates runner version drift, configuration file
-   conflicts (e.g. `pytest.ini`), and discovery collisions with standalone CLI
-   evaluation scripts (`test_skill_coverage.py`, `evals/seed_build/`).
-3. **Reproducibility**: Guarantees deterministic tests run identically across any
-   supported Python runtime environment without third-party test runner assumptions.
+- `session` for the selected session and recursive descendants;
+- `part` for root-session tool calls and text output;
+- `session_message` for agent-switch events;
+- `message` for message role, assistant timing, and token usage.
 
----
+OpenCode records root-session tool calls without enough information to attribute
+a call to a selected role after an in-session agent switch. The auditor must
+report such calls as root-session observations only.
 
-## Mutation Testing Methodology (`evals/mutation/`)
+Reviewer approval is narrower than a text search. The auditor joins text parts
+to assistant message records, limits candidates to selected or descendant
+sessions whose recorded agent is `reviewer`, combines their output in recorded
+order, and accepts only `APPROVE` as the last non-empty line. A user message,
+arbitrary root text, an earlier token, or `APPROVE` with added words reports no
+Reviewer approval.
 
-Mutation testing evaluates the sensitivity and strength of the test suite.
+The current script supports raw session discovery, ancestry inspection, switch
+reporting, root tool observations, and message-usage calculations. For a
+selected registered schema-v1 generated agent, it also reports the linked
+manifest, declared strategy, referenced agent and brief presence, and optional
+run-KPI policy. Registry or manifest names reserved for the seven OpenCode
+built-ins or four shipped agents fail closed. Focused unit fixtures cover
+current registration, reserved and unsupported identities, same-project
+recursive usage, cross-project and ambiguous descendant metadata, spoofed and
+attributed Reviewer tokens, and observational KPI verdicts.
 
-* **Invocation**: Callers pass source files, result path, threshold, and a test
-  command to `evals/mutation/run_mutation.py`. `--config
-  opencode-mutation.json` loads validated policy values; explicit CLI values
-  override those values:
-  ```json
-  {
-    "enabled": false,
-    "score_threshold": 1,
-    "result_path": ".opencode/mutation-result.json"
-  }
-  ```
-* **Execution**: `evals/mutation/run_mutation.py` first requires the caller-
-  supplied baseline test command to pass, then applies targeted mutations to
-  selected implementation sources.
-  `evals/mutation/tests/` tests the mutation runner itself, not a project's
-  mutation score.
+These observations do not validate the whole package, prove that the declared
+strategy was followed, attribute root calls after an in-session switch, prove
+permission enforcement, or prove fresh verification.
 
----
+## Generated Runtime KPI Testing
 
-## Skills Validation Methodology (`tests/`)
+Deterministic runtime-plugin tests cover absent and disabled policies,
+registered-agent activation, overlapping active intervals, token accounting,
+hard output-budget enforcement, and unregistered identities. Auditor fixtures
+independently cover schema-v1 policy discovery, descendant usage aggregation,
+and observational verdicts. Static inspection confirms that this optional
+policy has no tool-approval hook and cannot replace task completion evidence.
 
-Non-core skills installed by the default profile have deterministic structural
-and deployment validation. Direct-model pressure checks remain supplemental:
+## Optimization Example Testing
 
-1. **Coverage Testing (`tests/test_skill_coverage.py`)**: Checks packaged and
-   temporarily deployed skills, frontmatter, and selected content requirements.
-2. **Pressure Testing (`tests/test_skill_pressure.py`)**: Sends individual
-   skills as direct model context and checks selected response cues. It remains
-   optional and does not replace managed-agent permission enforcement tests.
+The checked-in `examples/ml-loop` package keeps the candidate producer separate
+from score ownership. `tools/score.py` computes its score from
+`artifacts/candidate.json` and held-out data rather than reading a claimed score.
+Deterministic checks verify the published immutable hashes and confirm that a
+forged score log is ignored. These checks prove the example boundary and command
+behavior, not a live agent's optimization judgment.
 
-The catalog in `docs/SKILLS.md` defines the behavior to evaluate. A deterministic
-check may prove package shape or a static safety rule; it does not by itself
-prove that a model follows a workflow. Conversely, a pressure test does not
-replace structural, deployment, or managed-agent permission testing.
+## Resource And Session-Fetch Testing
+
+Resource-selection tests use static prompts, JSON fixtures, synthetic browser
+profiles, and fake browser processes. They do not contact provider accounts or
+launch a real browser. Live provider checks remain opt-in diagnostics and use
+non-sensitive prompts.
+
+Session-fetch tests inject a fake browser and local HTTP boundary. They verify
+OpenCode approval, opaque handles, configured HTTPS origins, same-origin
+redirects, bounded bodies, private cookie forwarding, cross-session denial,
+capacity, expiry, and close without exposing credentials.
+
+## Skills Validation
+
+`tests/test_skill_coverage.py --skip-llm` validates package discovery,
+frontmatter, paths, selected content contracts, deployment, and catalog coverage
+without model credentials. Node integration tests cover managed deployment.
+
+Direct-model skill pressure checks remain optional. They cannot replace tests
+that load a skill through a current managed or registered generated identity and
+observe plugin-enforced permissions.
+
+## Mutation Testing
+
+`evals/mutation/run_mutation.py` first runs the caller's unchanged baseline
+command. It applies selected mutations only after that baseline passes. A failed
+baseline makes the result invalid rather than producing a mutation score.
+
+Callers pass source files, a command, threshold, and result path through explicit
+arguments or `--config opencode-mutation.json`. The tests under
+`evals/mutation/tests/` verify the runner itself, not the mutation quality of a
+target project.
+
+## Evidence Retention
+
+Every nontrivial run records the test and use-case identifiers, fixture and
+repository revisions, platform, runtime and model details, exact command or
+prompt, expected result, observed result, retained artifacts, and final verdict.
+If a prerequisite or platform is missing, the record names it and leaves the
+corresponding claim unproved.

@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Manages only Cuddly-Winner-owned MCP entries in an OpenCode config.
-import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 export function buildManagedMcp() {
   return {
@@ -15,10 +17,12 @@ export function buildManagedMcp() {
 // MCP entries this project used to manage. Install prunes any that linger in a
 // config from an earlier profile, so upgrading removes them without a manual edit.
 const RETIRED_MANAGED_MCP_KEYS = ["cuddly-winner-notebooklm"];
-const RETIRED_LEGACY_MCP_KEYS = ["notebooklm"];
+const RETIRED_LEGACY_MANAGED_MCP = {
+  notebooklm: { type: "local", command: ["npx", "-y", "notebooklm-mcp@latest"], enabled: true },
+};
 
 function usage() {
-  process.stderr.write("Usage: opencode-mcp-config.mjs <install|status|remove|diagnose|cleanup-retired> --config <path>\n");
+  process.stderr.write("Usage: opencode-mcp-config.mjs <install|status|remove|diagnose|status-retired|cleanup-retired|remove-retired> --config <path>\n");
 }
 
 function die(message) {
@@ -28,7 +32,7 @@ function die(message) {
 
 function parseArgs(argv) {
   const [action, ...rest] = argv;
-  if (!new Set(["install", "status", "remove", "diagnose", "cleanup-retired"]).has(action)) {
+  if (!new Set(["install", "status", "remove", "diagnose", "status-retired", "cleanup-retired", "remove-retired"]).has(action)) {
     usage();
     die(`unknown action: ${action ?? "(missing)"}`);
   }
@@ -54,7 +58,7 @@ export function loadConfig(configPath) {
 }
 
 export function sameJson(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }
 
 function backup(configPath) {
@@ -80,11 +84,19 @@ export function modeOf(entry) {
 function printStatus(config) {
   const managed = buildManagedMcp();
   const entries = config.mcp ?? {};
+  let currentProfile = true;
   for (const [name, desired] of Object.entries(managed)) {
     const current = entries[name];
     const state = current === undefined ? "none" : sameJson(current, desired) ? "managed" : "modified";
     process.stdout.write(`[${state}] ${name} mode=${modeOf(current)}\n`);
+    if (state !== "managed") currentProfile = false;
   }
+  for (const name of RETIRED_MANAGED_MCP_KEYS) {
+    if (entries[name] === undefined) continue;
+    process.stdout.write(`[retired] ${name} mode=${modeOf(entries[name])}\n`);
+    currentProfile = false;
+  }
+  return currentProfile;
 }
 
 function diagnose(config) {
@@ -96,13 +108,35 @@ function diagnose(config) {
   }
 }
 
+function printRetiredStatus(config) {
+  const entries = config.mcp ?? {};
+  let currentProfile = true;
+  for (const [name, legacyManagedEntry] of Object.entries(RETIRED_LEGACY_MANAGED_MCP)) {
+    if (sameJson(entries[name], legacyManagedEntry)) {
+      process.stdout.write(`[retired] ${name} mode=${modeOf(entries[name])}\n`);
+      currentProfile = false;
+    } else if (entries[name] !== undefined) {
+      process.stdout.write(`[unmanaged] ${name} mode=${modeOf(entries[name])} (retired name; preserved)\n`);
+    }
+  }
+  return currentProfile;
+}
+
 export function apply(action, configPath) {
   const config = loadConfig(configPath);
-  if (action === "status") return printStatus(config);
+  if (action === "status") {
+    if (!printStatus(config)) process.exitCode = 1;
+    return;
+  }
+  if (action === "status-retired") {
+    if (!printRetiredStatus(config)) process.exitCode = 1;
+    return;
+  }
   if (action === "diagnose") return diagnose(config);
   const managed = buildManagedMcp();
   const mcp = { ...(config.mcp ?? {}) };
   let changed = false;
+  let conflict = false;
   if (action === "install") {
     for (const [name, entry] of Object.entries(managed)) {
       if (!sameJson(mcp[name], entry)) {
@@ -117,14 +151,18 @@ export function apply(action, configPath) {
         process.stdout.write(`Removed retired managed entry: ${name}\n`);
       }
     }
-  } else if (action === "cleanup-retired") {
-    for (const name of RETIRED_LEGACY_MCP_KEYS) {
-      if (mcp[name] !== undefined) {
+  } else if (action === "cleanup-retired" || action === "remove-retired") {
+    for (const [name, legacyManagedEntry] of Object.entries(RETIRED_LEGACY_MANAGED_MCP)) {
+      if (sameJson(mcp[name], legacyManagedEntry)) {
         delete mcp[name];
         changed = true;
         process.stdout.write(`Removed retired managed entry: ${name}\n`);
+      } else if (mcp[name] !== undefined) {
+        conflict = true;
+        process.stdout.write(`Retired MCP conflict: ${name} (ownership not proven; preserved)\n`);
       }
     }
+    if (conflict && action === "cleanup-retired") process.exitCode = 1;
   } else {
     for (const [name, entry] of Object.entries(managed)) {
       if (sameJson(mcp[name], entry)) {
@@ -135,16 +173,16 @@ export function apply(action, configPath) {
       }
     }
   }
-  if (!changed) return process.stdout.write(`${action === "cleanup-retired" ? "No retired MCP entries found." : "Unchanged managed MCP entries."}\n`);
+  if (!changed) return process.stdout.write(`${conflict ? "Retired MCP entries: conflict; no owned entry removed." : action === "cleanup-retired" || action === "remove-retired" ? "No retired MCP entries found." : "Unchanged managed MCP entries."}\n`);
   backup(configPath);
   if (Object.keys(mcp).length) config.mcp = mcp;
   else delete config.mcp;
   save(configPath, config);
-  const result = action === "install" ? "Installed managed MCP entries." : action === "cleanup-retired" ? "Removed retired MCP entries." : "Removed managed MCP entries.";
+  const result = action === "install" ? "Installed managed MCP entries." : action === "cleanup-retired" || action === "remove-retired" ? "Removed retired MCP entries." : "Removed managed MCP entries.";
   process.stdout.write(`${result}\n`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {
   try {
     const { action, configPath } = parseArgs(process.argv.slice(2));
     apply(action, configPath);

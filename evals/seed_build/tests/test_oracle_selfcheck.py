@@ -1,16 +1,17 @@
 """
 evals/seed_build/tests/test_oracle_selfcheck.py
 
-Deterministic self-test proving the oracle is self-consistent.
+Deterministic self-test proving the oracle and generated-agent fixtures are
+self-consistent.
 
 Tests:
   1. Reference implementation passes all acceptance tests.
   2. Reference implementation passes all failure-mode checks.
-  3. Canonical SPEC passes all planning checks.
+  3. Canonical generated-agent package and handoff pass all planning checks.
   4. Bad-reference fixture is flagged by failure-mode checks.
-  5. Weak-SPEC fixture fails planning checks.
-  6. test_planning.py --dry-run runs end-to-end and returns PASS.
-  7. test_build.py --dry-run runs end-to-end and returns PASS.
+  5. Weak and retired package forms fail planning checks.
+  6. Dry-run plumbing publishes and executes the current package contract.
+  7. Both CLI dry-runs pass and report current contract checks.
 
 Run with:
     python3 -m unittest discover -s evals/seed_build/tests -p "test_*.py"
@@ -18,7 +19,9 @@ Run with:
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,7 +30,7 @@ from pathlib import Path
 
 ROOT    = Path(__file__).resolve().parents[3]
 ORACLE  = Path(__file__).resolve().parents[1] / "oracle"
-CANONICAL = Path(__file__).resolve().parents[1] / "CANONICAL_SPEC.md"
+CANONICAL = Path(__file__).resolve().parents[1] / "canonical"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SEED_BUILD = Path(__file__).resolve().parents[1]
 
@@ -122,32 +125,114 @@ class TestFailureModeChecks(unittest.TestCase):
 
 
 class TestPlanningChecks(unittest.TestCase):
-    """planning_checks.py must pass the canonical SPEC and fail the weak fixture."""
+    """The package scorer must distinguish the canonical and weak fixtures."""
 
-    def _score(self, spec_path: Path):
+    def _score(self, package_root: Path):
         planning = _load_module("planning_checks", SEED_BUILD / "planning_checks.py")
-        text = spec_path.read_text(encoding="utf-8")
-        return planning.score_spec(text)
+        handoff = (package_root / "PROMETHEUS_HANDOFF.txt").read_text(encoding="utf-8")
+        return planning.score_package(package_root, handoff)
 
-    def test_canonical_spec_passes_planning_checks(self):
+    def test_canonical_package_passes_planning_checks(self):
         report = self._score(CANONICAL)
         self.assertTrue(
             report.passed,
-            f"Canonical SPEC failed planning checks:\n{report.render()}",
+            f"Canonical package failed planning checks:\n{report.render()}",
         )
 
-    def test_weak_spec_fails_planning_checks(self):
-        report = self._score(FIXTURES / "weak_spec.md")
+    def test_weak_package_fails_planning_checks(self):
+        report = self._score(FIXTURES / "weak_package")
         self.assertFalse(
             report.passed,
-            "Weak SPEC fixture should have failed planning checks but passed.",
+            "Weak package fixture should have failed planning checks but passed.",
         )
-        # Should fail at least scope narrowing and objective criteria
         failed_names = [c.name for c in report.checks if not c.passed]
         self.assertTrue(
             len(failed_names) >= 2,
-            f"Expected >=2 check failures on weak SPEC; got: {failed_names}\n{report.render()}",
+            f"Expected >=2 check failures on weak package; got: {failed_names}\n{report.render()}",
         )
+
+    def test_handoff_requires_restart_and_new_conversation(self):
+        planning = _load_module("planning_checks_handoff", SEED_BUILD / "planning_checks.py")
+        report = planning.score_package(CANONICAL, "Select workflow-rules-engine now.")
+        failed_names = [c.name for c in report.checks if not c.passed]
+        self.assertIn("Fresh-context generated-agent handoff", failed_names)
+
+    def test_retired_schema_version_is_rejected(self):
+        planning = _load_module("planning_checks_schema", SEED_BUILD / "planning_checks.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "package"
+            shutil.copytree(CANONICAL, package)
+            manifest_path = package / ".opencode/tasks/workflow-rules-engine.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["schema_version"] = 3
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            handoff = (package / "PROMETHEUS_HANDOFF.txt").read_text(encoding="utf-8")
+            report = planning.score_package(package, handoff)
+        registered = next(
+            check for check in report.checks
+            if check.name == "Registered schema-v1 task package"
+        )
+        self.assertFalse(registered.passed)
+
+
+class TestDryRunPlumbing(unittest.TestCase):
+    def test_prometheus_stub_publishes_registered_package(self):
+        harness = _load_module("seed_build_harness_planning", SEED_BUILD / "_harness.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            rc, stdout, stderr = harness.dry_run_prometheus(workspace)
+            self.assertEqual((rc, stderr), (0, ""))
+            self.assertIn("new conversation", stdout.lower())
+            self.assertTrue((workspace / ".opencode/generated-agents.json").is_file())
+            self.assertTrue((workspace / ".opencode/agents/workflow-rules-engine.md").is_file())
+            self.assertTrue((workspace / ".opencode/tasks/workflow-rules-engine.md").is_file())
+            self.assertTrue((workspace / ".opencode/tasks/workflow-rules-engine.json").is_file())
+            self.assertFalse((workspace / "SPEC.md").exists())
+            self.assertFalse((workspace / "opencode-autonomous.json").exists())
+
+    def test_generated_agent_stub_builds_reference_output(self):
+        harness = _load_module("seed_build_harness_build", SEED_BUILD / "_harness.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            harness.copy_canonical_package(workspace)
+            rc, stdout, stderr = harness.dry_run_generated_agent(workspace)
+            self.assertEqual((rc, stderr), (0, ""))
+            self.assertIn("generated agent", stdout.lower())
+            self.assertIn('"type": "tool_use"', stdout)
+            self.assertIn("[DRY-RUN STUB]", stdout)
+            self.assertTrue((workspace / "rules_engine.py").is_file())
+            events = harness.parse_opencode_events(stdout)
+            mutation_indexes = [
+                index for index, event in enumerate(events)
+                if event.get("type") == "tool_use"
+                and (event.get("part") or {}).get("tool") in {"edit", "write", "apply_patch", "patch"}
+            ]
+            bash_indexes = [
+                index for index, event in enumerate(events)
+                if event.get("type") == "tool_use"
+                and (event.get("part") or {}).get("tool") == "bash"
+            ]
+            self.assertTrue(mutation_indexes)
+            self.assertTrue(bash_indexes)
+            self.assertTrue(all(index > max(mutation_indexes) for index in bash_indexes))
+
+
+class TestBuildContractChecks(unittest.TestCase):
+    def test_package_mutation_is_detected(self):
+        build = _load_module("seed_build_test_build", SEED_BUILD / "test_build.py")
+        harness = _load_module("seed_build_harness_mutation", SEED_BUILD / "_harness.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            harness.copy_canonical_package(workspace)
+            before = build._package_bytes(workspace)
+            manifest = workspace / ".opencode/tasks/workflow-rules-engine.json"
+            manifest.write_text("{}\n", encoding="utf-8")
+            checks = build._check_contract_compliance(before, workspace)
+        immutable = next(
+            check for check in checks
+            if check["name"] == "Published generated-agent package remains unchanged"
+        )
+        self.assertFalse(immutable["passed"])
 
 
 class TestDryRun(unittest.TestCase):
@@ -166,11 +251,19 @@ class TestDryRun(unittest.TestCase):
         rc, output = self._run_test("test_planning.py")
         self.assertEqual(rc, 0, f"test_planning --dry-run failed:\n{output}")
         self.assertIn("PASS", output, f"Expected PASS verdict:\n{output}")
+        self.assertIn("Registered schema-v1 task package", output)
+        self.assertIn("Fresh-context generated-agent handoff", output)
+        self.assertNotIn("Autonomous handoff", output)
+        self.assertNotIn("schema-v3", output)
 
     def test_build_dry_run_passes(self):
         rc, output = self._run_test("test_build.py")
         self.assertEqual(rc, 0, f"test_build --dry-run failed:\n{output}")
         self.assertIn("PASS", output, f"Expected PASS verdict:\n{output}")
+        self.assertIn("Published generated-agent package remains unchanged", output)
+        self.assertIn("Fresh declared verification command 2 exits 0", output)
+        self.assertNotIn("Published SPEC", output)
+        self.assertNotIn("Published Autonomous", output)
 
     def test_live_tests_fail_closed_when_credentials_are_missing(self):
         env = {

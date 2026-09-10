@@ -26,8 +26,9 @@ Five phases:
      package hashes, Git preservation, session ancestry.
   E. Report. Unscripted provider requests and unused scripted turns both fail.
 
-A scripted provider proves plumbing, policy, and permission boundaries. It does
-not prove agent judgement; use `--live` for that, which needs real credentials.
+A scripted provider proves plumbing, policy, and permission boundaries. For
+live agent judgement, run `test_planning.py` and `test_build.py` without
+`--dry-run`; those runs need real credentials.
 
 Usage:
     python3 evals/seed_build/test_end_to_end.py [--out report.json]
@@ -45,6 +46,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -56,7 +58,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _harness import PASS, FAIL, PARTIAL, SKIPPED, TestReport, write_report, PROVIDER_KEYS  # noqa: E402
+from _harness import (  # noqa: E402
+    PASS, FAIL, PARTIAL, SKIPPED, PROVIDER_KEYS,
+    TestReport, verification_event_results, write_report,
+)
 from _llm_server import ScriptedLLMServer, Turn, provider_config  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -67,6 +72,9 @@ CLI_VERSION_FILE = ROOT / ".opencode-cli-version"
 REPORTS = Path(tempfile.gettempdir()) / "opencode-seed-build-reports"
 
 TASK_ID = "retry-schedule-policy"
+TASK_BRIEF_PATH = f".opencode/tasks/{TASK_ID}.md"
+TASK_MANIFEST_PATH = f".opencode/tasks/{TASK_ID}.json"
+MANIFEST_EDIT_PATHS = ("retry_policy.py", "tests/test_retry_policy.py")
 
 MANAGED_AGENTS = (
     "ask",
@@ -101,8 +109,9 @@ VERIFY_TESTS = "python3 -m unittest discover -s tests -p 'test_*.py' -v"
 
 # The generated agent definition Prometheus publishes at
 # `.opencode/agents/<task-id>.md`. A primary OpenCode agent whose permission
-# block does not exceed the manifest: it may edit and write, and it may run its
-# own tests through native Bash, but it is granted no governance tool.
+# block does not exceed the manifest: edit-backed tools are denied by default
+# and allowed only for the two exact manifest paths. It may run its own tests
+# through native Bash, but it is granted no governance tool.
 AGENT_DEFINITION = """---
 description: Generated execution agent for the retry schedule policy task.
 mode: primary
@@ -111,8 +120,10 @@ permission:
   glob: allow
   grep: allow
   list: allow
-  edit: allow
-  write: allow
+  edit:
+    "*": deny
+    "retry_policy.py": allow
+    "tests/test_retry_policy.py": allow
   bash: allow
 ---
 """ + GENERATED_MATCH + """
@@ -188,13 +199,13 @@ MANIFEST_BODY = json.dumps(
         "task_id": TASK_ID,
         "agent_name": TASK_ID,
         "agent_definition": f".opencode/agents/{TASK_ID}.md",
-        "task_brief": f".opencode/tasks/{TASK_ID}.md",
+        "task_brief": TASK_BRIEF_PATH,
         "strategy": "direct",
         "strategy_config": {
             "work_selection": "Implement retry_policy.py and tests/test_retry_policy.py, then run the declared verification commands.",
         },
         "permissions": {
-            "edit_paths": ["retry_policy.py", "tests/test_retry_policy.py"],
+            "edit_paths": list(MANIFEST_EDIT_PATHS),
             "bash": True,
         },
         "implementation_scope": ["retry_policy.py", "tests/test_retry_policy.py"],
@@ -453,6 +464,49 @@ def _tool_events(run: dict, tool: str) -> list[dict]:
     return found
 
 
+def _resolved_permission_rules(info: dict, permission: str) -> list[tuple[str, str]]:
+    """Return one resolved permission's ordered pattern/action rules."""
+    raw = info.get("permission")
+    if not isinstance(raw, list):
+        return []
+    return [
+        (item.get("pattern"), item.get("action"))
+        for item in raw
+        if isinstance(item, dict) and item.get("permission") == permission
+    ]
+
+
+def _resolved_generated_agent_contract(info: dict) -> tuple[bool, str]:
+    expected = [("*", "deny"), *[(path, "allow") for path in MANIFEST_EDIT_PATHS]]
+    edit_rules = _resolved_permission_rules(info, "edit")
+    write_rules = _resolved_permission_rules(info, "write")
+    passed = edit_rules == expected and not write_rules
+    return passed, f"expected edit={expected}, observed edit={edit_rules}, write={write_rules}"
+
+
+def _handoff_missing(text: str | None) -> list[str]:
+    """List mandatory fresh-context handoff elements absent from final text."""
+    text = text or ""
+    requirements = {
+        "agent": bool(re.search(
+            rf"\bgenerated agent\b[^.!?;]{{0,80}}{re.escape(TASK_ID)}",
+            text,
+            re.IGNORECASE,
+        )),
+        "brief": TASK_BRIEF_PATH in text,
+        "manifest": TASK_MANIFEST_PATH in text,
+        "quit": bool(re.search(r"\bquit\b", text, re.IGNORECASE)),
+        "restart": bool(re.search(r"\brestart\b", text, re.IGNORECASE)),
+        "new conversation": bool(re.search(r"\bnew conversation\b", text, re.IGNORECASE)),
+        "select": bool(re.search(
+            rf"\bselect\b[^.!?;]{{0,80}}{re.escape(TASK_ID)}[^.!?;]{{0,30}}\bagent\b",
+            text,
+            re.IGNORECASE,
+        )),
+    }
+    return [name for name, present in requirements.items() if not present]
+
+
 def _refused(result: str) -> bool:
     """True when OpenCode reported the call as blocked rather than performed."""
     lowered = result.lower()
@@ -519,11 +573,12 @@ def _prometheus_turns() -> list[Turn]:
              args={"filePath": f".opencode/agents/{TASK_ID}.md", "content": AGENT_DEFINITION}),
         Turn("pro-write-registry", match, tool="write",
              args={"filePath": ".opencode/generated-agents.json", "content": REGISTRY_BODY}),
-        Turn("pro-validate", match, tool="validate_scaffold", args={}),
+        Turn("pro-validate", match, tool="validate_scaffold", args={"agent_name": TASK_ID}),
         Turn("pro-final", match,
-             text="Planning is published. The generated agent `retry-schedule-policy` and its brief "
-                  "`.opencode/tasks/retry-schedule-policy.md` are ready. Quit and restart OpenCode so it "
-                  "loads the project-local definition, then start a new conversation and select the "
+             text="Planning is published. The generated agent `retry-schedule-policy`, durable brief "
+                  "`.opencode/tasks/retry-schedule-policy.md`, and manifest "
+                  "`.opencode/tasks/retry-schedule-policy.json` are ready. Quit and restart OpenCode so "
+                  "it loads the project-local definition. Start a new conversation and select the "
                   "`retry-schedule-policy` agent."),
     ]
 
@@ -694,14 +749,13 @@ def phase_prometheus(runtime: Runtime, server: ScriptedLLMServer) -> None:
                       "scaffold_gitignore did not manage the .gitignore block")
 
     # Fresh-context restart handoff. Prometheus stops before implementation and
-    # names the generated agent, telling the user to restart and start a new
-    # conversation.
+    # names every durable artifact and required restart step.
     final = _final_text(run)
-    lowered = final.lower()
+    missing_handoff = _handoff_missing(final)
     runtime.check(
         "Prometheus ends with the fresh-context restart handoff",
-        TASK_ID in final and "restart" in lowered and "new conversation" in lowered,
-        f"final text: {final[-300:]!r}",
+        not missing_handoff,
+        f"missing {missing_handoff}; final text: {final[-300:]!r}",
         evidence=final[-200:],
     )
 
@@ -734,8 +788,18 @@ def phase_generated(runtime: Runtime, server: ScriptedLLMServer) -> None:
     runtime.report.evidence["generated_agent_debug_tools"] = (
         sorted(name for name, enabled in (info.get("tools") or {}).items() if enabled) if discovered else []
     )
+    permission_ok, permission_note = _resolved_generated_agent_contract(info)
+    runtime.report.evidence["generated_agent_debug_permissions"] = {
+        "edit": _resolved_permission_rules(info, "edit"),
+        "write": _resolved_permission_rules(info, "write"),
+    }
     runtime.check("Generated agent is discovered as a project-local agent", discovered,
                   f"`debug agent {TASK_ID}`: {(resolved.stdout + resolved.stderr)[-400:]}")
+    runtime.check(
+        "Generated agent resolved edit/write permissions match the manifest",
+        permission_ok,
+        permission_note,
+    )
 
     run = _run_agent(runtime, server, label="generated", agent=TASK_ID,
                      prompt="Read your task brief and implement the retry schedule policy.",
@@ -788,16 +852,16 @@ def phase_generated(runtime: Runtime, server: ScriptedLLMServer) -> None:
                   "tests/test_retry_policy.py was not created")
 
     # Fresh execution of the declared verification commands through native Bash.
-    for label, command in (("gen-verify-ast", VERIFY_AST), ("gen-verify-tests", VERIFY_TESTS)):
-        events = [
-            part for part in _tool_events(run, "bash")
-            if (part.get("state", {}).get("input") or {}).get("command") == command
-        ]
-        status = events[0].get("state", {}).get("status") if events else "absent"
+    session_results = verification_event_results(run["events"], [VERIFY_AST, VERIFY_TESTS])
+    runtime.report.evidence["generated_session_verification"] = session_results
+    for label, result in zip(("gen-verify-ast", "gen-verify-tests"), session_results):
+        command = result["command"]
         runtime.check(f"Declared verification ran through native Bash: {command[:44]}...",
-                      status == "completed",
-                      f"tool state was {status!r}; result: {server.result_for(label)[:300]!r}",
-                      evidence=str(status))
+                      result["passed"],
+                      f"statuses={result['statuses']}; post-mutation statuses="
+                      f"{result['fresh_statuses']}; final mutation event="
+                      f"{result['last_mutation_event']}; result: {server.result_for(label)[:300]!r}",
+                      evidence=str(result["fresh_statuses"]))
 
     # Git publication state
     runtime.check("Git HEAD is preserved", _git(workspace, "rev-parse", "HEAD") == head_before)

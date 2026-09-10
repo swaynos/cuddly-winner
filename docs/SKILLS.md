@@ -72,7 +72,7 @@ restart OpenCode after installing or changing a skill.
 or existing global agents where sufficient; propose local definitions before
 editing; keep permissions narrow; and require approval before deletion. An
 explicit Prometheus planning request authorizes publication of a newly proposed,
-narrowly scoped execution definition under the next-iteration contract in
+narrowly scoped registered execution package under the current contract in
 [`docs/NEXT-ITERATION.md`](NEXT-ITERATION.md). Ask before replacing a conflicting
 or user-owned local definition.
 - **Must not:** Add global roles by default, create local definitions before a

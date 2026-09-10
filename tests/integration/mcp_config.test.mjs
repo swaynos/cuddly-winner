@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readFile, rm, writeFile, mkdir, stat } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile, mkdir, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -38,6 +38,23 @@ test("managed MCP install requires a config path", async () => fixture(async (_r
   await invoke(mcp, ["diagnose", "--config", file]);
 }));
 
+test("managed MCP status exits nonzero for missing and modified entries", async () => fixture(async (_root, file) => {
+  await assert.rejects(
+    invoke(mcp, ["status", "--config", file]),
+    error => error.code === 1 && /\[none\] cuddly-winner-research-browser/.test(error.stdout),
+  );
+
+  await invoke(mcp, ["install", "--config", file]);
+  await invoke(mcp, ["status", "--config", file]);
+  const value = await config(file);
+  value.mcp["cuddly-winner-research-browser"].enabled = false;
+  await writeFile(file, JSON.stringify(value));
+  await assert.rejects(
+    invoke(mcp, ["status", "--config", file]),
+    error => error.code === 1 && /\[modified\] cuddly-winner-research-browser/.test(error.stdout),
+  );
+}));
+
 test("managed MCP install prunes the retired notebooklm entry", async () => fixture(async (_root, file) => {
   await writeFile(file, JSON.stringify({
     mcp: {
@@ -45,6 +62,10 @@ test("managed MCP install prunes the retired notebooklm entry", async () => fixt
       "user-x": { type: "local", command: ["x"] },
     },
   }));
+  await assert.rejects(
+    invoke(mcp, ["status", "--config", file]),
+    error => error.code === 1 && /\[retired\] cuddly-winner-notebooklm/.test(error.stdout),
+  );
   const result = await invoke(mcp, ["install", "--config", file]);
   assert.match(result.stdout, /Removed retired managed entry: cuddly-winner-notebooklm/);
   const after = await config(file);
@@ -66,6 +87,50 @@ test("retired MCP cleanup removes only the legacy notebooklm entry", async () =>
   const after = await config(file);
   assert.equal(after.mcp.notebooklm, undefined);
   assert.deepEqual(after.mcp.playwright, { type: "local", command: ["npx", "-y", "@playwright/mcp@latest"], enabled: true });
+}));
+
+test("retired MCP status and removal own only the exact legacy notebooklm entry", async () => fixture(async (_root, file) => {
+  await writeFile(file, JSON.stringify({
+    mcp: {
+      notebooklm: { type: "local", command: ["npx", "-y", "notebooklm-mcp@latest"], enabled: true },
+      keep: { type: "local", command: ["keep"] },
+    },
+  }));
+
+  await assert.rejects(
+    invoke(mcp, ["status-retired", "--config", file]),
+    error => error.code === 1 && /\[retired\] notebooklm/.test(error.stdout),
+  );
+  const removed = await invoke(mcp, ["remove-retired", "--config", file]);
+  assert.match(removed.stdout, /Removed retired managed entry: notebooklm/);
+  const after = await config(file);
+  assert.equal(after.mcp.notebooklm, undefined);
+  assert.deepEqual(after.mcp.keep, { type: "local", command: ["keep"] });
+}));
+
+test("retired MCP cleanup preserves a user-owned notebooklm entry", async () => fixture(async (_root, file) => {
+  const userOwned = { type: "remote", url: "https://example.test/notebooklm", enabled: true };
+  await writeFile(file, JSON.stringify({ mcp: { notebooklm: userOwned } }));
+
+  await assert.rejects(
+    invoke(mcp, ["cleanup-retired", "--config", file]),
+    error => error.code === 1 && /ownership not proven; preserved/.test(error.stdout),
+  );
+  assert.deepEqual((await config(file)).mcp.notebooklm, userOwned);
+
+  const removed = await invoke(mcp, ["remove-retired", "--config", file]);
+  assert.match(removed.stdout, /ownership not proven; preserved/);
+  assert.deepEqual((await config(file)).mcp.notebooklm, userOwned);
+}));
+
+test("MCP helper runs directly from a path containing spaces", async () => fixture(async (root, file) => {
+  const spacedDirectory = path.join(root, "helper with spaces");
+  const spacedHelper = path.join(spacedDirectory, "opencode mcp config.mjs");
+  await mkdir(spacedDirectory);
+  await copyFile(mcp, spacedHelper);
+
+  await invoke(spacedHelper, ["install", "--config", file]);
+  assert.ok((await config(file)).mcp["cuddly-winner-research-browser"]);
 }));
 
 test("managed MCP removal preserves modified entries", async () => fixture(async (_root, file) => {

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "agents": [
+    {
+      "name": "weak-package",
+      "manifest": ".opencode/tasks/weak-package.json"
+    }
+  ]
+}

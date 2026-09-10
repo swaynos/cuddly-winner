@@ -1,8 +1,7 @@
 """
 evals/seed_build/oracle/failure_modes.py
 
-Static and behavioral checks that distinguish a GREAT vibe-coded rules engine
-from a technical-debt factory.
+Conservative static checks for specified rules-engine failure patterns.
 
 Grounded in the research exemplar failure modes:
   - Hardcoded secrets / API keys
@@ -10,6 +9,7 @@ Grounded in the research exemplar failure modes:
   - Silent failure (bare except swallowing errors)
   - Duplicated condition-evaluation logic
   - Network or filesystem side effects in the core evaluation path
+  - Writes to or mutation of module-global state
 
 Usage:
     python3 evals/seed_build/oracle/failure_modes.py <path/to/rules_engine.py>
@@ -45,15 +45,15 @@ class FailureModeReport:
     def render(self) -> str:
         lines = [f"Failure mode check: {self.path}"]
         if self.passed:
-            lines.append("  PASS — no failure modes detected")
+            lines.append("  PASS - no checked failure patterns found")
         else:
-            lines.append(f"  FAIL — {len(self.failures)} failure mode(s):")
+            lines.append(f"  FAIL - {len(self.failures)} checked failure pattern(s):")
             for f in self.failures:
-                lines.append(f"    ✗ {f}")
+                lines.append(f"    x {f}")
         if self.warnings:
             lines.append(f"  WARNINGS ({len(self.warnings)}):")
             for w in self.warnings:
-                lines.append(f"    ⚠ {w}")
+                lines.append(f"    ! {w}")
         return "\n".join(lines)
 
 
@@ -169,40 +169,149 @@ def _check_duplicated_logic(tree: ast.Module, source: str, report: FailureModeRe
 # Check 5: Network/filesystem calls in core evaluation path
 # ---------------------------------------------------------------------------
 
-_NETWORK_FS_CALLS = {
-    # network
-    "socket", "urllib", "urllib2", "http.client", "httpx", "requests",
-    "aiohttp", "boto3", "smtplib", "ftplib",
-    # filesystem writes in evaluate path
-    "open", "write", "os.remove", "shutil",
+_NETWORK_MODULES = {
+    "socket", "urllib", "urllib2", "http", "httpx", "requests", "aiohttp",
+    "boto3", "smtplib", "ftplib",
 }
+_FILE_MUTATION_METHODS = {
+    "write", "writelines", "truncate", "write_text", "write_bytes", "touch",
+    "unlink", "rename", "mkdir", "rmdir", "chmod", "symlink_to", "hardlink_to",
+    "link_to",
+}
+_OS_MUTATIONS = {
+    "remove", "unlink", "rename", "replace", "mkdir", "makedirs", "rmdir",
+    "removedirs", "chmod", "truncate", "open", "fdopen",
+}
+_OS_PROCESS_CALLS = {
+    "system", "popen", "spawnl", "spawnle", "spawnlp", "spawnlpe", "spawnv",
+    "spawnve", "spawnvp", "spawnvpe",
+}
+_SUBPROCESS_CALLS = {
+    "run", "Popen", "call", "check_call", "check_output", "getoutput",
+    "getstatusoutput",
+}
+
+
+def _qualified_name(node: ast.expr) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _qualified_name(node.value)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    return ""
 
 class _NetworkFsVisitor(ast.NodeVisitor):
     def __init__(self):
         self.calls: list[tuple[int, str]] = []
+        self.path_constructors = {"Path"}
+        self.path_variables: set[str] = set()
+        self.pathlib_aliases = {"pathlib"}
+        self.os_aliases = {"os"}
+        self.shutil_aliases = {"shutil"}
+        self.subprocess_aliases = {"subprocess"}
+        self.direct_calls: dict[str, str] = {}
+
+    def _record(self, node: ast.AST, name: str) -> None:
+        self.calls.append((node.lineno, name))
+
+    def _is_path_value(self, node: ast.expr) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.path_variables
+        if isinstance(node, ast.Call):
+            qualified = _qualified_name(node.func)
+            if qualified in self.path_constructors:
+                return True
+            if isinstance(node.func, ast.Attribute) and node.func.attr in {
+                "absolute", "expanduser", "joinpath", "resolve", "with_name", "with_suffix",
+            }:
+                return self._is_path_value(node.func.value)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            return self._is_path_value(node.left)
+        return False
+
+    def visit_Assign(self, node):
+        if self._is_path_value(node.value):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.path_variables.add(target.id)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node):
+        if node.value is not None and self._is_path_value(node.value) and isinstance(node.target, ast.Name):
+            self.path_variables.add(node.target.id)
+        self.generic_visit(node)
 
     def visit_Call(self, node):
-        name = ""
-        if isinstance(node.func, ast.Attribute):
-            name = node.func.attr
-        elif isinstance(node.func, ast.Name):
-            name = node.func.id
-        if name in _NETWORK_FS_CALLS:
-            self.calls.append((node.lineno, name))
+        qualified = _qualified_name(node.func)
+        if isinstance(node.func, ast.Name):
+            if node.func.id == "open":
+                self._record(node, "open")
+            elif node.func.id in self.direct_calls:
+                self._record(node, self.direct_calls[node.func.id])
+        elif isinstance(node.func, ast.Attribute):
+            receiver = node.func.value
+            attribute = node.func.attr
+            root = qualified.split(".", 1)[0]
+            if attribute in _FILE_MUTATION_METHODS:
+                self._record(node, qualified or attribute)
+            elif attribute == "open":
+                self._record(
+                    node,
+                    "Path.open" if self._is_path_value(receiver) else (qualified or "open"),
+                )
+            elif attribute == "replace" and self._is_path_value(receiver):
+                self._record(node, qualified or attribute)
+            elif root in self.os_aliases and attribute in _OS_MUTATIONS:
+                self._record(node, f"os.{attribute}")
+            elif root in self.os_aliases and attribute in _OS_PROCESS_CALLS:
+                self._record(node, f"os.{attribute}")
+            elif root in self.subprocess_aliases and attribute in _SUBPROCESS_CALLS:
+                self._record(node, f"subprocess.{attribute}")
+            elif root in self.shutil_aliases:
+                self._record(node, f"shutil.{attribute}")
         self.generic_visit(node)
 
     def visit_Import(self, node):
         for alias in node.names:
             root = alias.name.split(".")[0]
-            if root in _NETWORK_FS_CALLS:
-                self.calls.append((node.lineno, alias.name))
+            local_name = alias.asname or root
+            if root in _NETWORK_MODULES:
+                self._record(node, alias.name)
+            elif root == "pathlib":
+                self.pathlib_aliases.add(local_name)
+                self.path_constructors.add(f"{local_name}.Path")
+            elif root == "os":
+                self.os_aliases.add(local_name)
+            elif root == "shutil":
+                self.shutil_aliases.add(local_name)
+            elif root == "subprocess":
+                self.subprocess_aliases.add(local_name)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node):
         if node.module:
             root = node.module.split(".")[0]
-            if root in _NETWORK_FS_CALLS:
-                self.calls.append((node.lineno, node.module))
+            if root in _NETWORK_MODULES:
+                self._record(node, node.module)
+            elif node.module == "pathlib":
+                for alias in node.names:
+                    if alias.name == "Path":
+                        self.path_constructors.add(alias.asname or alias.name)
+            elif root == "os":
+                for alias in node.names:
+                    if alias.name in _OS_MUTATIONS | _OS_PROCESS_CALLS:
+                        self.direct_calls[alias.asname or alias.name] = f"os.{alias.name}"
+            elif root == "shutil":
+                for alias in node.names:
+                    self.direct_calls[alias.asname or alias.name] = f"shutil.{alias.name}"
+            elif root == "subprocess":
+                for alias in node.names:
+                    if alias.name in _SUBPROCESS_CALLS:
+                        self.direct_calls[alias.asname or alias.name] = f"subprocess.{alias.name}"
+            elif root == "builtins":
+                for alias in node.names:
+                    if alias.name == "open":
+                        self.direct_calls[alias.asname or alias.name] = "builtins.open"
         self.generic_visit(node)
 
 
@@ -213,6 +322,120 @@ def _check_network_fs_calls(tree: ast.Module, report: FailureModeReport) -> None
         report.failures.append(
             f"Line {lineno}: potential network/filesystem call '{name}' detected in "
             "core engine module. The evaluation function must be pure and side-effect-free."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Check 6: Writes to or mutation of module-global state
+# ---------------------------------------------------------------------------
+
+_MUTATING_METHODS = {
+    "add", "append", "clear", "difference_update", "discard", "extend",
+    "insert", "intersection_update", "pop", "popitem", "remove", "reverse",
+    "setdefault", "sort", "symmetric_difference_update", "update",
+    "__delitem__", "__setitem__",
+}
+
+
+def _bound_names(target: ast.expr) -> set[str]:
+    if isinstance(target, ast.Name):
+        return {target.id}
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return set().union(*(_bound_names(item) for item in target.elts))
+    return set()
+
+
+def _root_name(node: ast.expr) -> str:
+    while isinstance(node, (ast.Attribute, ast.Subscript)):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else ""
+
+
+class _ModuleStateVisitor(ast.NodeVisitor):
+    def __init__(self, module_names: set[str]):
+        self.module_names = module_names
+        self.function_depth = 0
+        self.changes: list[tuple[int, str]] = []
+
+    def _in_function(self) -> bool:
+        return self.function_depth > 0
+
+    def _visit_function(self, node) -> None:
+        self.function_depth += 1
+        self.generic_visit(node)
+        self.function_depth -= 1
+
+    def visit_FunctionDef(self, node):
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node):
+        self._visit_function(node)
+
+    def visit_Lambda(self, node):
+        self._visit_function(node)
+
+    def visit_Global(self, node):
+        if self._in_function():
+            self.changes.append(
+                (node.lineno, f"global declaration for {', '.join(node.names)}")
+            )
+
+    def _check_target(self, target: ast.expr) -> None:
+        if (
+            self._in_function()
+            and isinstance(target, (ast.Attribute, ast.Subscript))
+            and _root_name(target) in self.module_names
+        ):
+            self.changes.append(
+                (target.lineno, f"assignment through module global {_root_name(target)}")
+            )
+
+    def visit_Assign(self, node):
+        for target in node.targets:
+            self._check_target(target)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node):
+        self._check_target(node.target)
+        self.generic_visit(node)
+
+    def visit_AugAssign(self, node):
+        self._check_target(node.target)
+        self.generic_visit(node)
+
+    def visit_Delete(self, node):
+        for target in node.targets:
+            self._check_target(target)
+        self.generic_visit(node)
+
+    def visit_Call(self, node):
+        if self._in_function():
+            if isinstance(node.func, ast.Name) and node.func.id == "globals":
+                self.changes.append((node.lineno, "access through globals()"))
+            elif isinstance(node.func, ast.Attribute):
+                root = _root_name(node.func.value)
+                if root in self.module_names and node.func.attr in _MUTATING_METHODS:
+                    self.changes.append(
+                        (node.lineno, f"module-state mutation {root}.{node.func.attr}")
+                    )
+        self.generic_visit(node)
+
+
+def _check_module_state_mutation(tree: ast.Module, report: FailureModeReport) -> None:
+    module_names: set[str] = set()
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign):
+            for target in statement.targets:
+                module_names.update(_bound_names(target))
+        elif isinstance(statement, ast.AnnAssign):
+            module_names.update(_bound_names(statement.target))
+
+    visitor = _ModuleStateVisitor(module_names)
+    visitor.visit(tree)
+    for lineno, change in visitor.changes:
+        report.failures.append(
+            f"Line {lineno}: forbidden module-global state change ({change}). "
+            "evaluate and its helpers must leave module state unchanged."
         )
 
 
@@ -241,6 +464,7 @@ def check_all(engine_path: str | Path) -> FailureModeReport:
     _check_silent_failure(tree, report)
     _check_duplicated_logic(tree, source, report)
     _check_network_fs_calls(tree, report)
+    _check_module_state_mutation(tree, report)
 
     return report
 

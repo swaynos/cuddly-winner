@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "task_id": "improve-classifier",
+  "agent_name": "improve-classifier",
+  "agent_definition": ".opencode/agents/improve-classifier.md",
+  "task_brief": ".opencode/tasks/improve-classifier.md",
+  "strategy": "optimization",
+  "permissions": {
+    "edit_paths": [
+      "train.py"
+    ],
+    "bash": true
+  },
+  "implementation_scope": [
+    "train.py",
+    "artifacts/candidate.json",
+    "logs/latest_score.txt"
+  ],
+  "durable_context": [
+    ".opencode/agents/improve-classifier.md",
+    ".opencode/generated-agents.json",
+    ".opencode/tasks/improve-classifier.md",
+    ".opencode/tasks/improve-classifier.json",
+    "README.md",
+    "prepare.py",
+    "tests/test_integrity.py",
+    "tools/baseline.json",
+    "tools/check_immutable.py",
+    "tools/check_train_boundary.py",
+    "tools/final_verify.py",
+    "tools/heldout.py",
+    "tools/regression_check.py",
+    "tools/run_experiment.py",
+    "tools/score.py"
+  ],
+  "verification": {
+    "commands": [
+      "PYTHONDONTWRITEBYTECODE=1 \"${PYTHON:-python3}\" -I -B -c 'import logging; logging.disable(logging.CRITICAL); import hashlib, pathlib, sys; path = pathlib.Path(\"tools/check_immutable.py\"); actual = hashlib.sha256(path.read_bytes()).hexdigest(); expected = \"1d7af10a6679b83bf896b362c1c9ddd3737e8b47accd88ee7b563e2d913846d1\"; print(f\"checker-sha256: {actual}\"); sys.exit(0 if actual == expected else 1)' && PYTHONDONTWRITEBYTECODE=1 \"${PYTHON:-python3}\" -I -B tools/check_immutable.py",
+      "PYTHONDONTWRITEBYTECODE=1 \"${PYTHON:-python3}\" -I -B tools/regression_check.py",
+      "PYTHONDONTWRITEBYTECODE=1 \"${PYTHON:-python3}\" -I -B tools/final_verify.py --checker-sha256 1d7af10a6679b83bf896b362c1c9ddd3737e8b47accd88ee7b563e2d913846d1",
+      "PYTHONDONTWRITEBYTECODE=1 \"${PYTHON:-python3}\" -I -B -c 'import logging; logging.disable(logging.CRITICAL); import hashlib, pathlib, sys; path = pathlib.Path(\"tools/check_immutable.py\"); actual = hashlib.sha256(path.read_bytes()).hexdigest(); expected = \"1d7af10a6679b83bf896b362c1c9ddd3737e8b47accd88ee7b563e2d913846d1\"; print(f\"post-final-checker-sha256: {actual}\"); sys.exit(0 if actual == expected else 1)' && PYTHONDONTWRITEBYTECODE=1 \"${PYTHON:-python3}\" -I -B tools/check_immutable.py"
+    ],
+    "success_evidence": [
+      "The pinned checker digest, all immutable hashes, the trainer source boundary, and exact whole-package inventory match before and after every trainer run and final verification.",
+      "Regression checks run exactly 16 tests under isolated no-bytecode Python and reject forged prepare caches, trainer output, direct held-out access, and root, .opencode, evaluator, or tools-tree tamper.",
+      "The immutable final verifier independently regenerates scores for seeds 1, 2, and 3 and reports a median of at least 0.85.",
+      "The same median improves by at least 0.005 over the recorded 0.7125 baseline.",
+      "The final post-verification integrity command exits zero."
+    ],
+    "freshness": "After the final train.py edit, run all four commands in order. The final verifier retrains every fixed seed without reading artifacts/candidate.json or logs/latest_score.txt, checks integrity around every run, and the last command rechecks the package.",
+    "failure_conditions": [
+      "A required command exits nonzero or the regression runner does not execute exactly 16 tests.",
+      "The fixed-seed median is below 0.85 or improves by less than 0.005 over the recorded baseline.",
+      "The checker digest, immutable hash, package inventory, or file type differs before or after training or final verification, including any __pycache__ directory, .pyc, .pyo, or other bytecode/cache artifact.",
+      "Training does not emit a valid artifact at the runner-selected path.",
+      "Training emits any non-whitespace stdout or stderr.",
+      "The immutable source check finds an import outside the standard-library/prepare boundary, a direct evaluator/held-out/score reference, or obvious score computation or emission. Static checks do not claim to detect arbitrary obfuscated Python."
+    ],
+    "independent_review": null
+  },
+  "limits": {
+    "stop_conditions": [
+      "Stop successfully only when the final verifier satisfies both the median threshold and minimum improvement, followed by a passing integrity check.",
+      "Stop after twelve candidate experiments.",
+      "Stop after four consecutive reverted candidates.",
+      "Stop after two inconsistent repeat results with unchanged source.",
+      "Stop when a required command fails twice without an intervening change.",
+      "Stop before changing an immutable target or expanding scope."
+    ]
+  },
+  "escalation_triggers": [
+    "The objective or acceptance threshold is materially ambiguous.",
+    "A requested solution needs a dependency outside the Python standard library.",
+    "Progress requires changing an immutable evaluator or held-out input.",
+    "The declared command or permission boundary prevents measurement."
+  ],
+  "strategy_config": {
+    "work_selection": "Change exactly one active-feature, optimizer, schedule, regularization, batch, initialization, or training-logic lever in train.py per candidate, choosing the smallest change likely to improve fixed-seed median accuracy.",
+    "objective": "Median accuracy across seeds 1, 2, and 3, computed from fresh fixed-schema artifacts by the immutable evaluator",
+    "direction": "maximize",
+    "evaluator": "tools/final_verify.py",
+    "score_extraction": "last float on stdout",
+    "noise_policy": "Use exactly TRAIN_SEED values 1, 2, and 3 for the baseline and every candidate. Each fixed-seed run is deterministic. Repeat only after a command failure or one inconsistent duplicate result; stop after a second inconsistent repeat with unchanged source.",
+    "mutable_targets": [
+      "train.py"
+    ],
+    "immutable_targets": [
+      ".opencode/agents/improve-classifier.md",
+      ".opencode/generated-agents.json",
+      ".opencode/tasks/improve-classifier.json",
+      ".opencode/tasks/improve-classifier.md",
+      "README.md",
+      "prepare.py",
+      "tests/test_integrity.py",
+      "tools/baseline.json",
+      "tools/check_immutable.py",
+      "tools/check_train_boundary.py",
+      "tools/final_verify.py",
+      "tools/heldout.py",
+      "tools/regression_check.py",
+      "tools/run_experiment.py",
+      "tools/score.py"
+    ],
+    "experiment_budget": 12,
+    "keep_revert_rule": "SUCCESS requires both a three-seed median of at least 0.85 and improvement of at least 0.005 over the recorded 0.7125 baseline. KEEP an intermediate candidate only when its median improves by at least 0.005 over the current kept median. Otherwise REVERT only that candidate's train.py change and continue within budget; meeting only one success condition is not success.",
+    "stop_conditions": [
+      "The final verifier reports a three-seed median of at least 0.85 and improvement of at least 0.005 over the recorded baseline, and the post-final integrity check passes.",
+      "Twelve candidate experiments have been evaluated.",
+      "Four consecutive candidates have been reverted.",
+      "Two inconsistent repeat results occur with unchanged source.",
+      "An immutable target would need to change."
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+Planning is published. The generated agent `workflow-rules-engine`, durable brief
+`.opencode/tasks/workflow-rules-engine.md`, and manifest
+`.opencode/tasks/workflow-rules-engine.json` are ready. Quit and restart OpenCode
+so it loads the project-local definition. Start a new conversation and select the
+`workflow-rules-engine` agent.

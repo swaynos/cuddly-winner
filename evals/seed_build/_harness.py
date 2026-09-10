@@ -17,6 +17,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ORACLE = Path(__file__).resolve().parent / "oracle"
+CANONICAL_PACKAGE = Path(__file__).resolve().parent / "canonical"
+GENERATED_AGENT_NAME = "workflow-rules-engine"
 
 # Verdict constants matching docs/TESTING-METHODOLOGY.md
 PASS    = "PASS"
@@ -31,6 +33,7 @@ PROVIDER_KEYS = (
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
 )
+MUTATION_TOOLS = frozenset({"edit", "write", "patch", "apply_patch"})
 
 
 def load_dotenv(path: Path = ROOT / ".env") -> dict[str, str]:
@@ -94,6 +97,7 @@ def agent_environment(
 @dataclass
 class TestReport:
     test_name: str
+    execution_mode: str = "live"
     verdict: str = ""
     checks: list[dict] = field(default_factory=list)
     evidence: dict = field(default_factory=dict)
@@ -102,6 +106,7 @@ class TestReport:
     def to_dict(self) -> dict:
         return {
             "test_name": self.test_name,
+            "execution_mode": self.execution_mode,
             "verdict": self.verdict,
             "checks": self.checks,
             "evidence": self.evidence,
@@ -109,7 +114,13 @@ class TestReport:
         }
 
     def render(self) -> str:
-        lines = [f"\n{'='*60}", f"Test: {self.test_name}", f"Verdict: {self.verdict}"]
+        mode = "DRY-RUN (STUB)" if self.execution_mode == "dry-run" else "LIVE"
+        lines = [
+            f"\n{'='*60}",
+            f"Test: {self.test_name}",
+            f"Execution mode: {mode}",
+            f"Verdict: {self.verdict}",
+        ]
         if self.error:
             lines.append(f"Error: {self.error}")
         for c in self.checks:
@@ -159,6 +170,77 @@ def make_workspace(base_name: str) -> Path:
     return d
 
 
+def parse_opencode_events(stream: str) -> list[dict]:
+    """Parse OpenCode's newline-delimited JSON output, ignoring non-event lines."""
+    events: list[dict] = []
+    for line in stream.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+def verification_event_results(events: list[dict], commands: list[str]) -> list[dict]:
+    """Require exact completed Bash commands after the final mutation event."""
+    last_mutation_index = -1
+    last_mutation_tool = ""
+    observed = []
+    for index, event in enumerate(events):
+        part = event.get("part")
+        if event.get("type") != "tool_use" or not isinstance(part, dict):
+            continue
+        tool = part.get("tool")
+        if tool in MUTATION_TOOLS:
+            last_mutation_index = index
+            last_mutation_tool = tool
+            continue
+        state = part.get("state")
+        if tool != "bash" or not isinstance(state, dict):
+            continue
+        inputs = state.get("input")
+        command = inputs.get("command") if isinstance(inputs, dict) else None
+        if isinstance(command, str):
+            observed.append({
+                "command": command,
+                "status": state.get("status"),
+                "event_index": index,
+            })
+
+    results = []
+    for command in commands:
+        matching = [item for item in observed if item["command"] == command]
+        fresh = [item for item in matching if item["event_index"] > last_mutation_index]
+        results.append({
+            "command": command,
+            "passed": any(item["status"] == "completed" for item in fresh),
+            "statuses": [item["status"] for item in matching],
+            "fresh_statuses": [item["status"] for item in fresh],
+            "last_mutation_event": (
+                {"index": last_mutation_index, "tool": last_mutation_tool}
+                if last_mutation_index >= 0 else None
+            ),
+            "observed_commands": [item["command"] for item in observed],
+        })
+    return results
+
+
+def opencode_text(stream: str) -> str:
+    """Extract assistant text from an OpenCode JSON event stream."""
+    parts = []
+    for event in parse_opencode_events(stream):
+        part = event.get("part")
+        if (
+            event.get("type") == "text"
+            and isinstance(part, dict)
+            and isinstance(part.get("text"), str)
+        ):
+            parts.append(part["text"])
+    return "\n".join(parts)
+
+
 def write_report(report: TestReport, reports_dir: Path) -> Path:
     reports_dir.mkdir(parents=True, exist_ok=True)
     ts = time.strftime("%Y%m%dT%H%M%S")
@@ -172,6 +254,8 @@ def run_opencode_agent(
     prompt: str,
     workspace: Path,
     timeout_seconds: int = 600,
+    *,
+    auto: bool = False,
 ) -> tuple[int, str, str]:
     """
     Run `opencode run --agent <agent> <prompt>` in workspace.
@@ -181,8 +265,11 @@ def run_opencode_agent(
         "opencode", "run",
         "--dir", str(workspace),
         "--agent", agent,
-        prompt,
+        "--format", "json",
     ]
+    if auto:
+        cmd.append("--auto")
+    cmd.append(prompt)
     env, secrets = agent_environment(workspace)
     try:
         result = subprocess.run(
@@ -214,44 +301,30 @@ def run_opencode_agent(
 # Dry-run stubs — exercise all scoring/validation logic without live agents
 # ---------------------------------------------------------------------------
 
+def copy_canonical_package(workspace: Path) -> None:
+    """Publish the canonical generated-agent package into a workspace."""
+    shutil.copytree(
+        CANONICAL_PACKAGE / ".opencode",
+        workspace / ".opencode",
+        dirs_exist_ok=True,
+    )
+
+
 def dry_run_prometheus(workspace: Path) -> tuple[int, str, str]:
     """
-    Stub for dry-run mode: simulate a @prometheus response by copying the
-    canonical SPEC into the workspace as SPEC.md.
+    Simulate Prometheus publishing the canonical schema-v1 task package and
+    returning the required fresh-context handoff.
     Returns (exit_code, stdout, stderr) matching run_opencode_agent signature.
     """
-    canonical = ROOT / "evals" / "seed_build" / "CANONICAL_SPEC.md"
-    (workspace / "SPEC.md").write_text(
-        canonical.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    (workspace / "opencode-autonomous.json").write_text(
-        json.dumps({
-            "schema_version": 3,
-            "strategy": "direct",
-            "invariants": ["Frozen planning fixture."],
-            "implementation_scope": ["idea.md"],
-            "escalation_triggers": ["Fixture mismatch."],
-            "evaluator_inventory": [],
-            "verification": {
-                "baseline": "Frozen fixture baseline.",
-                "commands": [
-                    "python3 -c 'import ast, pathlib; ast.parse(pathlib.Path(\"rules_engine.py\").read_text())'",
-                    "PYTHONDONTWRITEBYTECODE=1 RULES_ENGINE_PATH=rules_engine.py python3 -m unittest discover -s .oracle_readonly/acceptance -p 'test_*.py' -v",
-                ],
-            },
-        }, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    stub_stdout = (
-        "Stub @prometheus response for dry-run.\n"
-        "Wrote canonical SPEC.md and opencode-autonomous.json. Invoke @autonomous to execute SPEC.md."
-    )
-    return 0, stub_stdout, ""
+    copy_canonical_package(workspace)
+    handoff = (CANONICAL_PACKAGE / "PROMETHEUS_HANDOFF.txt").read_text(encoding="utf-8")
+    event = {"type": "text", "part": {"text": f"[DRY-RUN STUB]\n{handoff}"}}
+    return 0, json.dumps(event) + "\n", ""
 
 
-def dry_run_autonomous(workspace: Path) -> tuple[int, str, str]:
+def dry_run_generated_agent(workspace: Path) -> tuple[int, str, str]:
     """
-    Stub for dry-run mode: simulate a @autonomous response by copying the
+    Simulate the canonical project-local generated agent by copying the frozen
     reference implementation into the workspace.
     Returns (exit_code, stdout, stderr) matching run_opencode_agent signature.
     """
@@ -259,5 +332,48 @@ def dry_run_autonomous(workspace: Path) -> tuple[int, str, str]:
     (workspace / "rules_engine.py").write_text(
         ref_engine.read_text(encoding="utf-8"), encoding="utf-8"
     )
-    stub_stdout = "Stub @autonomous response for dry-run; native verification is simulated.\n"
-    return 0, stub_stdout, ""
+    try:
+        manifest = json.loads(
+            (workspace / f".opencode/tasks/{GENERATED_AGENT_NAME}.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        commands = manifest["verification"]["commands"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        return 1, "", f"[DRY-RUN STUB] Cannot load verification commands: {error}"
+
+    events = [{
+        "type": "tool_use",
+        "part": {
+            "tool": "write",
+            "state": {
+                "input": {"filePath": "rules_engine.py"},
+                "status": "completed",
+                "output": "[DRY-RUN STUB] synthetic implementation write",
+            },
+        },
+    }]
+    events.extend(
+        {
+            "type": "tool_use",
+            "part": {
+                "tool": "bash",
+                "state": {
+                    "input": {"command": command},
+                    "status": "completed",
+                    "output": "[DRY-RUN STUB] synthetic command completion",
+                },
+            },
+        }
+        for command in commands
+    )
+    events.append({
+        "type": "text",
+        "part": {
+            "text": (
+                f"[DRY-RUN STUB] Generated agent {GENERATED_AGENT_NAME} produced "
+                "the canonical output; the outer harness performs independent verification."
+            )
+        },
+    })
+    return 0, "\n".join(json.dumps(event) for event in events) + "\n", ""

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "agents": [
+    {
+      "name": "workflow-rules-engine",
+      "manifest": ".opencode/tasks/workflow-rules-engine.json"
+    }
+  ]
+}
