@@ -3,7 +3,7 @@
  * project `.gitignore`. Accepts no path arguments. Atomic and byte-idempotent;
  * preserves unrelated content and file permissions; rejects unsafe targets and
  * malformed markers; reports tracked generated artifacts without ever touching
- * the Git index. See docs/ARCHITECTURE.md § Git Exclusion Tool.
+ * the Git index. See docs/ARCHITECTURE.md § Git Exclusion.
  */
 import { tool } from "@opencode-ai/plugin";
 import { promises as fs, lstatSync, existsSync } from "node:fs";

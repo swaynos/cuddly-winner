@@ -472,6 +472,11 @@ symlink target and malformed or duplicate markers, and writes atomically. It
 reports matching artifacts that Git already tracks without changing the index.
 Outside a Git worktree it skips without creating `.gitignore`.
 
+The block covers only paths that hold generated output alone. It deliberately
+leaves `.opencode/agents/` visible to Git, because that directory also holds
+user-owned project agents that Prometheus must preserve, and one directory rule
+cannot tell a generated definition from a hand-written one.
+
 ## Local Model History Hygiene
 
 `plugins/announce-hygiene.ts` addresses a measured local Qwen failure where an

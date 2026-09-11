@@ -60,12 +60,11 @@ evals/seed_build/reports/
 # Spike workspaces are disposable and never committed
 .spike/
 
-# OpenCode session state is local to the active conversation.
-/.opencode/supervisor/
+# Per-pass task-loop evidence is local to a run, not source.
+.task-loop/
 
-# BEGIN OpenCode Autonomous artifacts
-/SPEC.md
-/opencode-autonomous.json
-/.prometheus/evaluator/
+# BEGIN OpenCode generated task artifacts
+/.opencode/generated-agents.json
+/.opencode/tasks/
 /.spike/
-# END OpenCode Autonomous artifacts
+# END OpenCode generated task artifacts
