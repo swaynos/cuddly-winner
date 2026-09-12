@@ -50,9 +50,10 @@ directories:
 - nine packaged skill directories from `skills/`;
 - two shared rule files from `rules/`.
 
-It also installs the pinned OpenCode plugin SDK and Playwright runtime, registers
-the isolated headless research-browser MCP, registers the shared rule files in
-OpenCode's instructions, and installs the local feedback locator.
+It also installs the pinned OpenCode plugin SDK and Playwright runtime, bootstraps
+the pinned headless Obscura browser engine and registers the `cuddly-winner-browser`
+MCP that runs it, registers the shared rule files in OpenCode's instructions, and
+installs the local feedback locator.
 
 ```bash
 bash scripts/deploy-opencode-agents.sh install

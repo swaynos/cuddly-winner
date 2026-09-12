@@ -201,23 +201,19 @@ def _managed_profile_file_mismatches(config: pathlib.Path) -> list[str]:
         if expected not in instructions:
             mismatches.append(f"rule instruction missing: {expected}")
 
+    engine_binary = "obscura.exe" if os.name == "nt" else "obscura"
     expected_mcp = {
         "type": "local",
-        "command": [
-            "npx",
-            "-y",
-            "@playwright/mcp@0.0.78",
-            "--headless",
-            "--isolated",
-        ],
+        "command": [str(config / "cuddly-winner-browser" / engine_binary), "mcp"],
+        "environment": {"HEADLESS": "true"},
         "enabled": True,
     }
     mcp = configured.get("mcp", {}) if isinstance(configured, dict) else {}
     if (
         not isinstance(mcp, dict)
-        or mcp.get("cuddly-winner-research-browser") != expected_mcp
+        or mcp.get("cuddly-winner-browser") != expected_mcp
     ):
-        mismatches.append("managed research browser configuration differs")
+        mismatches.append("managed browser configuration differs")
 
     locator = config / "feedback" / "cuddly-winner-feedback-root"
     try:
@@ -922,9 +918,9 @@ def main() -> int:
         "resource-selection rule missing",
     )
     require(
-        "--headless"
+        'HEADLESS: "true"'
         in (ROOT / "scripts/opencode-mcp-config.mjs").read_text(encoding="utf-8"),
-        "managed research browser is not headless",
+        "managed browser is not marked headless",
     )
     require(
         "--confirm"

@@ -46,6 +46,9 @@ yarn-error.log*
 # Playwright
 .playwright-mcp
 
+# Obscura browser engine binaries, installed under the OpenCode config root.
+cuddly-winner-browser/
+
 # Operating System files
 .DS_Store
 Thumbs.db

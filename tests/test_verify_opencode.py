@@ -92,9 +92,10 @@ class BehavioralAssertionTests(unittest.TestCase):
                     {
                         "instructions": rule_paths,
                         "mcp": {
-                            "cuddly-winner-research-browser": {
+                            "cuddly-winner-browser": {
                                 "type": "local",
-                                "command": ["npx", "-y", "@playwright/mcp@0.0.78", "--headless", "--isolated"],
+                                "command": [str(config / "cuddly-winner-browser" / "obscura"), "mcp"],
+                                "environment": {"HEADLESS": "true"},
                                 "enabled": True,
                             }
                         },
@@ -163,7 +164,7 @@ class BehavioralAssertionTests(unittest.TestCase):
             (config / "node_modules" / "playwright" / "package.json").write_text('{"version":"0"}', encoding="utf-8")
             value = json.loads((config / "opencode.json").read_text(encoding="utf-8"))
             value["instructions"] = []
-            value["mcp"]["cuddly-winner-research-browser"]["command"] = ["visible-browser"]
+            value["mcp"]["cuddly-winner-browser"]["command"] = ["visible-browser"]
             (config / "opencode.json").write_text(json.dumps(value), encoding="utf-8")
             locator.write_text("/tmp/wrong-feedback\n", encoding="utf-8")
 
@@ -173,7 +174,7 @@ class BehavioralAssertionTests(unittest.TestCase):
             self.assertTrue(any("discoverable managed skill backup present" in item for item in mismatches))
             self.assertTrue(any("playwright package version differs" in item for item in mismatches))
             self.assertTrue(any("rule instruction missing" in item for item in mismatches))
-            self.assertTrue(any("research browser configuration differs" in item for item in mismatches))
+            self.assertTrue(any("managed browser configuration differs" in item for item in mismatches))
             self.assertTrue(any("feedback locator differs" in item for item in mismatches))
 
     def test_managed_profile_requires_valid_runtime_integrity_state(self) -> None:

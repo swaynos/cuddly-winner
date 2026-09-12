@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SDK_VERSION="1.17.15"
 PLAYWRIGHT_VERSION="1.58.2"
+BROWSER_ENGINE_VERSION="0.2.2"
 MANAGED_ENTRY_DRIFT=0
 STATUS_DRIFT=0
 
@@ -602,6 +603,21 @@ install_tool_sdk() {
   node "$RUNTIME_INTEGRITY_HELPER" status --root "$runtime_root" --state "$RUNTIME_INTEGRITY_STATE" >/dev/null
 }
 
+install_browser_engine() {
+  local config_dir="$1"
+  local engine_args=(install --root "$config_dir" --version "$BROWSER_ENGINE_VERSION")
+  # Offline installs (CI and integration tests) supply a local archive and its
+  # checksum. Real installs omit both and the helper downloads the pinned
+  # release, verifying it against the checksum baked into the helper.
+  if [[ -n "${CUDDLY_WINNER_BROWSER_ARCHIVE:-}" ]]; then
+    engine_args+=(--archive "$CUDDLY_WINNER_BROWSER_ARCHIVE")
+    if [[ -n "${CUDDLY_WINNER_BROWSER_CHECKSUM:-}" ]]; then
+      engine_args+=(--checksum "$CUDDLY_WINNER_BROWSER_CHECKSUM")
+    fi
+  fi
+  node "$BROWSER_ENGINE_HELPER" "${engine_args[@]}"
+}
+
 runtime_package_status() {
   local package="$1"
   local expected="$2"
@@ -633,6 +649,9 @@ runtime_status() {
   printf 'Runtime packages:\n'
   runtime_package_status "@opencode-ai/plugin" "$SDK_VERSION"
   runtime_package_status "playwright" "$PLAYWRIGHT_VERSION"
+  if ! node "$BROWSER_ENGINE_HELPER" status --root "$CONFIG_DIR" --version "$BROWSER_ENGINE_VERSION"; then
+    mark_status_drift
+  fi
   assert_managed_destination "$RUNTIME_INTEGRITY_STATE"
   if ! node "$RUNTIME_INTEGRITY_HELPER" status --root "${CONFIG_DIR}/node_modules" --state "$RUNTIME_INTEGRITY_STATE"; then
     mark_status_drift
@@ -700,6 +719,7 @@ FEEDBACK_ROOT="$(cd "$REPO_ROOT" && pwd -P)/feedback"
 INSTRUCTIONS_HELPER="${SCRIPT_DIR}/opencode-instructions.mjs"
 RULE_INSTRUCTIONS_STATUS_HELPER="${SCRIPT_DIR}/opencode-rule-instructions.mjs"
 MCP_HELPER="${SCRIPT_DIR}/opencode-mcp-config.mjs"
+BROWSER_ENGINE_HELPER="${SCRIPT_DIR}/opencode-browser-engine.mjs"
 AGENT_STATE_HELPER="${SCRIPT_DIR}/opencode-agent-state.mjs"
 RUNTIME_INTEGRITY_HELPER="${SCRIPT_DIR}/opencode-runtime-integrity.mjs"
 
@@ -768,6 +788,7 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_feedback_locator
   assert_managed_destination "$RUNTIME_INTEGRITY_STATE"
   node "$RUNTIME_INTEGRITY_HELPER" remove --root "${CONFIG_DIR}/node_modules" --state "$RUNTIME_INTEGRITY_STATE"
+  node "$BROWSER_ENGINE_HELPER" remove --root "$CONFIG_DIR"
   exit 0
 fi
 
@@ -779,6 +800,7 @@ sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@
 sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"
 sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
+install_browser_engine "$CONFIG_DIR"
 sync_discoverable_skill_backups
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"

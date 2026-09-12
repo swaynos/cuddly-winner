@@ -23,11 +23,23 @@ Managed deployment adds namespaced MCP entries only. It preserves user entries.
 `status` and `diagnose` report configured modes without starting a browser.
 Restart OpenCode after install, removal, or a credential-mode change.
 
+The managed `cuddly-winner-browser` entry runs the Obscura headless browser
+engine. Obscura has no visible-window mode, so the entry is always headless; it
+carries a `HEADLESS` environment marker so `diagnose` reports it as headless
+without engine-specific knowledge. The installer bootstraps the engine binary
+through `scripts/opencode-browser-engine.mjs`, which downloads the pinned
+Obscura release and verifies it against a checksum before installing it under
+the configuration root. That helper is standalone: another project can install,
+locate, or remove the same engine under its own root and point its own MCP entry
+at the binary. The engine runs without `--stealth` for transparent internal
+research.
+
 Use the normal installer for the managed profile. To inspect configuration without
 starting a browser, run `node scripts/opencode-mcp-config.mjs diagnose --config
-<config-root>/opencode.json`. To inspect one image provider, run `node
-scripts/opencode-browser-credentials.mjs status --config
-<config-root>/opencode.json --provider chatgpt`.
+<config-root>/opencode.json`. To inspect the engine binary, run `node
+scripts/opencode-browser-engine.mjs status --root <config-root>`. To inspect one
+image provider, run `node scripts/opencode-browser-credentials.mjs status
+--config <config-root>/opencode.json --provider chatgpt`.
 
 ## Image Credentials
 

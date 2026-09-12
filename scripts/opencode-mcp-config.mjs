@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 // Manages only Cuddly-Winner-owned MCP entries in an OpenCode config.
 import { copyFileSync, existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { binaryPath } from "./opencode-browser-engine.mjs";
 
-export function buildManagedMcp() {
+// The managed browser MCP entry runs the Obscura engine binary installed under
+// the OpenCode config root by opencode-browser-engine.mjs. Obscura is
+// headless-only and has no --headless flag, so the HEADLESS environment marker
+// lets modeOf classify it as headless without engine-specific knowledge.
+export function buildManagedMcp(configPath) {
   return {
-    "cuddly-winner-research-browser": {
+    "cuddly-winner-browser": {
       type: "local",
-      command: ["npx", "-y", "@playwright/mcp@0.0.78", "--headless", "--isolated"],
+      command: [binaryPath(path.dirname(configPath)), "mcp"],
+      environment: { HEADLESS: "true" },
       enabled: true,
     },
   };
@@ -16,7 +23,7 @@ export function buildManagedMcp() {
 
 // MCP entries this project used to manage. Install prunes any that linger in a
 // config from an earlier profile, so upgrading removes them without a manual edit.
-const RETIRED_MANAGED_MCP_KEYS = ["cuddly-winner-notebooklm"];
+const RETIRED_MANAGED_MCP_KEYS = ["cuddly-winner-notebooklm", "cuddly-winner-research-browser"];
 const RETIRED_LEGACY_MANAGED_MCP = {
   notebooklm: { type: "local", command: ["npx", "-y", "notebooklm-mcp@latest"], enabled: true },
 };
@@ -81,8 +88,8 @@ export function modeOf(entry) {
   return "unknown";
 }
 
-function printStatus(config) {
-  const managed = buildManagedMcp();
+function printStatus(config, configPath) {
+  const managed = buildManagedMcp(configPath);
   const entries = config.mcp ?? {};
   let currentProfile = true;
   for (const [name, desired] of Object.entries(managed)) {
@@ -99,8 +106,8 @@ function printStatus(config) {
   return currentProfile;
 }
 
-function diagnose(config) {
-  const managedNames = new Set(Object.keys(buildManagedMcp()));
+function diagnose(config, configPath) {
+  const managedNames = new Set(Object.keys(buildManagedMcp(configPath)));
   const entries = config.mcp ?? {};
   for (const [name, entry] of Object.entries(entries)) {
     const owner = managedNames.has(name) ? "managed" : "unmanaged";
@@ -125,15 +132,15 @@ function printRetiredStatus(config) {
 export function apply(action, configPath) {
   const config = loadConfig(configPath);
   if (action === "status") {
-    if (!printStatus(config)) process.exitCode = 1;
+    if (!printStatus(config, configPath)) process.exitCode = 1;
     return;
   }
   if (action === "status-retired") {
     if (!printRetiredStatus(config)) process.exitCode = 1;
     return;
   }
-  if (action === "diagnose") return diagnose(config);
-  const managed = buildManagedMcp();
+  if (action === "diagnose") return diagnose(config, configPath);
+  const managed = buildManagedMcp(configPath);
   const mcp = { ...(config.mcp ?? {}) };
   let changed = false;
   let conflict = false;

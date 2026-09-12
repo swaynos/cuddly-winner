@@ -509,7 +509,11 @@ It resolves one configuration root from `--config-dir`,
 Agent files, the three governance tools, skills, and rules use the selected copy
 or symlink mode. All three plugins and `session_fetch.ts` always install as
 copies. The installer deploys SDK version `1.17.15` and Playwright version
-`1.58.2`; browser download is disabled during package installation. It populates
+`1.58.2`, which `session_fetch` still uses; browser download is disabled during
+package installation. It also bootstraps the Obscura headless browser engine
+through `scripts/opencode-browser-engine.mjs`, which downloads the pinned engine
+release, verifies it against a checksum, and installs it under
+`cuddly-winner-browser/` in the configuration root. It populates
 a clean sibling staging tree, compares it with the live runtime, backs up any
 noncurrent live tree intact, and moves the staged tree into place before using
 `scripts/opencode-runtime-integrity.mjs` to recursively hash the whole installed
@@ -534,8 +538,15 @@ table.
 The installer writes each rule to `<config_dir>/rules/` and uses
 `scripts/opencode-instructions.mjs` to add or remove its absolute path in the
 `instructions` array of `<config_dir>/opencode.json`. It changes no other config
-key. A separate helper owns one namespaced, headless Playwright MCP entry and the
-exact retired `notebooklm` shape in legacy `config.json`; other shapes survive.
+key. A separate helper owns one namespaced browser MCP entry, `cuddly-winner-browser`,
+which runs the headless Obscura engine binary and carries a `HEADLESS` environment
+marker. The same helper prunes the retired `cuddly-winner-notebooklm` and
+`cuddly-winner-research-browser` names by name, and the exact retired `notebooklm`
+shape in legacy `config.json`; other shapes survive.
+`scripts/opencode-browser-engine.mjs` bootstraps the engine: it downloads the
+pinned Obscura release, verifies it against a checksum, and installs it under
+`<config_dir>/cuddly-winner-browser/`. It is standalone, so another project can
+install, locate, or remove the same engine under its own root.
 
 `scripts/ci.sh` installs the CLI version named by `.opencode-cli-version` beneath
 its temporary profile and selects that exact binary through both `PATH` and

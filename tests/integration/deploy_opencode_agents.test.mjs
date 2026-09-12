@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import os from "node:os";
@@ -11,6 +11,31 @@ const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
 const deploy = path.join(repo, "scripts/deploy-opencode-agents.sh");
 
+// A checksum-verified engine archive built once for the whole suite. Every
+// deploy install runs the real browser-engine helper; supplying a local archive
+// plus its checksum keeps that step fully offline instead of downloading the
+// pinned release.
+let engineArchiveRoot = "";
+let engineArchive = "";
+let engineChecksum = "";
+
+before(async () => {
+  engineArchiveRoot = await mkdtemp(path.join(os.tmpdir(), "deploy-engine-"));
+  const source = path.join(engineArchiveRoot, "src");
+  await mkdir(source, { recursive: true });
+  const worker = process.platform === "win32" ? "obscura-worker.exe" : "obscura-worker";
+  const binary = process.platform === "win32" ? "obscura.exe" : "obscura";
+  await writeFile(path.join(source, binary), "#!/bin/sh\necho obscura fake\n");
+  await writeFile(path.join(source, worker), "#!/bin/sh\necho worker fake\n");
+  engineArchive = path.join(engineArchiveRoot, "engine.tar.gz");
+  await run("tar", ["-czf", engineArchive, "-C", source, binary, worker]);
+  engineChecksum = createHash("sha256").update(await readFile(engineArchive)).digest("hex");
+});
+
+after(async () => {
+  if (engineArchiveRoot) await rm(engineArchiveRoot, { recursive: true, force: true });
+});
+
 async function fixture(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "deploy-opencode-"));
   try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
@@ -22,7 +47,13 @@ async function deployFixture(root, action = "install", options = [], extraEnv = 
   await mkdir(bin, { recursive: true });
   await writeFile(path.join(bin, "opencode"), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
   return run("bash", [deploy, action, "--config-dir", config, ...options], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, ...extraEnv },
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      CUDDLY_WINNER_BROWSER_ARCHIVE: engineArchive,
+      CUDDLY_WINNER_BROWSER_CHECKSUM: engineChecksum,
+      ...extraEnv,
+    },
   });
 }
 
@@ -394,10 +425,10 @@ test("status includes runtime version drift and state-helper errors in its exit"
 
   await deployFixture(root);
   const configValue = JSON.parse(await readFile(path.join(config, "opencode.json"), "utf8"));
-  configValue.mcp["cuddly-winner-research-browser"].enabled = false;
+  configValue.mcp["cuddly-winner-browser"].enabled = false;
   await writeFile(path.join(config, "opencode.json"), `${JSON.stringify(configValue, null, 2)}\n`);
   const mcpStatus = await expectStatusDrift(root);
-  assert.match(mcpStatus.stdout, /\[modified\] cuddly-winner-research-browser/);
+  assert.match(mcpStatus.stdout, /\[modified\] cuddly-winner-browser/);
   assert.match(mcpStatus.stdout, /Managed profile: drifted/);
 
   await deployFixture(root);

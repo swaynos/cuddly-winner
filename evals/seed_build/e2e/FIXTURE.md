@@ -49,7 +49,7 @@ probe never reached the provider fails as unproven rather than passing silently.
 
 | Group | Requirement |
 | --- | --- |
-| Installation | The installer deploys four agents (`ask`, `grounder`, `prometheus`, `reviewer`), all three plugins, all four workflow tools, the pinned SDK, and the pinned Playwright library. |
+| Installation | The installer deploys four agents (`ask`, `grounder`, `prometheus`, `reviewer`), all three plugins, all four workflow tools, the pinned SDK, the pinned Playwright library, and the pinned Obscura browser engine binary. |
 | Permissions | Effective per-agent tool availability matches `docs/USE-CASES.md` UC-ID-02 through UC-ID-04, and the generated agent resolves to wildcard edit denial followed by the two exact manifest allows with no separate write rule. |
 | Planning | Prometheus publishes the four task-package files, the manifest is schema v1 with a direct strategy and consistent ids and commands, the registry references the manifest, static validation passes, and the run ends with the fresh-context restart handoff. |
 | Execution | The generated agent is discovered as a project-local agent, runs from its published definition, consumes the brief and manifest, creates every required file, and runs each declared command through native Bash. |

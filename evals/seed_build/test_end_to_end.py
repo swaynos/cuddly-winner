@@ -618,11 +618,30 @@ def _generated_turns() -> list[Turn]:
 # Phases
 # ---------------------------------------------------------------------------
 
+def _offline_engine_archive(runtime: Runtime) -> tuple[str, str]:
+    """Build a checksum-verified fake engine archive so the installer's
+    browser-engine step stays offline instead of downloading the pinned
+    release."""
+    is_windows = sys.platform == "win32"
+    binary = "obscura.exe" if is_windows else "obscura"
+    worker = "obscura-worker.exe" if is_windows else "obscura-worker"
+    source = runtime.root / "engine-src"
+    source.mkdir(parents=True, exist_ok=True)
+    (source / binary).write_text("#!/bin/sh\necho obscura fake\n", encoding="utf-8")
+    (source / worker).write_text("#!/bin/sh\necho worker fake\n", encoding="utf-8")
+    archive = runtime.root / "engine.tar.gz"
+    subprocess.run(["tar", "-czf", str(archive), "-C", str(source), binary, worker], check=True)
+    return str(archive), _sha256(archive)
+
+
 def phase_install(runtime: Runtime) -> bool:
+    archive, checksum = _offline_engine_archive(runtime)
     install = subprocess.run(
         ["bash", str(ROOT / "scripts" / "deploy-opencode-agents.sh"), "install",
          "--config-dir", str(runtime.config)],
         capture_output=True, text=True, timeout=900,
+        env={**os.environ, "CUDDLY_WINNER_BROWSER_ARCHIVE": archive,
+             "CUDDLY_WINNER_BROWSER_CHECKSUM": checksum},
     )
     (runtime.artifacts / "install.txt").write_text(install.stdout + install.stderr, encoding="utf-8")
     if not runtime.check("Managed profile installs", install.returncode == 0,
@@ -632,13 +651,16 @@ def phase_install(runtime: Runtime) -> bool:
     agents = sorted(path.stem for path in (runtime.config / "agents").glob("*.md"))
     runtime.check("All four managed agents installed", agents == sorted(MANAGED_AGENTS),
                   f"installed agents: {agents}", evidence=",".join(agents))
+    engine_binary = "obscura.exe" if sys.platform == "win32" else "obscura"
     for relative in ("plugins/immutability.ts", "plugins/autonomous-kpis.ts", "plugins/announce-hygiene.ts",
                      "tools/spike.ts", "tools/validate_scaffold.ts", "tools/scaffold_gitignore.ts",
                      "tools/session_fetch.ts",
                      "node_modules/@opencode-ai/plugin/package.json",
                      # session_fetch imports playwright at call time; without it the
                      # installed tool cannot run at all.
-                     "node_modules/playwright/package.json"):
+                     "node_modules/playwright/package.json",
+                     # The managed browser MCP entry runs this engine binary.
+                     f"cuddly-winner-browser/{engine_binary}"):
         runtime.check(f"Installed: {relative}", (runtime.config / relative).exists(),
                       f"missing {relative} in the installed profile")
     return True

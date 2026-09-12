@@ -69,7 +69,11 @@ change here.
 
 The repository supports Node.js `>=22.22.2 <25`. CI uses Node.js `24.15.0`.
 Deployment uses the active `node` and `npm` on the user's `PATH` and installs
-`@opencode-ai/plugin` version `1.17.15` and Playwright version `1.58.2`.
+`@opencode-ai/plugin` version `1.17.15` and Playwright version `1.58.2`, which
+`session_fetch` and the image-generation skill still use. It also bootstraps the
+Obscura headless browser engine version `0.2.2` through
+`scripts/opencode-browser-engine.mjs`, which downloads the pinned release,
+verifies it against a checksum, and installs it under the configuration root.
 Installation records owner-only integrity state for the full runtime dependency
 content trees. Status and live repository-profile preflight use that recorded
 state and fail on missing or invalid state or modified, missing, or unsafe
@@ -388,7 +392,8 @@ tools, packaged skills, and rule files use the selected `copy` or `symlink`
 mode.
 
 The installer also deploys every directory under `skills/`, every Markdown file
-under `rules/`, the pinned SDK packages, one managed research-browser MCP entry,
+under `rules/`, the pinned SDK packages, the pinned Obscura browser engine, one
+managed `cuddly-winner-browser` MCP entry,
 rule instruction wiring, and the feedback locator. It builds the runtime in a
 clean staging tree, backs up a noncurrent live tree intact before replacement,
 then records a recursive hash plus entry, file, and symlink counts for the whole

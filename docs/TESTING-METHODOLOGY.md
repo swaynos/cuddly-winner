@@ -139,7 +139,7 @@ fails it. These checks prevent a shortened or diverted flow from passing.
 The harness redirects `HOME`, all `XDG_*` roots, `ZDOTDIR`, and
 `OPENCODE_CONFIG_DIR`; supplies only the loopback provider; removes provider
 credentials; disables model fetching and automatic updates; and keeps the
-managed research browser offline. It resolves temporary paths through symlinks
+managed browser offline. It resolves temporary paths through symlinks
 before the run so OpenCode and the test agree on the worktree root.
 
 The hidden suite remains in `evals/seed_build/e2e/hidden/`. It never enters the
