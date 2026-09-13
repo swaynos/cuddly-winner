@@ -22,23 +22,19 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ACTIONS = new Set(["capture", "status", "remove"]);
 const NAME_PATTERN = /^[A-Za-z0-9_.-]+$/;
 const DEFAULT_TIMEOUT_MS = 180_000;
 const POLL_MS = 2_000;
-
-const BROWSERS = {
-  chrome: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  edge: "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-  brave: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-};
 
 function die(message) {
   process.stderr.write(`Error: ${message}\n`);
@@ -193,17 +189,87 @@ async function waitForCdp(port, deadline) {
   }
 }
 
+// Standard install locations per OS. A bare command name is resolved against
+// PATH; an absolute path is checked directly. Linux browsers are usually PATH
+// shims or symlinks, so existence — not file type — is what matters. Windows
+// roots are read from the environment at call time so the resolver stays
+// testable from any host.
+export function browserCandidates(platform) {
+  if (platform === "darwin") {
+    return {
+      chrome: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
+      edge: ["/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
+      brave: ["/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"],
+    };
+  }
+  if (platform === "linux") {
+    return {
+      chrome: ["google-chrome-stable", "google-chrome", "chromium", "chromium-browser",
+        "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome", "/usr/bin/chromium",
+        "/usr/bin/chromium-browser", "/snap/bin/chromium"],
+      edge: ["microsoft-edge-stable", "microsoft-edge",
+        "/usr/bin/microsoft-edge-stable", "/usr/bin/microsoft-edge", "/opt/microsoft/msedge/msedge"],
+      brave: ["brave-browser", "brave",
+        "/usr/bin/brave-browser", "/opt/brave.com/brave/brave-browser"],
+    };
+  }
+  if (platform === "win32") {
+    const programFiles = process.env.PROGRAMFILES || "C:\\Program Files";
+    const programFilesX86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
+    const localAppData = process.env.LOCALAPPDATA || programFiles;
+    return {
+      chrome: [
+        `${programFiles}\\Google\\Chrome\\Application\\chrome.exe`,
+        `${programFilesX86}\\Google\\Chrome\\Application\\chrome.exe`,
+        `${localAppData}\\Google\\Chrome\\Application\\chrome.exe`,
+      ],
+      edge: [
+        `${programFilesX86}\\Microsoft\\Edge\\Application\\msedge.exe`,
+        `${programFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      ],
+      brave: [
+        `${programFiles}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+        `${programFilesX86}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+      ],
+    };
+  }
+  return null;
+}
+
+function existsExecutable(candidate, pathValue) {
+  if (candidate.includes("/") || candidate.includes("\\")) return existsSync(candidate) ? candidate : null;
+  for (const dir of (pathValue || "").split(path.delimiter)) {
+    if (!dir) continue;
+    const full = path.join(dir, candidate);
+    if (existsSync(full)) return full;
+  }
+  return null;
+}
+
+// Pure, testable browser resolution across macOS, Linux, and Windows. Returns
+// { name, binary } on success or { error } otherwise. platform and PATH are
+// injectable so every OS can be exercised from any host.
+export function findBrowser(choice, { platform = process.platform, pathValue = process.env.PATH } = {}) {
+  const table = browserCandidates(platform);
+  if (!table) return { error: `unsupported platform: ${platform}` };
+  if (choice && !table[choice]) return { error: `unsupported --browser: ${choice} (chrome, edge, or brave)` };
+  for (const name of choice ? [choice] : ["chrome", "edge", "brave"]) {
+    for (const candidate of table[name]) {
+      const binary = existsExecutable(candidate, pathValue);
+      if (binary) return { name, binary };
+    }
+  }
+  return {
+    error: choice
+      ? `selected browser is not installed: ${choice}`
+      : "no supported browser found (Chrome, Edge, or Brave). Pass --browser or install one.",
+  };
+}
+
 function resolveBrowser(choice) {
-  if (choice) {
-    const binary = BROWSERS[choice];
-    if (!binary) die(`unsupported --browser: ${choice} (chrome, edge, or brave)`);
-    if (!existsSync(binary)) die(`selected browser is not installed: ${binary}`);
-    return { name: choice, binary };
-  }
-  for (const name of ["chrome", "edge", "brave"]) {
-    if (existsSync(BROWSERS[name])) return { name, binary: BROWSERS[name] };
-  }
-  return die("no supported browser found (Chrome, Edge, or Brave). Pass --browser or install one.");
+  const result = findBrowser(choice);
+  if (result.error) die(result.error);
+  return result;
 }
 
 async function capture(options) {
@@ -338,7 +404,11 @@ function remove(options) {
   process.stdout.write(`Removed captured session "${options.name}". Restart OpenCode to drop it.\n`);
 }
 
-const options = parseArgs(process.argv.slice(2));
-if (options.action === "capture") await capture(options);
-else if (options.action === "status") status(options);
-else remove(options);
+// Only run the CLI when invoked directly, so a test can import findBrowser and
+// exercise Linux/Windows resolution from any host without triggering parseArgs.
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {
+  const options = parseArgs(process.argv.slice(2));
+  if (options.action === "capture") await capture(options);
+  else if (options.action === "status") status(options);
+  else remove(options);
+}
