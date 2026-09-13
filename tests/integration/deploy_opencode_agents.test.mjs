@@ -84,9 +84,26 @@ test("default copy install is idempotent and includes the complete managed profi
   await stat(path.join(config, "node_modules", "@opencode-ai", "plugin", "package.json"));
   await stat(path.join(config, "node_modules", "playwright", "package.json"));
   await stat(path.join(config, "skills", "systematic-debugging", "SKILL.md"));
+  const captureHelper = path.join(config, "cuddly-winner-browser-session.mjs");
+  await stat(captureHelper);
+  const helperStatus = await run(process.execPath, [captureHelper, "status", "--config-dir", config]);
+  assert.match(helperStatus.stdout, /No captured sessions/);
 
   const second = await deployFixture(root);
   assert.match(second.stdout, /Unchanged:/);
+}));
+
+test("status detects a modified capture helper and remove preserves it", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  const helper = path.join(config, "cuddly-winner-browser-session.mjs");
+  await deployFixture(root);
+  await writeFile(helper, "user-owned replacement\n");
+
+  const status = await expectStatusDrift(root);
+  assert.match(status.stdout, /\[stale or modified copy\].*cuddly-winner-browser-session\.mjs/);
+
+  await deployFixture(root, "remove");
+  assert.equal(await readFile(helper, "utf8"), "user-owned replacement\n");
 }));
 
 test("default installation provides a self-contained workflow tool runtime", async () => fixture(async root => {
@@ -120,6 +137,7 @@ test("symlink install and mode-independent remove cover all managed groups", asy
   assert.equal((await lstat(path.join(config, "plugins", "immutability.ts"))).isSymbolicLink(), false);
   assert.equal((await lstat(path.join(config, "plugins", "autonomous-kpis.ts"))).isSymbolicLink(), false);
   assert.equal((await lstat(path.join(config, "tools", "session_fetch.ts"))).isSymbolicLink(), false);
+  assert.equal((await lstat(path.join(config, "cuddly-winner-browser-session.mjs"))).isSymbolicLink(), false);
   assert.equal((await lstat(path.join(config, "tools", "spike.ts"))).isSymbolicLink(), true);
   assert.equal((await lstat(path.join(config, "skills", "playwright-image-generation"))).isSymbolicLink(), true);
 
@@ -132,6 +150,7 @@ test("symlink install and mode-independent remove cover all managed groups", asy
     "plugins/immutability.ts",
     "plugins/autonomous-kpis.ts",
     "tools/session_fetch.ts",
+    "cuddly-winner-browser-session.mjs",
     "skills/playwright-image-generation",
   ]) assert.equal(await exists(path.join(config, relative)), false, relative);
 }));

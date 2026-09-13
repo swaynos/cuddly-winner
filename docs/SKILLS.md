@@ -38,12 +38,15 @@ restart OpenCode after installing or changing a skill.
 
 - **Trigger:** Browser-based AI image generation or editing, especially where
   authenticated profiles, generated-image capture, or dataset artifacts matter.
-- **Required behavior:** Protect browser profile state; keep it separate from
-  run state; verify saved image signatures and hashes; classify failures; and
-  freeze valuable outputs with manifests and checksums.
+- **Required behavior:** Follow a project browser override when present;
+  otherwise use `cuddly-winner-browser` by default and check whether login is
+  required before opening the user's browser. Protect browser profile state;
+  keep it separate from run state; verify saved image signatures and hashes;
+  classify failures; and freeze valuable outputs with manifests and checksums.
 - **Must not:** Substitute a blank or temporary profile, trust a filename or
   response body as image evidence, count element changes as generation success,
   wait indefinitely for a stalled provider, or delete raw runs before release.
+  Use Playwright/CDP only when project instructions require that override.
 - **Evidence:** Verified image bytes, run records, and a frozen dataset release
   when outputs are retained.
 - **Credential modes:** Default to ephemeral headless state. Persistent provider

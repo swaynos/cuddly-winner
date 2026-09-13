@@ -52,8 +52,9 @@ directories:
 
 It also installs the pinned OpenCode plugin SDK and Playwright runtime, bootstraps
 the pinned headless Obscura browser engine and registers the `cuddly-winner-browser`
-MCP that runs it, registers the shared rule files in OpenCode's instructions, and
-installs the local feedback locator.
+MCP that runs it, copies the browser wrapper and human-login capture helper to the
+configuration root, registers the shared rule files in OpenCode's instructions,
+and installs the local feedback locator.
 
 ```bash
 bash scripts/deploy-opencode-agents.sh install
@@ -67,9 +68,9 @@ repository links, stale or modified copies, foreign links, missing entries,
 retired conflicts, discoverable skill backups, rule registration, MCP
 configuration, runtime packages, and feedback locator state. It aggregates all
 drift instead of stopping at the first fault and exits nonzero when any managed
-surface drifts. Use `--mode symlink` for live development installs. Plugins and
-`session_fetch` remain copied so their runtime state resolves from the selected
-configuration root.
+surface drifts. Use `--mode symlink` for live development installs. Plugins,
+`session_fetch`, and the browser control files remain copied so authentication
+code and runtime state resolve from the selected configuration root.
 
 Backups live under `<config_dir>/backups/`, outside OpenCode's discovery
 directories. `remove` deletes only byte-identical managed copies or links to the

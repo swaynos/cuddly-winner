@@ -80,9 +80,9 @@ signed in. A public task on another site may not need an account at all.
    If it works without login or the session is already signed in, perform the
    action and verify the result.
 3. If login is needed, check whether a browser and GUI are available. Explain why
-   a login window is needed and obtain the user's approval. Run
-   `scripts/opencode-browser-session.mjs capture` and ask the user to log in in
-   the window it opens.
+   a login window is needed and obtain the user's approval. Run the installed
+   `<config-root>/cuddly-winner-browser-session.mjs capture` helper and ask the
+   user to log in in the window it opens.
 4. Wait for capture to succeed. Ask the user to restart OpenCode so the wrapper
    loads the saved session. Reopen the site through Obscura and confirm that it
    is signed in.
@@ -107,7 +107,7 @@ name for `<name>`. The name determines the filename:
 not a required filename.
 
 ```sh
-node scripts/opencode-browser-session.mjs capture \
+node <config-root>/cuddly-winner-browser-session.mjs capture \
   --config-dir <config-root> \
   --name <name> \
   --url <https-login-url> \
@@ -119,6 +119,15 @@ Repeat `--origin` for each required origin. Instead of `--cookie`, use
 `--complete-url <https-prefix>` when a distinct post-login URL proves completion.
 Do not use a URL that also matches the signed-out page. The optional `--browser`
 accepts `chrome`, `edge`, or `brave`.
+
+On Linux, `DISPLAY` or `WAYLAND_DISPLAY` must identify a graphical session. The
+helper rejects directories and non-executable files during browser discovery. It
+also reports a launch error or an early browser exit without waiting for the
+full login timeout. It checks the session destination before launch and stops the
+browser before deleting its temporary profile, including when capture fails.
+DevTools HTTP and WebSocket calls share the capture deadline. `capture`,
+`status`, and `remove` reject a symlinked sessions directory rather than follow
+it outside the configuration root.
 
 Use `status --config-dir <config-root> --name <name>` to check capture metadata
 without reading cookie values. Use `remove` with the same arguments to delete a

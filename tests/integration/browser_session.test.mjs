@@ -80,6 +80,24 @@ test("a malformed or symlinked session file is rejected by status", async () => 
   );
 }));
 
+test("status and remove reject a symlinked sessions directory without touching its target", async () => fixture(async (root) => {
+  const outside = path.join(root, "outside");
+  const sessions = path.join(root, "cuddly-winner-sessions");
+  await mkdir(outside);
+  await writeFile(path.join(outside, "A.json"), `${JSON.stringify(validRecord("A"))}\n`);
+  await symlink(outside, sessions);
+
+  await assert.rejects(
+    invoke(["status", "--config-dir", root]),
+    (error) => error.code === 1 && /sessions directory is a symlink/.test(error.stderr),
+  );
+  await assert.rejects(
+    invoke(["remove", "--config-dir", root, "--name", "A"]),
+    (error) => error.code === 1 && /sessions directory is a symlink/.test(error.stderr),
+  );
+  assert.equal(await readFile(path.join(outside, "A.json"), "utf8"), `${JSON.stringify(validRecord("A"))}\n`);
+}));
+
 test("capture rejects incomplete arguments before opening a browser", async () => fixture(async (root) => {
   const base = ["capture", "--config-dir", root, "--name", "A"];
   await assert.rejects(invoke(base), (error) => error.code === 1 && /requires --url/.test(error.stderr));

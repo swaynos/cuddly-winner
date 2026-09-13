@@ -14,11 +14,16 @@ Gemini web image generation should reuse the shared workflow from `SKILL.md`, bu
 
 Before a long Gemini run:
 
-1. Identify the authenticated profile path and protect it.
-2. Decide CDP attach versus explicit persistent-context mode.
-3. Record composer selector, send selector, generated-image selector, and refusal text patterns.
-4. Test one prompt and verify saved bytes by signature.
-5. Confirm whether outputs are PNG, JPEG, or WebP.
-6. Write a provider note or update this file with observed selectors.
+1. Follow a project browser override when present; otherwise use
+   `cuddly-winner-browser`.
+2. Open Gemini and check whether the requested action needs login. Use the
+   managed capture helper only when it does.
+3. If a project override requires Playwright/CDP, identify and protect the auth
+   profile, then choose CDP attach or the explicit persistent-context mode.
+4. Record composer, send, generated-image, and refusal selectors for the chosen
+   browser.
+5. Test one prompt and verify saved bytes by signature.
+6. Confirm whether outputs are PNG, JPEG, or WebP.
+7. Write a provider note or update this file with observed selectors.
 
 Do not copy ChatGPT selectors into Gemini automation without re-verification.

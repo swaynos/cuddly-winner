@@ -416,9 +416,10 @@ approach takes precedence. Check for that override before choosing the tool.
 2. If the action works without login, or the browser is already signed in,
    perform it through Obscura and verify the result.
 3. Only when login is needed, check whether the user's browser can open. With
-   the user's approval, run `opencode-browser-session.mjs capture`. The helper
-   opens an installed Chrome, Edge, or Brave browser with a fresh profile for
-   the user to log in.
+   the user's approval, run
+   `<config-dir>/cuddly-winner-browser-session.mjs capture`. The helper opens an
+   installed Chrome, Edge, or Brave browser with a fresh profile for the user to
+   log in.
 4. After capture succeeds, ask the user to restart OpenCode. The wrapper reads
    saved sessions at startup. Reopen the site through Obscura and confirm that
    login worked.
@@ -449,6 +450,16 @@ existing browser or export an earlier Playwright login. If the agent opened the
 wrong browser, explain the mistake. If login is still needed and the browser
 route remains appropriate, ask the user to log in through the helper.
 
+On Linux, capture requires `DISPLAY` or `WAYLAND_DISPLAY`. On every supported
+platform, the selected browser must resolve to a regular executable file. A
+missing graphical session, launch error, or browser exit before login completion
+must fail promptly with the cause. The helper must reject a symlinked session
+destination before browser launch. `capture`, `status`, and `remove` must reject
+a symlinked sessions directory. Every HTTP or WebSocket DevTools operation must
+stay within the capture deadline. Before capture returns or reports an error, it
+must stop the browser with a bounded graceful wait and forced termination if
+needed, then remove the temporary profile.
+
 Only cookie-based sessions are supported. Obscura does not preserve imported
 `localStorage` across navigation, and the helper does not capture `IndexedDB`.
 The wrapper passes the captured User-Agent to Obscura through `--user-agent`.
@@ -471,11 +482,13 @@ tools, packaged skills, and rule files use the selected `copy` or `symlink`
 mode.
 
 The installer also deploys every directory under `skills/`, every Markdown file
-under `rules/`, the pinned SDK packages, the pinned Obscura browser engine, the
-credential-substitution wrapper `opencode-browser-mcp.mjs` (always a copy at
-`<config_dir>/cuddly-winner-browser-mcp.mjs`), one managed `cuddly-winner-browser`
-MCP entry that launches Obscura through that wrapper,
-rule instruction wiring, and the feedback locator. It builds the runtime in a
+under `rules/`, the pinned SDK packages, the pinned Obscura browser engine, and
+two browser control files that always install as copies:
+`<config_dir>/cuddly-winner-browser-mcp.mjs` and
+`<config_dir>/cuddly-winner-browser-session.mjs`. One managed
+`cuddly-winner-browser` MCP entry launches Obscura through the first file; the
+second opens the user's browser for session capture. The installer also manages
+rule instruction wiring and the feedback locator. It builds the runtime in a
 clean staging tree, backs up a noncurrent live tree intact before replacement,
 then records a recursive hash plus entry, file, and symlink counts for the whole
 `node_modules` dependency tree in a checksummed mode-`0600` state file beneath

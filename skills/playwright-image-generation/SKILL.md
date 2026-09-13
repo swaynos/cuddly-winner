@@ -1,6 +1,6 @@
 ---
 name: playwright-image-generation
-description: Use when automating web AI image generation or image editing with Playwright/CDP, including ChatGPT, Gemini, or similar browser UIs where auth profiles, generated-image capture, refusals, stalls, and dataset artifacts must be handled safely.
+description: Use when automating web AI image generation or editing, including ChatGPT and Gemini; defaults to cuddly-winner-browser and covers approved Playwright/CDP overrides, login, verified image capture, failures, and dataset artifacts.
 compatibility: opencode
 ---
 
@@ -8,7 +8,24 @@ compatibility: opencode
 
 Browser image-generation runs are data collection, not casual UI scripting. Preserve auth, capture only verified image bytes, and leave an auditable trail.
 
-## Credential Modes
+## Browser Selection
+
+Use `cuddly-winner-browser` by default for browser image generation. Project
+instructions may override this default with another tool or approach. Use
+Playwright/CDP only when project instructions override the default; the skill's
+name is not an override.
+
+Open the provider in Obscura and check whether login is required for the requested
+action. Continue there if the action is public or Obscura is already signed in.
+Only if login is required should you ask permission to open the user's browser
+through the installed session capture helper. If no GUI or supported browser is
+available, follow the project's fallback or stop rule.
+
+## Playwright Override Credentials
+
+The modes in this section apply only when project instructions require the
+Playwright/CDP approach. Obscura login uses the managed session capture flow in
+the browser-selection rule.
 
 - `ephemeral` is the default: use a headless isolated browser and do not retain
   credentials after it closes.
@@ -36,23 +53,30 @@ Use this skill for ChatGPT, Gemini, or similar web UIs when the task involves:
 - Treat authenticated browser profiles as protected state. Do not delete, move, recreate, overwrite, or silently replace them.
 - Never fall back to a blank, default, temporary, or legacy profile when auth matters.
 - Separate browser profile state from run state. Profiles hold cookies/auth; run directories hold logs, manifests, prompts, and images.
-- Prefer normal browser + CDP attach when Google/ChatGPT/Gemini auth or browser challenges are involved. Only use Playwright-owned persistent contexts when the user explicitly chooses that mode and login/challenge behavior is verified.
+- When a project override requires Playwright/CDP, prefer normal browser + CDP attach for Google/ChatGPT/Gemini auth or browser challenges. Only use Playwright-owned persistent contexts when the user explicitly chooses that mode and login/challenge behavior is verified.
 - Do not trust provider download/API response bodies as images until signatures verify. A `.png` extension is not evidence.
 - Do not count generation success until image bytes are saved and signature-verified.
 - Do not treat raw run state as a protected dataset. Freeze valuable outputs into a release with manifests and checksums.
 
 ## Workflow
 
-1. Identify provider and auth mode: ChatGPT, Gemini, or other web UI; CDP attach or explicit persistent-context mode.
-2. Verify the protected profile path and run-state path are separate.
-3. Launch or verify an already-open browser endpoint when using CDP.
-4. Attach Playwright to the browser and wait for an authenticated composer.
-5. Submit prompts through the UI unless a provider-specific API path is explicitly validated.
-6. Detect newly generated images using stable page evidence such as new `currentSrc`/`src`, not just a larger element count.
-7. Save displayed generated images through browser-side extraction.
-8. Verify file signatures and record hashes before marking success.
-9. Record failures by layer: text refusal, backend/image guardrail, stalled, browser/UI, network, or unknown.
-10. Freeze valuable runs into dataset releases before cleanup.
+1. Check project instructions for a browser override. Otherwise use
+   `cuddly-winner-browser`.
+2. Open the provider and check whether login is required. If needed, use the
+   approved managed capture flow, restart OpenCode, and confirm the restored
+   session in Obscura.
+3. When an override requires Playwright/CDP, verify that the protected profile
+   path and run-state path are separate, then launch or attach to the approved
+   browser endpoint.
+4. Submit prompts through the selected UI unless project instructions validate a
+   provider-specific API path.
+5. Detect newly generated images using stable page evidence such as new
+   `currentSrc`/`src`, not just a larger element count.
+6. Save displayed generated images through browser-side extraction.
+7. Verify file signatures and record hashes before marking success.
+8. Record failures by layer: text refusal, backend/image guardrail, stalled,
+   browser/UI, network, or unknown.
+9. Freeze valuable runs into dataset releases before cleanup.
 
 ## Image Capture
 

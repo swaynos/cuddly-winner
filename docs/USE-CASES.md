@@ -362,6 +362,20 @@ task-specific project-local agent for each planning-ready task.
   failures, and receiving user approval.
 - **Evidence:** S agent and rule contract; B resource-order scenario.
 
+### UC-RESOURCE-02: Browser actions start in Obscura
+
+- **Given:** a user requests an action that requires a browser.
+- **When:** the agent chooses a browser and determines whether the action needs
+  login.
+- **Then:** follow any project override; otherwise start in
+  `cuddly-winner-browser`, use the user's browser only when login is required,
+  and return to Obscura to perform and verify the action.
+- **Never:** open a login browser before establishing the need, finish the task
+  in that browser without an override, or wait through the full login timeout
+  after a known GUI or browser failure.
+- **Evidence:** S deployed rule and image-skill contracts; U browser resolution
+  and launch-failure tests; F managed deployment fixture.
+
 ### UC-RESOURCE-03: Image credentials are opt-in and provider-scoped
 
 - **Given:** a browser image-generation request.

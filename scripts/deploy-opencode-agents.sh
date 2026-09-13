@@ -618,12 +618,11 @@ install_browser_engine() {
   node "$BROWSER_ENGINE_HELPER" "${engine_args[@]}"
 }
 
-# The credential-substitution wrapper always installs as a copy at the config
-# root, alongside the engine it launches. It handles secrets, so it is
-# control-plane code and never a symlink, regardless of the selected mode.
-install_browser_wrapper() {
-  local src="$BROWSER_MCP_WRAPPER_SOURCE"
-  local dst="$BROWSER_MCP_WRAPPER_DEST"
+# Browser control files always install as copies at the config root. They handle
+# authentication state or secrets and must never become source-tree symlinks.
+install_browser_control_file() {
+  local src="$1"
+  local dst="$2"
   assert_config_destination "$dst"
   if entries_equal "$src" "$dst"; then
     printf 'Unchanged: %s\n' "$dst"
@@ -636,9 +635,9 @@ install_browser_wrapper() {
   printf 'Copied: %s -> %s\n' "$src" "$dst"
 }
 
-browser_wrapper_status() {
-  local src="$BROWSER_MCP_WRAPPER_SOURCE"
-  local dst="$BROWSER_MCP_WRAPPER_DEST"
+browser_control_file_status() {
+  local src="$1"
+  local dst="$2"
   assert_config_destination "$dst"
   if entries_equal "$src" "$dst"; then
     printf '  [current copy] %s\n' "$dst"
@@ -651,9 +650,9 @@ browser_wrapper_status() {
   fi
 }
 
-remove_browser_wrapper() {
-  local src="$BROWSER_MCP_WRAPPER_SOURCE"
-  local dst="$BROWSER_MCP_WRAPPER_DEST"
+remove_browser_control_file() {
+  local src="$1"
+  local dst="$2"
   assert_config_destination "$dst"
   if entries_equal "$src" "$dst"; then
     rm -f "$dst"
@@ -697,7 +696,8 @@ runtime_status() {
   if ! node "$BROWSER_ENGINE_HELPER" status --root "$CONFIG_DIR" --version "$BROWSER_ENGINE_VERSION"; then
     mark_status_drift
   fi
-  browser_wrapper_status
+  browser_control_file_status "$BROWSER_MCP_WRAPPER_SOURCE" "$BROWSER_MCP_WRAPPER_DEST"
+  browser_control_file_status "$BROWSER_SESSION_HELPER_SOURCE" "$BROWSER_SESSION_HELPER_DEST"
   assert_managed_destination "$RUNTIME_INTEGRITY_STATE"
   if ! node "$RUNTIME_INTEGRITY_HELPER" status --root "${CONFIG_DIR}/node_modules" --state "$RUNTIME_INTEGRITY_STATE"; then
     mark_status_drift
@@ -768,6 +768,8 @@ MCP_HELPER="${SCRIPT_DIR}/opencode-mcp-config.mjs"
 BROWSER_ENGINE_HELPER="${SCRIPT_DIR}/opencode-browser-engine.mjs"
 BROWSER_MCP_WRAPPER_SOURCE="${SCRIPT_DIR}/opencode-browser-mcp.mjs"
 BROWSER_MCP_WRAPPER_DEST="${CONFIG_DIR}/cuddly-winner-browser-mcp.mjs"
+BROWSER_SESSION_HELPER_SOURCE="${SCRIPT_DIR}/opencode-browser-session.mjs"
+BROWSER_SESSION_HELPER_DEST="${CONFIG_DIR}/cuddly-winner-browser-session.mjs"
 AGENT_STATE_HELPER="${SCRIPT_DIR}/opencode-agent-state.mjs"
 RUNTIME_INTEGRITY_HELPER="${SCRIPT_DIR}/opencode-runtime-integrity.mjs"
 
@@ -836,7 +838,8 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_feedback_locator
   assert_managed_destination "$RUNTIME_INTEGRITY_STATE"
   node "$RUNTIME_INTEGRITY_HELPER" remove --root "${CONFIG_DIR}/node_modules" --state "$RUNTIME_INTEGRITY_STATE"
-  remove_browser_wrapper
+  remove_browser_control_file "$BROWSER_MCP_WRAPPER_SOURCE" "$BROWSER_MCP_WRAPPER_DEST"
+  remove_browser_control_file "$BROWSER_SESSION_HELPER_SOURCE" "$BROWSER_SESSION_HELPER_DEST"
   node "$BROWSER_ENGINE_HELPER" remove --root "$CONFIG_DIR"
   exit 0
 fi
@@ -850,7 +853,8 @@ sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$S
 sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
 install_browser_engine "$CONFIG_DIR"
-install_browser_wrapper
+  install_browser_control_file "$BROWSER_MCP_WRAPPER_SOURCE" "$BROWSER_MCP_WRAPPER_DEST"
+  install_browser_control_file "$BROWSER_SESSION_HELPER_SOURCE" "$BROWSER_SESSION_HELPER_DEST"
 sync_discoverable_skill_backups
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"

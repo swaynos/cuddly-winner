@@ -4,6 +4,11 @@ Lessons from `comfyui-fiesta` ChatGPT image-generation runs.
 
 ## Proven Auth Pattern
 
+This section applies only when project instructions override the default
+`cuddly-winner-browser` workflow and require Playwright/CDP. Otherwise, begin in
+Obscura, check whether login is required, and use the managed capture helper only
+when it is.
+
 For Google/ChatGPT auth stability, the validated path was:
 
 1. Normal Chrome owns the protected profile.

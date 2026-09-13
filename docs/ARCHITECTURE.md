@@ -521,9 +521,12 @@ package installation. It also bootstraps the Obscura headless browser engine
 through `scripts/opencode-browser-engine.mjs`, which downloads the pinned engine
 release, verifies it against a checksum, and installs it under
 `cuddly-winner-browser/` in the configuration root. It also installs the
-credential-substitution wrapper `scripts/opencode-browser-mcp.mjs` as a copy at
-`<config_dir>/cuddly-winner-browser-mcp.mjs`, always a copy because it handles
-secrets; `status` reports it and `remove` deletes only an unmodified copy. It
+credential-substitution wrapper `scripts/opencode-browser-mcp.mjs` and login
+capture helper `scripts/opencode-browser-session.mjs` as copies at
+`<config_dir>/cuddly-winner-browser-mcp.mjs` and
+`<config_dir>/cuddly-winner-browser-session.mjs`. Both remain copies because they
+handle authentication state; `status` reports each one and `remove` deletes only
+an unmodified copy. It
 populates a clean sibling staging tree, compares it with the live runtime, backs
 up any
 noncurrent live tree intact, and moves the staged tree into place before using
@@ -581,8 +584,11 @@ injects the single captured User-Agent through Obscura's `--user-agent` flag
 session's origin it hydrates that session's cookies through a filtered-out
 `browser_set_storage_state` call. Import only: the export tools stay denied, so
 a session flows in but never back to the model.
-`scripts/opencode-browser-session.mjs` writes those sessions: it opens the
-user's installed Chrome, Edge, or Brave with a throwaway `--user-data-dir` and
+The installed `cuddly-winner-browser-session.mjs` writes those sessions. It finds
+Chrome, Edge, or Brave in standard macOS, Linux, or Windows locations, rejects a
+non-file or non-executable candidate, and checks for `DISPLAY` or
+`WAYLAND_DISPLAY` on Linux. It opens the selected browser with a throwaway
+`--user-data-dir` and
 `--remote-debugging-port`, waits for a human login (detected by a target cookie
 or a completion URL), reads cookies over the Chrome DevTools Protocol using
 Node's built-in `WebSocket` and `fetch` (no Playwright, no downloaded browser),
@@ -591,7 +597,14 @@ a mode-`0600` `<name>.json`. The name comes from `--name`; the file lives under
 `<config_dir>/cuddly-winner-sessions/`. The helper cannot attach to an existing
 browser or export an earlier Playwright login. After capture, the user must
 restart OpenCode because the wrapper does not reload sessions while running.
-Only cookies bridge: a probe proved Obscura restores
+Spawn errors and exits before the DevTools endpoint or login completion fail
+promptly instead of waiting for the capture timeout. Session destination
+symlinks fail before launch, and all session actions reject a symlinked sessions
+directory. HTTP fetches, target checks, and WebSocket calls use the remaining
+capture deadline. Cleanup sends `SIGTERM`, waits for a bounded period, then sends
+`SIGKILL` if needed; it removes the temporary profile only after the browser
+exits. A child-process `error` does not count as process exit after spawn. Only
+cookies bridge: a probe proved Obscura restores
 cookies through `browser_set_storage_state` and they survive navigation, but it
 discards `localStorage` on navigation, so `localStorage`/`IndexedDB` logins are
 out of scope. The MCP-config helper that owns the `cuddly-winner-browser` entry

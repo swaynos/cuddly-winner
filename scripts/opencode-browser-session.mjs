@@ -15,7 +15,9 @@
 // the session file, and the wrapper injects it through a filtered-out call.
 import { spawn } from "node:child_process";
 import {
+  accessSync,
   chmodSync,
+  constants,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -24,6 +26,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import net from "node:net";
@@ -35,6 +38,8 @@ const ACTIONS = new Set(["capture", "status", "remove"]);
 const NAME_PATTERN = /^[A-Za-z0-9_.-]+$/;
 const DEFAULT_TIMEOUT_MS = 180_000;
 const POLL_MS = 2_000;
+const STOP_TIMEOUT_MS = 1_000;
+const CDP_OPERATION_TIMEOUT_MS = 10_000;
 
 function die(message) {
   process.stderr.write(`Error: ${message}\n`);
@@ -84,6 +89,32 @@ function sessionsDir(configDir) {
 }
 function sessionPath(configDir, name) {
   return path.join(sessionsDir(configDir), `${name}.json`);
+}
+
+function lstatIfPresent(file) {
+  try {
+    return lstatSync(file);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+function assertSafeSessionsDirectory(configDir) {
+  const dir = sessionsDir(configDir);
+  const directoryEntry = lstatIfPresent(dir);
+  if (directoryEntry) {
+    if (directoryEntry.isSymbolicLink()) throw new Error(`sessions directory is a symlink: ${dir}`);
+    if (!directoryEntry.isDirectory()) throw new Error(`sessions path is not a directory: ${dir}`);
+  }
+  return dir;
+}
+
+function assertSafeSessionDestination(configDir, name) {
+  const dir = assertSafeSessionsDirectory(configDir);
+  const file = sessionPath(configDir, name);
+  if (lstatIfPresent(file)?.isSymbolicLink()) throw new Error(`session file is a symlink: ${file}`);
+  return { dir, file };
 }
 
 function canonicalOrigin(origin) {
@@ -136,27 +167,41 @@ function freePort() {
   });
 }
 
-async function cdpVersion(port) {
-  const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-  if (!response.ok) throw new Error(`CDP /json/version returned ${response.status}`);
-  return response.json();
+function cdpTimeout(deadline, label) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error(`${label} timed out`);
+  return Math.min(remaining, CDP_OPERATION_TIMEOUT_MS);
 }
 
-async function cdpTargets(port) {
-  const response = await fetch(`http://127.0.0.1:${port}/json`);
-  if (!response.ok) throw new Error(`CDP /json returned ${response.status}`);
-  return response.json();
+async function cdpJson(url, label, deadline) {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(cdpTimeout(deadline, label)) });
+    if (!response.ok) throw new Error(`${label} returned ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    if (Date.now() >= deadline || error.name === "TimeoutError") throw new Error(`${label} timed out`);
+    throw error;
+  }
+}
+
+async function cdpVersion(port, deadline) {
+  return cdpJson(`http://127.0.0.1:${port}/json/version`, "CDP /json/version", deadline);
+}
+
+async function cdpTargets(port, deadline) {
+  return cdpJson(`http://127.0.0.1:${port}/json`, "CDP /json", deadline);
 }
 
 // One request/response exchange on the browser-level CDP WebSocket.
-function cdpCall(wsUrl, method, params = {}) {
+function cdpCall(wsUrl, method, params, deadline) {
+  const timeoutMs = cdpTimeout(deadline, `CDP ${method}`);
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(wsUrl);
     const id = 1;
     const timer = setTimeout(() => {
       try { socket.close(); } catch { /* already closed */ }
       reject(new Error(`CDP ${method} timed out`));
-    }, 10_000);
+    }, timeoutMs);
     socket.addEventListener("open", () => socket.send(JSON.stringify({ id, method, params })));
     socket.addEventListener("message", (event) => {
       let message;
@@ -171,6 +216,10 @@ function cdpCall(wsUrl, method, params = {}) {
       clearTimeout(timer);
       reject(new Error(`CDP ${method}: websocket error`));
     });
+    socket.addEventListener("close", () => {
+      clearTimeout(timer);
+      reject(new Error(`CDP ${method}: websocket closed`));
+    });
   });
 }
 
@@ -178,28 +227,126 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForCdp(port, deadline) {
+function assertBrowserRunning(state, phase) {
+  if (state.spawnError) throw new Error(`browser failed to start before ${phase}: ${state.spawnError.message}`);
+  if (state.exited || state.closed) {
+    const detail = state.signal ? `signal ${state.signal}` : `exit code ${state.code ?? "unknown"}`;
+    throw new Error(`browser exited before ${phase} (${detail})`);
+  }
+  if (state.processError) throw new Error(`browser process error before ${phase}: ${state.processError.message}`);
+}
+
+function monitorBrowser(child) {
+  let notifyStopped;
+  const state = {
+    spawned: false,
+    spawnError: null,
+    processError: null,
+    exited: false,
+    closed: false,
+    code: null,
+    signal: null,
+    stopped: new Promise((resolve) => { notifyStopped = resolve; }),
+  };
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    notifyStopped();
+  };
+  child.once("spawn", () => { state.spawned = true; });
+  child.on("error", (error) => {
+    if (!state.spawned) {
+      state.spawnError = error;
+      stop();
+    } else {
+      state.processError = error;
+    }
+  });
+  child.once("exit", (code, signal) => {
+    state.exited = true;
+    state.code = code;
+    state.signal = signal;
+    stop();
+  });
+  child.once("close", () => {
+    state.closed = true;
+    stop();
+  });
+  return state;
+}
+
+async function runCdpOperation(operation, browserState, phase) {
+  assertBrowserRunning(browserState, phase);
+  try {
+    const result = await Promise.race([
+      operation,
+      browserState.stopped.then(() => {
+        assertBrowserRunning(browserState, phase);
+        throw new Error(`browser stopped before ${phase}`);
+      }),
+    ]);
+    assertBrowserRunning(browserState, phase);
+    return result;
+  } catch (error) {
+    if (!browserState.spawnError && !browserState.exited && !browserState.closed) {
+      await Promise.race([browserState.stopped, sleep(100)]);
+    }
+    assertBrowserRunning(browserState, phase);
+    throw error;
+  }
+}
+
+function waitForBrowserExit(child, state, timeoutMs) {
+  if ((!state.spawned && state.spawnError) || state.exited || state.closed) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      child.off("exit", finish);
+      child.off("close", finish);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      child.off("exit", finish);
+      child.off("close", finish);
+      resolve(state.exited || state.closed);
+    }, timeoutMs);
+    child.once("exit", finish);
+    child.once("close", finish);
+  });
+}
+
+async function stopBrowser(child, state) {
+  if ((!state.spawned && state.spawnError) || state.exited || state.closed) return true;
+  try { child.kill("SIGTERM"); } catch { /* Check state below. */ }
+  if (await waitForBrowserExit(child, state, STOP_TIMEOUT_MS)) return true;
+  try { child.kill("SIGKILL"); } catch { /* Check state below. */ }
+  return waitForBrowserExit(child, state, STOP_TIMEOUT_MS);
+}
+
+async function waitForCdp(port, deadline, browserState) {
   for (;;) {
+    assertBrowserRunning(browserState, "its DevTools endpoint started");
     try {
-      return await cdpVersion(port);
+      return await cdpVersion(port, deadline);
     } catch (error) {
-      if (Date.now() > deadline) throw new Error(`browser DevTools endpoint never came up: ${error.message}`);
-      await sleep(300);
+      assertBrowserRunning(browserState, "its DevTools endpoint started");
+      if (Date.now() >= deadline) throw new Error(`browser DevTools endpoint never came up: ${error.message}`);
+      await sleep(Math.min(300, deadline - Date.now()));
     }
   }
 }
 
 // Standard install locations per OS. A bare command name is resolved against
-// PATH; an absolute path is checked directly. Linux browsers are usually PATH
-// shims or symlinks, so existence — not file type — is what matters. Windows
-// roots are read from the environment at call time so the resolver stays
-// testable from any host.
+// PATH; an absolute path is checked directly. Symlinks may resolve to a regular
+// executable file. Windows roots are read from the environment at call time so
+// the resolver stays testable from any host.
 export function browserCandidates(platform) {
   if (platform === "darwin") {
     return {
-      chrome: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
-      edge: ["/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
-      brave: ["/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"],
+      chrome: ["google-chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
+      edge: ["microsoft-edge", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
+      brave: ["brave-browser", "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"],
     };
   }
   if (platform === "linux") {
@@ -236,14 +383,31 @@ export function browserCandidates(platform) {
   return null;
 }
 
-function existsExecutable(candidate, pathValue) {
-  if (candidate.includes("/") || candidate.includes("\\")) return existsSync(candidate) ? candidate : null;
-  for (const dir of (pathValue || "").split(path.delimiter)) {
-    if (!dir) continue;
-    const full = path.join(dir, candidate);
-    if (existsSync(full)) return full;
+function existingExecutable(candidate, pathValue, platform) {
+  const paths = candidate.includes("/") || candidate.includes("\\")
+    ? [candidate]
+    : (pathValue || "").split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, candidate));
+  for (const full of paths) {
+    try {
+      if (!statSync(full).isFile()) continue;
+      if (platform !== "win32") accessSync(full, constants.X_OK);
+      return full;
+    } catch {
+      // Try the next standard location.
+    }
   }
   return null;
+}
+
+export function graphicalSessionAvailable({ platform = process.platform, env = process.env } = {}) {
+  if (platform !== "linux") return true;
+  return Boolean(env.DISPLAY?.trim() || env.WAYLAND_DISPLAY?.trim());
+}
+
+function guiUnavailableMessage(platform = process.platform) {
+  return platform === "linux"
+    ? "no graphical session is available (DISPLAY and WAYLAND_DISPLAY are unset); cannot open the user's browser"
+    : "no graphical session is available; cannot open the user's browser";
 }
 
 // Pure, testable browser resolution across macOS, Linux, and Windows. Returns
@@ -255,7 +419,7 @@ export function findBrowser(choice, { platform = process.platform, pathValue = p
   if (choice && !table[choice]) return { error: `unsupported --browser: ${choice} (chrome, edge, or brave)` };
   for (const name of choice ? [choice] : ["chrome", "edge", "brave"]) {
     for (const candidate of table[name]) {
-      const binary = existsExecutable(candidate, pathValue);
+      const binary = existingExecutable(candidate, pathValue, platform);
       if (binary) return { name, binary };
     }
   }
@@ -283,6 +447,8 @@ async function capture(options) {
   if (options.completeUrl) parseHttps(options.completeUrl, "--complete-url");
   const timeoutMs = options.timeout ? Number(options.timeout) * 1000 : DEFAULT_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) die("--timeout must be a positive number of seconds");
+  const destination = assertSafeSessionDestination(options.configDir, options.name);
+  if (!graphicalSessionAvailable()) die(guiUnavailableMessage());
 
   const browser = resolveBrowser(options.browser);
   const port = await freePort();
@@ -297,45 +463,55 @@ async function capture(options) {
     loginUrl.toString(),
   ], { stdio: "ignore", detached: false });
 
+  const browserState = monitorBrowser(child);
+
   process.stderr.write(
     `A ${browser.name} window is opening at ${loginUrl.origin}. Log in there (MFA and SSO work — you are driving it).\n` +
       `Waiting up to ${Math.round(timeoutMs / 1000)}s for ${options.cookie ? `cookie "${options.cookie}"` : `URL ${options.completeUrl}`}.\n`,
   );
 
-  let exited = false;
-  child.on("exit", () => { exited = true; });
-
+  let successMessage = "";
   try {
     const deadline = Date.now() + timeoutMs;
-    const version = await waitForCdp(port, deadline);
+    const version = await waitForCdp(port, deadline, browserState);
     const wsUrl = version.webSocketDebuggerUrl;
     const userAgent = version["User-Agent"] || "";
     if (!wsUrl) throw new Error("DevTools endpoint did not expose a browser WebSocket URL");
 
     let done = false;
     while (!done) {
-      if (exited) throw new Error("browser was closed before login completion was detected");
-      if (Date.now() > deadline) throw new Error("timed out waiting for login completion");
+      assertBrowserRunning(browserState, "login completion was detected");
+      if (Date.now() >= deadline) throw new Error("timed out waiting for login completion");
       if (options.cookie) {
-        const { cookies } = await cdpCall(wsUrl, "Storage.getCookies");
+        const { cookies } = await runCdpOperation(
+          cdpCall(wsUrl, "Storage.getCookies", {}, deadline),
+          browserState,
+          "login completion was detected",
+        );
         done = cookies.some((cookie) => cookie.name === options.cookie && cookieMatchesOrigins(cookie.domain, originHosts));
       } else {
-        const targets = await cdpTargets(port);
+        const targets = await runCdpOperation(
+          cdpTargets(port, deadline),
+          browserState,
+          "login completion was detected",
+        );
         done = targets.some((target) => target.type === "page" && typeof target.url === "string" && target.url.startsWith(options.completeUrl));
       }
-      if (!done) await sleep(POLL_MS);
+      if (!done) await sleep(Math.min(POLL_MS, deadline - Date.now()));
     }
 
-    const { cookies } = await cdpCall(wsUrl, "Storage.getCookies");
+    const { cookies } = await runCdpOperation(
+      cdpCall(wsUrl, "Storage.getCookies", {}, deadline),
+      browserState,
+      "session cookies were captured",
+    );
     const kept = cookies
       .filter((cookie) => cookieMatchesOrigins(cookie.domain, originHosts))
       .map(toStorageStateCookie);
     if (kept.length === 0) throw new Error("no cookies matched the configured origins; nothing captured");
 
-    const dir = sessionsDir(options.configDir);
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const file = sessionPath(options.configDir, options.name);
-    if (existsSync(file) && lstatSync(file).isSymbolicLink()) die(`session file is a symlink: ${file}`);
+    mkdirSync(destination.dir, { recursive: true, mode: 0o700 });
+    assertSafeSessionDestination(options.configDir, options.name);
     const record = {
       schema_version: 1,
       name: options.name,
@@ -344,16 +520,21 @@ async function capture(options) {
       captured_at: new Date().toISOString(),
       state: { cookies: kept, origins: [] },
     };
-    writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
-    chmodSync(file, 0o600);
-    process.stdout.write(
+    writeFileSync(destination.file, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
+    chmodSync(destination.file, 0o600);
+    successMessage =
       `Captured session "${options.name}": ${kept.length} cookie${kept.length === 1 ? "" : "s"} for ${origins.join(", ")}. ` +
-        `Restart OpenCode; the wrapper hydrates it on first navigation. Cookie values were never printed.\n`,
-    );
+      `Restart OpenCode; the wrapper hydrates it on first navigation. Cookie values were never printed.\n`;
   } finally {
-    try { child.kill("SIGTERM"); } catch { /* already gone */ }
-    rmSync(profileDir, { recursive: true, force: true });
+    const stopped = await stopBrowser(child, browserState);
+    if (!stopped) throw new Error(`browser did not stop; temporary profile retained at ${profileDir}`);
+    try {
+      rmSync(profileDir, { recursive: true, force: true });
+    } catch (error) {
+      throw new Error(`temporary browser profile cleanup failed at ${profileDir}: ${error.message}`);
+    }
   }
+  process.stdout.write(successMessage);
 }
 
 function loadSession(file) {
@@ -371,7 +552,7 @@ function loadSession(file) {
 }
 
 function status(options) {
-  const dir = sessionsDir(options.configDir);
+  const dir = assertSafeSessionsDirectory(options.configDir);
   const names = options.name
     ? [options.name]
     : (existsSync(dir) ? readdirSync(dir).filter((entry) => entry.endsWith(".json")).map((entry) => entry.slice(0, -5)).sort() : []);
@@ -381,7 +562,7 @@ function status(options) {
   }
   for (const name of names) {
     const file = sessionPath(options.configDir, name);
-    if (!existsSync(file)) {
+    if (!lstatIfPresent(file)) {
       process.stdout.write(`[missing] ${name}\n`);
       continue;
     }
@@ -394,8 +575,8 @@ function status(options) {
 
 function remove(options) {
   if (!options.name) die("remove requires --name");
-  const file = sessionPath(options.configDir, options.name);
-  if (!existsSync(file)) {
+  const { file } = assertSafeSessionDestination(options.configDir, options.name);
+  if (!lstatIfPresent(file)) {
     process.stdout.write(`No captured session "${options.name}".\n`);
     return;
   }
@@ -407,8 +588,12 @@ function remove(options) {
 // Only run the CLI when invoked directly, so a test can import findBrowser and
 // exercise Linux/Windows resolution from any host without triggering parseArgs.
 if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {
-  const options = parseArgs(process.argv.slice(2));
-  if (options.action === "capture") await capture(options);
-  else if (options.action === "status") status(options);
-  else remove(options);
+  try {
+    const options = parseArgs(process.argv.slice(2));
+    if (options.action === "capture") await capture(options);
+    else if (options.action === "status") status(options);
+    else remove(options);
+  } catch (error) {
+    die(error instanceof Error ? error.message : String(error));
+  }
 }
