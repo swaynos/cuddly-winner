@@ -170,7 +170,7 @@ test("cold reconstruction uses timestamps and ignores initial native selections"
   await assert.rejects(mutate(reloaded, "session", path.join(root, "README.md")), /outside its declared edit paths/);
 }));
 
-test("a cold Ask to generated session remains read-only using API array order", async () => fixture(async root => {
+test("a cold Ask turn before a generated session applies the generated boundary", async () => fixture(async root => {
   await publish(root, "fix-widget", ["src/widget.ts"], true);
   const historyClient = {
     session: {
@@ -183,11 +183,11 @@ test("a cold Ask to generated session remains read-only using API array order", 
   };
   const reloaded = await ImmutabilityGuard({ directory: root, worktree: root, client: historyClient });
 
-  await assert.rejects(mutate(reloaded, "session", path.join(root, "src", "widget.ts")), /read-only/);
-  await assert.rejects(
-    reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } }),
-    /read-only/,
-  );
+  // Ask no longer pins the session, so the generated identity owns it: its
+  // manifest scope applies rather than Ask's read-only lock.
+  await mutate(reloaded, "session", path.join(root, "src", "widget.ts"));
+  await reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
+  await assert.rejects(mutate(reloaded, "session", path.join(root, "README.md")), /outside its declared edit paths/);
 }));
 
 test("a cold generated-A to generated-B session keeps generated-A boundaries", async () => fixture(async root => {
@@ -249,18 +249,45 @@ test("managed session metadata fails closed when history is unavailable", async 
   );
 }));
 
-test("an Ask session stays read-only after switching to Build", async () => fixture(async root => {
+test("an Ask turn no longer locks a session that switches to Build", async () => fixture(async root => {
   const agents = { session: "ask" };
   const instance = await guard(root, agents);
+  // While Ask is the current selection the session is read-only this turn.
   await assert.rejects(mutate(instance, "session", path.join(root, "README.md")), /read-only/);
 
   agents.session = "build";
   await instance["chat.params"]({ sessionID: "session", agent: "build" });
 
-  await assert.rejects(mutate(instance, "session", path.join(root, "README.md")), /read-only/);
+  // Ask did not pin the session, so switching to Build restores write and Bash.
+  await mutate(instance, "session", path.join(root, "README.md"));
+  await instance["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
+}));
+
+test("a plan-ask-plan-build session with no package can write and run Bash", async () => fixture(async root => {
+  const historyClient = {
+    session: {
+      get: async () => ({ data: { id: "session", agent: "build" } }),
+      messages: async () => ({ data: [
+        { info: { role: "user", agent: "plan", time: { created: 10 } } },
+        { info: { role: "user", agent: "ask", time: { created: 20 } } },
+        { info: { role: "user", agent: "plan", time: { created: 30 } } },
+        { info: { role: "user", agent: "build", time: { created: 40 } } },
+      ] }),
+    },
+  };
+  const reloaded = await ImmutabilityGuard({ directory: root, worktree: root, client: historyClient });
+
+  // The single Ask turn does not pin the session; the current Build agent is unmanaged.
+  await mutate(reloaded, "session", path.join(root, "README.md"));
+  await reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
+}));
+
+test("a currently read-only parent still denies a Build child", async () => fixture(async root => {
+  const instance = await guard(root, { parent: "ask", child: "build" }, { child: "parent" });
+  await assert.rejects(mutate(instance, "child", path.join(root, "README.md")), /@ask is read-only/);
   await assert.rejects(
-    instance["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } }),
-    /read-only/,
+    instance["tool.execute.before"]({ tool: "bash", sessionID: "child", callID: "shell" }, { args: { command: "true", cwd: root } }),
+    /@ask is read-only/,
   );
 }));
 

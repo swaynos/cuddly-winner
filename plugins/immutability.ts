@@ -145,9 +145,19 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
   }
   async function isManaged(agent: string): Promise<boolean> { return MANAGED_AGENTS.has(agent) || (await generatedPolicy(agent)).registered; }
 
+  // A pinning identity owns a session for its lifetime, so an early selection
+  // survives every later switch. Only Prometheus and registered generated
+  // agents pin: their boundary is a real workflow gate (Prometheus publishes and
+  // hands off to a fresh session; a generated agent must stay inside its
+  // manifest). Ask, Grounder, and Reviewer are read-only consultation modes;
+  // selecting one then returning to Build is ordinary work, not escalation, so
+  // they are enforced per-turn (see isManaged in tool.execute.before) but never
+  // pin the session.
+  async function isPinning(agent: string): Promise<boolean> { return agent === "prometheus" || (await generatedPolicy(agent)).registered; }
+
   async function stickyManagedAgent(sessionID: string, candidate?: string): Promise<string | undefined> {
     const cached = sessionAgents.get(sessionID);
-    if (cached || !candidate || !await isManaged(candidate)) return cached;
+    if (cached || !candidate || !await isPinning(candidate)) return cached;
     const resolved = sessionAgents.get(sessionID);
     if (resolved) return resolved;
     sessionAgents.set(sessionID, candidate);
@@ -159,7 +169,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       const history = userAgentSelections(await client?.session?.messages?.({ path: { id: sessionID } }));
       if (!history.valid) return history;
       for (const selection of history.selections) {
-        if (await isManaged(selection.agent)) return { valid: true, agent: selection.agent };
+        if (await isPinning(selection.agent)) return { valid: true, agent: selection.agent };
       }
       return { valid: true };
     } catch {
@@ -193,7 +203,11 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
           invalidAncestry.add(sessionID);
           return { valid: false };
         }
-        if (await isManaged(parent.agent)) {
+        // A pinning parent locks a descendant for its lifetime. A currently
+        // read-only parent (Ask/Grounder/Reviewer) does not pin itself, but it
+        // must still constrain the descendant this turn, or an Ask parent could
+        // delegate a writing child and widen its own boundary.
+        if (await isPinning(parent.agent) || READ_ONLY_AGENTS.has(parent.agent)) {
           sessionAgents.set(sessionID, parent.agent);
           return { valid: true, agent: parent.agent };
         }

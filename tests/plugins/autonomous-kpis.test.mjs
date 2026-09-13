@@ -146,7 +146,7 @@ test("KPI reconstruction uses timestamps and ignores initial native selections",
   assert.equal(params.maxOutputTokens, 10);
 }));
 
-test("a cold Ask to generated session keeps generated KPIs inactive", async () => fixture(async root => {
+test("a cold Ask turn before a generated session activates its KPIs", async () => fixture(async root => {
   await publish(root);
   const historyClient = {
     session: {
@@ -162,10 +162,11 @@ test("a cold Ask to generated session keeps generated KPIs inactive", async () =
 
   await reloaded["chat.params"]({ sessionID: "root", agent: "fix-widget" }, params);
 
-  assert.equal(params.maxOutputTokens, 100);
+  // Ask no longer pins the root, so the generated agent claims it and its KPIs activate.
+  assert.equal(params.maxOutputTokens, 10);
   const output = { system: [] };
   await reloaded["experimental.chat.system.transform"]({ sessionID: "root" }, output);
-  assert.deepEqual(output.system, []);
+  assert.equal(output.system.length, 1);
 }));
 
 test("a cold generated-A to generated-B session keeps generated-A KPIs", async () => fixture(async root => {

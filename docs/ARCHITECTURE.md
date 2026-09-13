@@ -54,9 +54,16 @@ shipped identities keep their shipped policy. A registry cannot hijack either
 class. `plugins/autonomous-kpis.ts` activates a generated run-KPI policy only
 after full package validation.
 
-The plugin resolves parent sessions recursively. When it finds a managed parent,
-the child inherits that parent's identity even if the child names another agent.
-If no managed identity appears in a fully resolved ancestry, the plugin returns
+The plugin resolves parent sessions recursively. When it finds a pinning parent
+(Prometheus or a registered generated agent) or a currently read-only parent
+(Ask, Grounder, Reviewer), the child inherits that parent's identity even if the
+child names another agent; this stops delegation from widening a boundary. A
+session's own identity splits the same way. Prometheus and generated agents pin:
+the first such selection owns the session for its lifetime, so a later switch
+cannot shed it. Ask, Grounder, and Reviewer do not pin; they are enforced only
+for the turn in which they are selected, so returning to Plan or Build afterward
+resumes ordinary write and Bash access. If no pinning identity appears in a fully
+resolved ancestry and the current selection is unmanaged, the plugin returns
 without inspecting the call. A cycle or failed, missing, mismatched, or malformed
 session lookup makes ancestry unresolved; mutation and Bash fail closed instead
 of falling back to a descendant identity, and the KPI plugin stays inactive.

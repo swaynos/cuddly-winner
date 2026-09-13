@@ -103,17 +103,27 @@ explicitly selects Prometheus.
 ## Managed Agents
 
 A delegated session inherits the topmost managed identity in its ancestry. This
-prevents delegation from widening a managed agent's edit or Bash boundary. A root
-or session keeps its first effective managed identity and matching KPI policy for
-its lifetime; an initially unmanaged session adopts the first managed identity
-explicitly selected later. A cycle or a failed, missing, mismatched, or malformed
-session lookup makes ancestry unresolved, denies mutation and Bash, and leaves run
-KPIs inactive; it does not fall back to a descendant identity or unmanaged
-policy.
-After plugin reload, the plugins reconstruct the first managed root identity
+prevents delegation from widening a managed agent's edit or Bash boundary.
+
+Managed identities split into two classes by how long they own a session.
+Prometheus and registered generated agents are pinning: a root or session keeps
+its first pinning identity and matching KPI policy for its lifetime, and an
+initially unpinned session adopts the first pinning identity explicitly selected
+later. Their boundary is a workflow gate, so an early selection must survive
+every later switch. Ask, Grounder, and Reviewer are read-only consultation modes
+and do not pin. They are enforced for the turn in which they are selected;
+selecting one and then returning to Plan or Build is ordinary work, not
+escalation, and does not lock the session. A currently selected read-only parent
+still constrains its descendants for that turn, so an Ask parent cannot delegate
+a writing child.
+
+A cycle or a failed, missing, mismatched, or malformed session lookup makes
+ancestry unresolved, denies mutation and Bash, and leaves run KPIs inactive; it
+does not fall back to a descendant identity or unmanaged policy.
+After plugin reload, the plugins reconstruct the first pinning root identity
 from user-message timestamps, falling back to API array order when complete
 timestamps are unavailable. Current session metadata may establish an identity
-only when valid history contains no managed selection; unavailable or malformed
+only when valid history contains no pinning selection; unavailable or malformed
 history fails closed.
 
 ### Ask

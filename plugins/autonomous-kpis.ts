@@ -2,8 +2,6 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { isRegisteredGeneratedAgent, validateTaskPackage } from "../tools/validate_scaffold.ts";
 
-const SHIPPED_AGENTS = new Set(["ask", "prometheus", "reviewer", "grounder"]);
-
 export type RunKpiPolicy = {
   unattendedRuntimeSeconds: number;
   targetTokensPerActiveMinute: number;
@@ -165,8 +163,12 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
   const policies = new Map<string, Promise<RunKpiPolicy | undefined>>();
   const messages = new Map<string, Map<string, Usage>>();
 
-  function isManaged(agent: string): Promise<boolean> {
-    if (SHIPPED_AGENTS.has(agent)) return Promise.resolve(true);
+  // Only Prometheus and registered generated agents pin a KPI root. Ask,
+  // Grounder, and Reviewer carry no run_kpis policy and must not claim the root,
+  // or an early read-only turn would block a later generated agent's KPIs from
+  // ever activating. This mirrors isPinning in plugins/immutability.ts.
+  function isPinning(agent: string): Promise<boolean> {
+    if (agent === "prometheus") return Promise.resolve(true);
     const cached = managedAgents.get(agent);
     if (cached) return cached;
     const pending = isRegisteredGeneratedAgent(rootDirectory, agent).catch(() => false);
@@ -176,7 +178,7 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
 
   async function stickyManagedAgent(root: string, candidate?: string): Promise<string | undefined> {
     const cached = rootAgents.get(root);
-    if (cached || !candidate || !await isManaged(candidate)) return cached;
+    if (cached || !candidate || !await isPinning(candidate)) return cached;
     const resolved = rootAgents.get(root);
     if (resolved) return resolved;
     rootAgents.set(root, candidate);
