@@ -565,7 +565,16 @@ value. `scripts/opencode-browser-secrets.mjs` manages the mode-`0600`
 schema-version-1 registry at `<config_dir>/cuddly-winner-secrets.json` that maps
 each short name to its secrets file and allowed https origins.
 
-The wrapper also bridges human-completed logins into headless Obscura. On
+Browser actions use the managed Obscura tools by default. Project specifications
+may override that choice. The agent first checks in Obscura whether the action
+needs login. Only then, if needed, does it use the capture helper's visible
+browser for human login. After capture, the agent resumes the task in Obscura.
+If login is needed but no browser or GUI is available, or session reuse fails,
+the agent follows the user or project's fallback or stop instructions. See
+[Browser Actions and Login](RESOURCE-SELECTION.md#browser-actions-and-login) for
+the steps and completion checks.
+
+The wrapper restores human-completed logins in headless Obscura. On
 startup it reads captured sessions from `<config_dir>/cuddly-winner-sessions/`,
 injects the single captured User-Agent through Obscura's `--user-agent` flag
 (none if two captures disagree), and the first time the agent navigates to a
@@ -578,7 +587,11 @@ user's installed Chrome, Edge, or Brave with a throwaway `--user-data-dir` and
 or a completion URL), reads cookies over the Chrome DevTools Protocol using
 Node's built-in `WebSocket` and `fetch` (no Playwright, no downloaded browser),
 and writes an Obscura-shaped `{cookies, origins:[]}` state plus the User-Agent to
-a mode-`0600` `<name>.json`. Only cookies bridge: a probe proved Obscura restores
+a mode-`0600` `<name>.json`. The name comes from `--name`; the file lives under
+`<config_dir>/cuddly-winner-sessions/`. The helper cannot attach to an existing
+browser or export an earlier Playwright login. After capture, the user must
+restart OpenCode because the wrapper does not reload sessions while running.
+Only cookies bridge: a probe proved Obscura restores
 cookies through `browser_set_storage_state` and they survive navigation, but it
 discards `localStorage` on navigation, so `localStorage`/`IndexedDB` logins are
 out of scope. The MCP-config helper that owns the `cuddly-winner-browser` entry

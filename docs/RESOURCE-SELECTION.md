@@ -14,6 +14,11 @@ the desktop.
 
 ## Browser Rules
 
+Use `cuddly-winner-browser` for actions that require a browser, unless the
+project's specifications require another tool or approach. Check for a project
+override first. In Obscura, check whether the action needs login before opening
+a browser for the user.
+
 Before browser automation, state why lower-impact sources failed and name the
 target. Before a visible browser, tell the user it will open, why headless mode
 will not work, and wait for approval. A browser that has unknown configured mode
@@ -62,32 +67,75 @@ scripts/opencode-browser-secrets.mjs add --config-dir <config-root> --name A
 `status` and drop one with `remove --name A`; neither the registry nor this CLI
 ever prints a secret value.
 
-## Session Bridge
+## Browser Actions and Login
 
-A login that needs MFA, SSO, or a CAPTCHA cannot be driven headlessly. For those,
-capture the session once in a visible browser and reuse it headlessly.
-`scripts/opencode-browser-session.mjs` opens the browser you already have
-(Chrome, Edge, or Brave — no Playwright, no downloaded engine), lets a human log
-in in that window, then reads the resulting cookies over the Chrome DevTools
-Protocol using Node's built-in `WebSocket`. It writes an Obscura-shaped storage
-state plus the browser User-Agent to a mode-`0600` file at
-`<config-root>/cuddly-winner-sessions/<name>.json`. Capture with `node
-scripts/opencode-browser-session.mjs capture --config-dir <config-root> --name A
---url <https login page> --origin https://example.com [--origin ...]
-(--cookie <name> | --complete-url <https-prefix>) [--browser chrome|edge|brave]`.
-Inspect with `status` and drop with `remove --name A`; no cookie value is ever
-printed.
+Start with the requested action, not a login window. For example, if the user
+asks for an image from ChatGPT, first open ChatGPT in `cuddly-winner-browser`
+and check whether image generation requires login. The user may already be
+signed in. A public task on another site may not need an account at all.
 
-The credential wrapper hydrates a captured session into Obscura the first time
-the agent navigates to one of its origins, through a filtered-out
-`browser_set_storage_state` call, so the model never sees the cookies and never
-learns a session was injected. Import only: the export tools stay denied, so a
-session flows in but never back out. A probe confirmed Obscura restores cookies
-this way and they survive navigation, but it discards `localStorage` on
-navigation — so a login that lives in `localStorage` or `IndexedDB` cannot be
-bridged and is out of scope. Only cookie sessions are supported. One Obscura
-process serves every site, so it carries a single User-Agent taken from the
-captured sessions; if two captures disagree, none is injected.
+1. Check the project's specifications for a browser-tool override. Follow it if
+   present; otherwise use `cuddly-winner-browser`.
+2. Open the target in Obscura and check whether the requested action needs login.
+   If it works without login or the session is already signed in, perform the
+   action and verify the result.
+3. If login is needed, check whether a browser and GUI are available. Explain why
+   a login window is needed and obtain the user's approval. Run
+   `scripts/opencode-browser-session.mjs capture` and ask the user to log in in
+   the window it opens.
+4. Wait for capture to succeed. Ask the user to restart OpenCode so the wrapper
+   loads the saved session. Reopen the site through Obscura and confirm that it
+   is signed in.
+5. Complete the task through Obscura and check the result. For an image, save the
+   generated file and verify its signature before reporting success.
+
+If login is required but the user's browser cannot open, including on a machine
+with no GUI, report the blocker. Follow the user or project instructions for
+what comes next: try an allowed alternative tool or approach, or stop if
+directed. Use the same rule when login, capture, or session reuse fails.
+
+In this workflow, the visible browser is for login only. Do not use it to finish
+the task unless a project override requires that approach. The helper cannot
+capture an existing Playwright login; if the wrong browser was used, explain the
+mistake before asking for another login.
+
+### Capture Command
+
+Use the active configuration directory for `<config-root>` and choose a session
+name for `<name>`. The name determines the filename:
+`<config-root>/cuddly-winner-sessions/<name>.json`. `chatgpt.json` is an example,
+not a required filename.
+
+```sh
+node scripts/opencode-browser-session.mjs capture \
+  --config-dir <config-root> \
+  --name <name> \
+  --url <https-login-url> \
+  --origin <https-origin> \
+  --cookie <login-cookie-name>
+```
+
+Repeat `--origin` for each required origin. Instead of `--cookie`, use
+`--complete-url <https-prefix>` when a distinct post-login URL proves completion.
+Do not use a URL that also matches the signed-out page. The optional `--browser`
+accepts `chrome`, `edge`, or `brave`.
+
+Use `status --config-dir <config-root> --name <name>` to check capture metadata
+without reading cookie values. Use `remove` with the same arguments to delete a
+saved session when the user requests it.
+
+### Limits
+
+The helper captures cookies from the browser it opens, through the Chrome
+DevTools Protocol. It does not export an existing browser session. Only
+cookie-based logins work: imported `localStorage` does not survive navigation in
+Obscura, and the helper does not capture `IndexedDB`.
+
+The wrapper reads session files when it starts. It restores cookies on the first
+navigation to a saved origin through an internal `browser_set_storage_state`
+call. Cookie values never enter the model's context. One Obscura process has one
+User-Agent; if saved sessions disagree, the wrapper does not set a captured
+User-Agent.
 
 Use the normal installer for the managed profile. To inspect configuration without
 starting a browser, run `node scripts/opencode-mcp-config.mjs diagnose --config
@@ -97,6 +145,10 @@ image provider, run `node scripts/opencode-browser-credentials.mjs status
 --config <config-root>/opencode.json --provider chatgpt`.
 
 ## Image Credentials
+
+The provider-profile settings below do not change the browser-selection rule.
+Use Obscura by default and check whether login is needed first. A project
+specification may require another tool or approach.
 
 `ephemeral` is the default: a headless isolated context retains no credentials
 after it closes. `persistent` is opt-in and uses a dedicated provider profile

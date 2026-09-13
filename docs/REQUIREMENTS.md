@@ -404,20 +404,55 @@ until the next navigation. `opencode-browser-secrets.mjs` manages a mode-`0600`
 schema-version-1 registry at `<config_dir>/cuddly-winner-secrets.json` mapping
 each short name to its secrets file and allowed https origins.
 
-Because Obscura has no visible window it cannot itself complete an MFA, SSO, or
-CAPTCHA login. `opencode-browser-session.mjs` bridges that gap: it opens the
-user's own Chrome, Edge, or Brave with a throwaway profile and a DevTools
-debugging port, a human logs in in that visible window, and it reads the
-resulting cookies over the Chrome DevTools Protocol with Node's built-in
-`WebSocket` and `fetch` (no Playwright, no downloaded browser). It writes an
-Obscura-shaped storage state plus the capture browser's User-Agent to a
-mode-`0600` `<config_dir>/cuddly-winner-sessions/<name>.json`. On startup the
-wrapper injects the captured User-Agent through Obscura's `--user-agent` flag
-and, the first time the agent navigates to a session origin, hydrates that
-session's cookies through a filtered-out `browser_set_storage_state` call, so
-the model never sees them. Only cookie-based logins bridge: Obscura restores
-cookies and they survive navigation, but it discards `localStorage` on
-navigation, so `localStorage`- or `IndexedDB`-token logins remain out of scope.
+### Browser Actions and Login
+
+Use `cuddly-winner-browser`, which runs Obscura, when a user requests an action
+that requires a browser. A project specification that requires another tool or
+approach takes precedence. Check for that override before choosing the tool.
+
+1. Unless a project override applies, open the target in `cuddly-winner-browser`.
+   Check whether the requested action needs login. A login link alone does not
+   mean login is required.
+2. If the action works without login, or the browser is already signed in,
+   perform it through Obscura and verify the result.
+3. Only when login is needed, check whether the user's browser can open. With
+   the user's approval, run `opencode-browser-session.mjs capture`. The helper
+   opens an installed Chrome, Edge, or Brave browser with a fresh profile for
+   the user to log in.
+4. After capture succeeds, ask the user to restart OpenCode. The wrapper reads
+   saved sessions at startup. Reopen the site through Obscura and confirm that
+   login worked.
+5. Perform the requested action through Obscura and verify the result. For image
+   generation, save the image and verify its file signature before reporting
+   success.
+
+If login is required but no browser or GUI is available, report that the browser
+attempt is blocked. Follow the user or project instructions: use an allowed
+alternative tool or approach, or stop if directed. Apply the same rule if login,
+capture, or session reuse fails. Do not claim that the requested action succeeded
+just because login succeeded.
+
+The visible browser handles login only in this workflow. It does not become the
+task browser unless a project override requires that approach.
+
+The capture helper saves the site's cookies and the browser's User-Agent in
+`<config-dir>/cuddly-winner-sessions/<name>.json`, with owner-only read and write
+permissions (`0600`). Cookie values must not appear in agent output or logs.
+On the first navigation to a saved origin, the wrapper restores its cookies.
+
+`<config-dir>` is the active OpenCode configuration directory. `<name>` is the
+name passed to the capture helper, not a fixed provider filename. For example,
+`--name chatgpt` produces `chatgpt.json`.
+
+The capture helper starts its own login browser. It does not attach to an
+existing browser or export an earlier Playwright login. If the agent opened the
+wrong browser, explain the mistake. If login is still needed and the browser
+route remains appropriate, ask the user to log in through the helper.
+
+Only cookie-based sessions are supported. Obscura does not preserve imported
+`localStorage` across navigation, and the helper does not capture `IndexedDB`.
+The wrapper passes the captured User-Agent to Obscura through `--user-agent`.
+If saved sessions have different User-Agent values, it passes none.
 
 ## Deployment
 
