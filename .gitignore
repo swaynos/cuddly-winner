@@ -27,6 +27,8 @@ ENV/
 # Environment files
 .env
 .envrc
+# Local secrets files referenced by the browser credential registry.
+*.secret.env
 
 # Testing / coverage / static analysis caches
 .pytest_cache/

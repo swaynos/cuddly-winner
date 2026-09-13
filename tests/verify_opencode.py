@@ -204,7 +204,12 @@ def _managed_profile_file_mismatches(config: pathlib.Path) -> list[str]:
     engine_binary = "obscura.exe" if os.name == "nt" else "obscura"
     expected_mcp = {
         "type": "local",
-        "command": [str(config / "cuddly-winner-browser" / engine_binary), "mcp"],
+        "command": [
+            "node",
+            str(config / "cuddly-winner-browser-mcp.mjs"),
+            str(config / "cuddly-winner-browser" / engine_binary),
+            "mcp",
+        ],
         "environment": {"HEADLESS": "true"},
         "enabled": True,
     }

@@ -520,8 +520,12 @@ copies. The installer deploys SDK version `1.17.15` and Playwright version
 package installation. It also bootstraps the Obscura headless browser engine
 through `scripts/opencode-browser-engine.mjs`, which downloads the pinned engine
 release, verifies it against a checksum, and installs it under
-`cuddly-winner-browser/` in the configuration root. It populates
-a clean sibling staging tree, compares it with the live runtime, backs up any
+`cuddly-winner-browser/` in the configuration root. It also installs the
+credential-substitution wrapper `scripts/opencode-browser-mcp.mjs` as a copy at
+`<config_dir>/cuddly-winner-browser-mcp.mjs`, always a copy because it handles
+secrets; `status` reports it and `remove` deletes only an unmodified copy. It
+populates a clean sibling staging tree, compares it with the live runtime, backs
+up any
 noncurrent live tree intact, and moves the staged tree into place before using
 `scripts/opencode-runtime-integrity.mjs` to recursively hash the whole installed
 `node_modules` dependency tree and store its SHA-256 plus entry, file, and symlink
@@ -546,8 +550,39 @@ The installer writes each rule to `<config_dir>/rules/` and uses
 `scripts/opencode-instructions.mjs` to add or remove its absolute path in the
 `instructions` array of `<config_dir>/opencode.json`. It changes no other config
 key. A separate helper owns one namespaced browser MCP entry, `cuddly-winner-browser`,
-which runs the headless Obscura engine binary and carries a `HEADLESS` environment
-marker. The same helper prunes the retired `cuddly-winner-notebooklm` and
+whose command is `node <config_dir>/cuddly-winner-browser-mcp.mjs
+<engine-binary> mcp`: the credential wrapper launches the headless Obscura engine
+binary, and the entry carries a `HEADLESS` environment marker. The wrapper
+resolves `${name:KEY}` placeholders in a fixed set of tool-argument slots
+(`browser_fill.value`, `browser_type.text`, `browser_fill_form.fields[].value`,
+`browser_set_cookie.value`) from a local `KEY=VALUE` file, checks the current
+page origin against the origins registered for that name before releasing a
+secret, denies the session-material tools (`browser_get_cookies`,
+`browser_storage_state`, `browser_network_requests`), and blocks the DOM-reading
+tools (`browser_evaluate`, `browser_get_attribute`, `browser_extract`) from just
+after a substitution until the next navigation. The model never sees a resolved
+value. `scripts/opencode-browser-secrets.mjs` manages the mode-`0600`
+schema-version-1 registry at `<config_dir>/cuddly-winner-secrets.json` that maps
+each short name to its secrets file and allowed https origins.
+
+The wrapper also bridges human-completed logins into headless Obscura. On
+startup it reads captured sessions from `<config_dir>/cuddly-winner-sessions/`,
+injects the single captured User-Agent through Obscura's `--user-agent` flag
+(none if two captures disagree), and the first time the agent navigates to a
+session's origin it hydrates that session's cookies through a filtered-out
+`browser_set_storage_state` call. Import only: the export tools stay denied, so
+a session flows in but never back to the model.
+`scripts/opencode-browser-session.mjs` writes those sessions: it opens the
+user's installed Chrome, Edge, or Brave with a throwaway `--user-data-dir` and
+`--remote-debugging-port`, waits for a human login (detected by a target cookie
+or a completion URL), reads cookies over the Chrome DevTools Protocol using
+Node's built-in `WebSocket` and `fetch` (no Playwright, no downloaded browser),
+and writes an Obscura-shaped `{cookies, origins:[]}` state plus the User-Agent to
+a mode-`0600` `<name>.json`. Only cookies bridge: a probe proved Obscura restores
+cookies through `browser_set_storage_state` and they survive navigation, but it
+discards `localStorage` on navigation, so `localStorage`/`IndexedDB` logins are
+out of scope. The MCP-config helper that owns the `cuddly-winner-browser` entry
+also prunes the retired `cuddly-winner-notebooklm` and
 `cuddly-winner-research-browser` names by name, and the exact retired `notebooklm`
 shape in legacy `config.json`; other shapes survive.
 `scripts/opencode-browser-engine.mjs` bootstraps the engine: it downloads the

@@ -27,7 +27,12 @@ test("managed MCP install preserves user entries and installs the headless engin
   assert.deepEqual(result.mcp["user-browser"], { type: "local", command: ["example"] });
   const entry = result.mcp["cuddly-winner-browser"];
   assert.equal(entry.command.at(-1), "mcp");
-  assert.equal(entry.command[0], path.join(root, "cuddly-winner-browser", "obscura"));
+  assert.deepEqual(entry.command, [
+    "node",
+    path.join(root, "cuddly-winner-browser-mcp.mjs"),
+    path.join(root, "cuddly-winner-browser", "obscura"),
+    "mcp",
+  ]);
   assert.deepEqual(entry.environment, { HEADLESS: "true" });
   const second = await invoke(mcp, ["install", "--config", file]);
   assert.match(second.stdout, /Unchanged/);

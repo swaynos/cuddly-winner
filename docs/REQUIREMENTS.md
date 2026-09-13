@@ -385,6 +385,40 @@ defines allowed HTTPS origins and login completion outside project repositories.
 The tool returns an opaque handle, accepts only `GET` and `HEAD`, and requires
 explicit approval before opening a visible browser.
 
+### Browser Credentials
+
+The managed `cuddly-winner-browser` entry launches Obscura through the
+credential-substitution wrapper `opencode-browser-mcp.mjs`, so an agent can log
+into a site with Obscura's own tools without a secret ever entering the model's
+context. The wrapper replaces an argument that is exactly `${name:KEY}` with a
+value read from a local `KEY=VALUE` file, and only in these argument slots:
+`browser_fill.value`, `browser_type.text`, `browser_fill_form.fields[].value`,
+and `browser_set_cookie.value`. A placeholder in any other slot is rejected. Any
+key in a registered file may be released; there is no per-key allowlist. Before
+releasing a secret the wrapper checks the current page origin against the
+origins registered for that name, so a prompt-injected page cannot redirect a
+secret. It denies `browser_get_cookies`, `browser_storage_state`, and
+`browser_network_requests`, and blocks `browser_evaluate`,
+`browser_get_attribute`, and `browser_extract` from just after a substitution
+until the next navigation. `opencode-browser-secrets.mjs` manages a mode-`0600`
+schema-version-1 registry at `<config_dir>/cuddly-winner-secrets.json` mapping
+each short name to its secrets file and allowed https origins.
+
+Because Obscura has no visible window it cannot itself complete an MFA, SSO, or
+CAPTCHA login. `opencode-browser-session.mjs` bridges that gap: it opens the
+user's own Chrome, Edge, or Brave with a throwaway profile and a DevTools
+debugging port, a human logs in in that visible window, and it reads the
+resulting cookies over the Chrome DevTools Protocol with Node's built-in
+`WebSocket` and `fetch` (no Playwright, no downloaded browser). It writes an
+Obscura-shaped storage state plus the capture browser's User-Agent to a
+mode-`0600` `<config_dir>/cuddly-winner-sessions/<name>.json`. On startup the
+wrapper injects the captured User-Agent through Obscura's `--user-agent` flag
+and, the first time the agent navigates to a session origin, hydrates that
+session's cookies through a filtered-out `browser_set_storage_state` call, so
+the model never sees them. Only cookie-based logins bridge: Obscura restores
+cookies and they survive navigation, but it discards `localStorage` on
+navigation, so `localStorage`- or `IndexedDB`-token logins remain out of scope.
+
 ## Deployment
 
 Default installation deploys this exact managed profile:
@@ -402,8 +436,10 @@ tools, packaged skills, and rule files use the selected `copy` or `symlink`
 mode.
 
 The installer also deploys every directory under `skills/`, every Markdown file
-under `rules/`, the pinned SDK packages, the pinned Obscura browser engine, one
-managed `cuddly-winner-browser` MCP entry,
+under `rules/`, the pinned SDK packages, the pinned Obscura browser engine, the
+credential-substitution wrapper `opencode-browser-mcp.mjs` (always a copy at
+`<config_dir>/cuddly-winner-browser-mcp.mjs`), one managed `cuddly-winner-browser`
+MCP entry that launches Obscura through that wrapper,
 rule instruction wiring, and the feedback locator. It builds the runtime in a
 clean staging tree, backs up a noncurrent live tree intact before replacement,
 then records a recursive hash plus entry, file, and symlink counts for the whole

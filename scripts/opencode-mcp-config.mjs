@@ -7,14 +7,18 @@ import { isDeepStrictEqual } from "node:util";
 import { binaryPath } from "./opencode-browser-engine.mjs";
 
 // The managed browser MCP entry runs the Obscura engine binary installed under
-// the OpenCode config root by opencode-browser-engine.mjs. Obscura is
-// headless-only and has no --headless flag, so the HEADLESS environment marker
-// lets modeOf classify it as headless without engine-specific knowledge.
+// the OpenCode config root by opencode-browser-engine.mjs, launched through the
+// credential-substitution wrapper (opencode-browser-mcp.mjs) so ${name:KEY}
+// placeholders resolve from a local secrets file without the model ever seeing a
+// value. Obscura is headless-only and has no --headless flag, so the HEADLESS
+// environment marker still lets modeOf classify it as headless without
+// engine-specific knowledge.
 export function buildManagedMcp(configPath) {
+  const configRoot = path.dirname(configPath);
   return {
     "cuddly-winner-browser": {
       type: "local",
-      command: [binaryPath(path.dirname(configPath)), "mcp"],
+      command: ["node", path.join(configRoot, "cuddly-winner-browser-mcp.mjs"), binaryPath(configRoot), "mcp"],
       environment: { HEADLESS: "true" },
       enabled: true,
     },
