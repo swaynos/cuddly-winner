@@ -94,6 +94,35 @@ after image mode is selected, then verify the submitted prompt in the original
 conversation. Wait only for a new output image associated with that submission;
 an existing page image is not success. Save the image and verify its signature.
 
+### Known Obscura 0.2.2 input and export limits
+
+The September 2026 ChatGPT reproduction found that `browser_fill` and
+`browser_type` write `.value` on contenteditable elements and report success
+without changing their text. ChatGPT also exposes a hidden fallback textarea;
+filling it does not submit a prompt. The wrapper now checks text targets before
+fill/type or a batched form call. It rejects missing, hidden, disabled/read-only,
+non-input/textarea, and contenteditable targets. A failed check prevents the
+whole batch, including its submit. The internal probe returns only a status,
+not field contents, and runs before credential resolution. Layout dimensions
+alone are not a reliable visibility test in this engine.
+
+This guard prevents misleading fill results; it does not add rich-text editing
+support. Direct DOM text changes and a synthetic paste did not enable Send in
+the observed ChatGPT session. No end-to-end ChatGPT image acceptance test passed.
+Do not describe wrapper recovery or this input guard as a working image workflow.
+
+The same engine returns `{}` for `Promise.resolve('resolved-value')` through
+`browser_evaluate`. An async image-fetch expression returning `{}` does not prove
+that bytes were fetched or saved. A canvas PNG prefix proves neither image
+provenance nor a file on disk. The local download path remains unverified.
+
+Run the real-engine local regression with
+`CUDDLY_WINNER_TEST_BROWSER=/absolute/path/to/obscura node --test tests/integration/browser_live_input.test.mjs`.
+It enables private-network access only in its child process to serve a loopback
+fixture. It tests input rejection, no partial batch edits or submission, and
+successful ordinary textarea input. It also reports async evaluation behavior.
+The normal suite skips this test unless the engine path is supplied.
+
 If login is required but the user's browser cannot open, including on a machine
 with no GUI, report the blocker. Follow the user or project instructions for
 what comes next: try an allowed alternative tool or approach, or stop if
@@ -119,8 +148,10 @@ does not show that the action failed.
 Never automatically replay a generation after a disconnect. Preserve the
 conversation URL and inspect it through Obscura after bounded recovery. The
 wrapper reports an unexpected Obscura exit with its process status and last
-external browser tool; include that diagnostic when requesting an OpenCode
-restart.
+external browser tool, marks interrupted outcomes unknown, and restarts the
+engine once without replaying a browser tool. Use that live connection for a
+fresh read-only probe or navigation. Request an OpenCode restart only if this
+bounded recovery fails or the replacement engine exits.
 
 Fallback requires concrete errors, recovery results, or a documented capability
 limit showing that no supported Obscura path remains. Pursue any plausible,

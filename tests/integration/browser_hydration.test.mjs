@@ -117,20 +117,56 @@ async function shim(engineDir, fake) {
   return shimPath;
 }
 
-test("an unexpected engine exit identifies the last external browser tool", async () => fixture(async (root) => {
+test("an unexpected engine exit is reported and the MCP connection recovers once", async () => fixture(async (root) => {
   const { engineDir } = await layout(root);
   const fake = path.join(engineDir, "exit.mjs");
   const bin = await shim(engineDir, fake);
-  await writeFile(fake, `process.stdin.resume(); setTimeout(() => process.exit(23), 100);\n`);
+  const starts = path.join(root, "starts");
+  await writeFile(fake, `
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+const starts = process.env.STARTS;
+const count = existsSync(starts) ? Number(readFileSync(starts, "utf8")) + 1 : 1;
+writeFileSync(starts, String(count));
+function send(message) { process.stdout.write(JSON.stringify(message) + "\\n"); }
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") {
+    send({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2025-03-26", capabilities: {}, serverInfo: { name: "fake", version: "1" } } });
+  } else if (message.method === "tools/call" && count === 1) {
+    process.exit(23);
+  } else if (message.method === "tools/call") {
+    send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: "recovered" }] } });
+  }
+});
+`);
 
-  const child = spawn("node", [wrapper, bin, "mcp"], { stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn("node", [wrapper, bin, "mcp"], {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, STARTS: starts },
+  });
   let stderr = "";
+  const responses = [];
+  const exited = once(child, "exit");
   child.stderr.on("data", (chunk) => { stderr += chunk; });
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "browser_wait_for_text", arguments: { text: "done" } } })}\n`);
-  const [code] = await once(child, "exit");
+  createInterface({ input: child.stdout }).on("line", (line) => responses.push(JSON.parse(line)));
+  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } } })}\n`);
+  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} })}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "browser_wait_for_text", arguments: { text: "done" } } })}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  if (child.exitCode === null) {
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "browser_snapshot", arguments: {} } })}\n`);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    child.stdin.end();
+  }
+  const [code] = await exited;
 
-  assert.equal(code, 23);
+  assert.equal(code, 0);
   assert.match(stderr, /Obscura MCP exited unexpectedly \(code 23\).*browser_wait_for_text/);
+  assert.match(stderr, /restarted once/);
+  assert.equal(responses.find((response) => response.id === 2)?.error?.code, -32000);
+  assert.equal(responses.find((response) => response.id === 3)?.result?.content?.[0]?.text, "recovered");
 }));
 
 test("navigating to a registered origin hydrates its session and injects the captured User-Agent", async () => fixture(async (root) => {

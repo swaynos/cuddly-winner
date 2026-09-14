@@ -594,9 +594,11 @@ session's origin it hydrates that session's cookies through a filtered-out
 `browser_set_storage_state` call. Import only: the export tools stay denied, so
 a session flows in but never back to the model.
 If the engine exits while the MCP client remains open, the wrapper writes a
-credential-free diagnostic with its exit status and last external browser tool,
-then exits. Recovery requires an OpenCode restart; it does not replay the tool
-call.
+credential-free diagnostic with its exit status and last external browser tool.
+It reports every interrupted request as an unknown outcome, restarts the engine
+once, repeats only the MCP initialization handshake, and leaves later calls
+usable. It never replays an interrupted browser tool. A second exit or failed
+initialization closes the wrapper and requires an OpenCode restart.
 The installed `cuddly-winner-browser-session.mjs` writes those sessions. It finds
 Chrome, Edge, or Brave in standard macOS, Linux, or Windows locations, rejects a
 non-file or non-executable candidate, and checks for `DISPLAY` or

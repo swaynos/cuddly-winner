@@ -442,8 +442,11 @@ already present on the page.
 
 The agent must never automatically replay a generation after a disconnect. It
 must preserve and inspect the original conversation after bounded Obscura
-recovery. An unexpected wrapper exit reports its process status and last external
-browser tool; the user must restart OpenCode before retrying.
+recovery. If Obscura exits, the wrapper must report its process status and last
+external browser tool, mark pending tool outcomes unknown, and restart the engine
+at most once without replaying a tool. The agent may then use a fresh read-only
+probe or navigation to inspect the result. A failed recovery or second engine
+exit requires an OpenCode restart.
 
 `playwright_browser_*` tool calls must fail before execution unless the OpenCode
 process has the exact explicit override

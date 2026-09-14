@@ -188,18 +188,11 @@ if (distinctUserAgents.length === 1 && !spawnArgs.includes("--user-agent")) {
 
 let clientClosed = false;
 let lastExternalTool = null;
-const child = spawn(obscuraBinary, spawnArgs, { stdio: ["pipe", "pipe", "inherit"] });
-child.on("error", (error) => {
-  process.stderr.write(`obscura spawn failed: ${error.message}\n`);
-  process.exit(1);
-});
-child.on("exit", (code, signal) => {
-  if (!clientClosed) {
-    const status = code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`;
-    process.stderr.write(`cuddly-winner-browser: Obscura MCP exited unexpectedly (${status}) while ${lastExternalTool ?? "idle"}; restart OpenCode before retrying.\n`);
-  }
-  process.exit(code ?? (signal ? 1 : 0));
-});
+let child = null;
+let initializeMessage = null;
+let initializedMessage = null;
+let recoveryAttempted = false;
+let recovery = Promise.resolve();
 
 function sendToChild(message) {
   child.stdin.write(`${JSON.stringify(message)}\n`);
@@ -207,6 +200,7 @@ function sendToChild(message) {
 
 function forwardExternalTool(message) {
   lastExternalTool = message.params?.name ?? "unknown browser tool";
+  if (message.id !== undefined && message.id !== null) pendingExternal.set(message.id, lastExternalTool);
   sendToChild(message);
 }
 function sendToClient(message) {
@@ -219,6 +213,7 @@ function rejectCall(id, text) {
 
 const pendingToolsList = new Set(); // model request ids whose responses need denied-tool filtering
 const pendingInternal = new Map(); // wrapper-issued request ids whose responses are swallowed
+const pendingExternal = new Map(); // forwarded tool ids awaiting an Obscura response
 let internalCounter = 0;
 let dirty = false;
 
@@ -238,6 +233,92 @@ function internalCall(name, args) {
     });
     sendToChild({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } });
   });
+}
+
+function handleChildLine(line) {
+  if (!line.trim()) return;
+  let message;
+  try {
+    message = JSON.parse(line);
+  } catch {
+    process.stdout.write(`${line}\n`);
+    return;
+  }
+  const id = message?.id;
+  if (id !== undefined && pendingInternal.has(id)) {
+    const resolve = pendingInternal.get(id);
+    pendingInternal.delete(id);
+    resolve(message); // swallow: the model never sees the wrapper's own probe
+    return;
+  }
+  if (id !== undefined) pendingExternal.delete(id);
+  if (id !== undefined && pendingToolsList.has(id)) {
+    pendingToolsList.delete(id);
+    if (message.result && Array.isArray(message.result.tools)) {
+      message.result.tools = message.result.tools.filter((tool) => !DENIED_TOOLS.has(tool?.name));
+    }
+  }
+  sendToClient(message);
+}
+
+function startChild() {
+  const instance = spawn(obscuraBinary, spawnArgs, { stdio: ["pipe", "pipe", "inherit"] });
+  child = instance;
+  createInterface({ input: instance.stdout }).on("line", handleChildLine);
+  instance.on("error", (error) => {
+    process.stderr.write(`obscura spawn failed: ${error.message}\n`);
+  });
+  instance.on("exit", (code, signal) => {
+    if (instance !== child) return;
+    if (clientClosed) {
+      process.exit(code ?? (signal ? 1 : 0));
+      return;
+    }
+    const status = code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`;
+    process.stderr.write(`cuddly-winner-browser: Obscura MCP exited unexpectedly (${status}) while ${lastExternalTool ?? "idle"}.\n`);
+    for (const [id, tool] of pendingExternal) {
+      sendToClient({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32000, message: `Obscura exited while ${tool}; the tool outcome is unknown and was not replayed.` },
+      });
+    }
+    pendingExternal.clear();
+    pendingToolsList.clear();
+    for (const resolve of pendingInternal.values()) resolve(null);
+    pendingInternal.clear();
+    if (recoveryAttempted || !initializeMessage) {
+      process.stderr.write("cuddly-winner-browser: automatic recovery unavailable; restart OpenCode before retrying.\n");
+      process.exit(code ?? (signal ? 1 : 0));
+      return;
+    }
+    recoveryAttempted = true;
+    recovery = restartChild().catch((error) => {
+      process.stderr.write(`cuddly-winner-browser: recovery failed: ${error.message}; restart OpenCode before retrying.\n`);
+      process.exit(1);
+    });
+  });
+  return instance;
+}
+
+async function restartChild() {
+  hydratedSessions.clear();
+  startChild();
+  const id = `__cwmcp_${(internalCounter += 1)}`;
+  const response = new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (pendingInternal.delete(id)) resolve(null);
+    }, 15000);
+    pendingInternal.set(id, (message) => {
+      clearTimeout(timer);
+      resolve(message);
+    });
+  });
+  sendToChild({ ...initializeMessage, id });
+  const initialized = await response;
+  if (!initialized || initialized.error) throw new Error("replacement Obscura did not initialize");
+  if (initializedMessage) sendToChild(initializedMessage);
+  process.stderr.write("cuddly-winner-browser: Obscura restarted once; interrupted tools were not replayed.\n");
 }
 
 // Ask the child for the current page origin, using an internal call whose
@@ -269,31 +350,6 @@ async function hydrateForUrl(url) {
   await internalCall("browser_set_storage_state", { state: session.state });
 }
 
-createInterface({ input: child.stdout }).on("line", (line) => {
-  if (!line.trim()) return;
-  let message;
-  try {
-    message = JSON.parse(line);
-  } catch {
-    process.stdout.write(`${line}\n`);
-    return;
-  }
-  const id = message?.id;
-  if (id !== undefined && pendingInternal.has(id)) {
-    const resolve = pendingInternal.get(id);
-    pendingInternal.delete(id);
-    resolve(message); // swallow: the model never sees the wrapper's own probe
-    return;
-  }
-  if (id !== undefined && pendingToolsList.has(id)) {
-    pendingToolsList.delete(id);
-    if (message.result && Array.isArray(message.result.tools)) {
-      message.result.tools = message.result.tools.filter((tool) => !DENIED_TOOLS.has(tool?.name));
-    }
-  }
-  sendToClient(message);
-});
-
 async function handleClientLine(line) {
   if (!line.trim()) return;
   let message;
@@ -304,8 +360,16 @@ async function handleClientLine(line) {
     return;
   }
 
+  await recovery;
+
+  if (message?.method === "initialize") initializeMessage = structuredClone(message);
+  if (message?.method === "notifications/initialized") initializedMessage = structuredClone(message);
+
   if (message?.method === "tools/list") {
-    if (message.id !== undefined) pendingToolsList.add(message.id);
+    if (message.id !== undefined) {
+      pendingToolsList.add(message.id);
+      pendingExternal.set(message.id, "tools/list");
+    }
     sendToChild(message);
     return;
   }
@@ -333,6 +397,48 @@ async function handleClientLine(line) {
   if (violation !== null) {
     rejectCall(id, `Credential placeholder rejected at ${name} argument "${violation}". Placeholders are only allowed in ${ALLOWED_SLOTS}.`);
     return;
+  }
+
+  // Obscura 0.2.2 fills .value even on contenteditable elements and hidden
+  // fallback controls. Check every text target before any batch mutation or
+  // credential resolution. Only return a classification, never field contents.
+  const textFields = name === "browser_fill" || name === "browser_type"
+    ? [args]
+    : name === "browser_fill_form" && Array.isArray(args.fields)
+      ? args.fields.filter((field) => !field.type || field.type === "text")
+      : [];
+  if (textFields.length) {
+    const selectors = textFields.map((field) => typeof field.ref === "string"
+      ? `[data-obscura-ref=${JSON.stringify(field.ref)}]`
+      : field.selector);
+    if (selectors.some((selector) => typeof selector !== "string")) {
+      rejectCall(id, "Text input requires a ref or selector for every field.");
+      return;
+    }
+    const expression = `(() => {
+      try {
+        for (const selector of ${JSON.stringify(selectors)}) {
+          const el = document.querySelector(selector);
+          if (!el) return 'cw-input:missing';
+          if (el.isContentEditable || el.getAttribute('contenteditable') === 'true' || el.getAttribute('contenteditable') === '') return 'cw-input:contenteditable';
+          if (!['INPUT', 'TEXTAREA'].includes(el.tagName)) return 'cw-input:unsupported';
+          if (el.disabled || el.readOnly) return 'cw-input:disabled';
+          if (el.type === 'hidden') return 'cw-input:hidden';
+          for (let node = el; node; node = node.parentElement) {
+            const style = getComputedStyle(node);
+            if (node.hidden || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return 'cw-input:hidden';
+          }
+        }
+        return 'cw-input:ok';
+      } catch { return 'cw-input:probe-failed'; }
+    })()`;
+    const result = firstText(await internalCall("browser_evaluate", { expression }));
+    if (result !== "cw-input:ok") {
+      const reason = new Set(["cw-input:missing", "cw-input:contenteditable", "cw-input:unsupported", "cw-input:disabled", "cw-input:hidden"]).has(result)
+        ? result.slice("cw-input:".length) : "probe-failed";
+      rejectCall(id, `Text input rejected (${reason}). Obscura supports visible, enabled input/textarea controls; contenteditable input is unsupported. No fields were filled and no submit was attempted.`);
+      return;
+    }
   }
 
   if (targets.length === 0) {
@@ -383,6 +489,7 @@ async function handleClientLine(line) {
 }
 
 let queue = Promise.resolve();
+startChild();
 const clientReader = createInterface({ input: process.stdin });
 clientReader.on("line", (line) => {
   queue = queue.then(() => handleClientLine(line)).catch((error) => {

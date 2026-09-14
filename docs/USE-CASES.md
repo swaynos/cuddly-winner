@@ -369,10 +369,13 @@ task-specific project-local agent for each planning-ready task.
   login.
 - **Then:** follow any project override; otherwise start in
   `cuddly-winner-browser`, use the user's browser only when login is required,
-  and return to Obscura to perform and verify the action.
+  and return to Obscura to perform and verify the action. If Obscura exits, keep
+  MCP connected through one engine restart while leaving the interrupted action
+  unknown and unreplayed.
 - **Never:** open a login browser before establishing the need, finish the task
   in that browser without an override, or wait through the full login timeout
-  after a known GUI or browser failure.
+  after a known GUI or browser failure. Never replay an interrupted browser
+  action during engine recovery.
 - **Evidence:** S deployed rule and image-skill contracts; U browser resolution
   and launch-failure tests; F managed deployment fixture.
 
