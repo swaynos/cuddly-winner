@@ -12,8 +12,8 @@ Browser image-generation runs are data collection, not casual UI scripting. Pres
 
 Use `cuddly-winner-browser` by default for browser image generation. Project
 instructions may override this default with another tool or approach. Use
-Playwright/CDP only when project instructions override the default; the skill's
-name is not an override.
+Playwright/CDP only for a project override or after the last-resort fallback gate
+below proves that Obscura cannot proceed. The skill's name is not an override.
 
 Open the provider in Obscura and check whether login is required for the requested
 action. Continue there if the action is public or Obscura is already signed in.
@@ -21,10 +21,30 @@ Only if login is required should you ask permission to open the user's browser
 through the installed session capture helper. If no GUI or supported browser is
 available, follow the project's fallback or stop rule.
 
-## Playwright Override Credentials
+### Last-resort fallback gate
 
-The modes in this section apply only when project instructions require the
-Playwright/CDP approach. Obscura login uses the managed session capture flow in
+A single timeout or disconnect is not grounds to switch. Identify the failed
+layer; for a selector or argument error, correct the call in Obscura. Attempt
+bounded recovery with a fresh snapshot or read-only probe and a supported
+reconnect or restart as needed. If required, ask the user to restart OpenCode;
+missing tools in the current session alone do not prove an engine limit.
+
+Check whether the submitted action completed before retrying a prompt. A lost
+connection leaves the outcome unknown. Preserve the conversation URL and inspect
+that conversation after recovery rather than assuming a blank page means failure.
+
+Switch only when concrete errors, recovery results, or a documented capability
+limit show that no supported Obscura path remains. Repeating identical calls is
+not diagnosis. If a plausible recovery remains untested, pursue it or report the
+blocker. Before switching, state the evidence, attempted recovery, blocker, and
+fallback mode and credential scope. An Obscura-only project rule forbids fallback.
+Do not describe Playwright as a reconnected Obscura session. Existing approval
+requirements for visible browsers and protected profiles still apply.
+
+## Playwright Credentials
+
+The modes in this section apply to a project override or a fallback that passes
+the gate above. Obscura login uses the managed session capture flow in
 the browser-selection rule.
 
 - `ephemeral` is the default: use a headless isolated browser and do not retain
@@ -65,7 +85,7 @@ Use this skill for ChatGPT, Gemini, or similar web UIs when the task involves:
 2. Open the provider and check whether login is required. If needed, use the
    approved managed capture flow, restart OpenCode, and confirm the restored
    session in Obscura.
-3. When an override requires Playwright/CDP, verify that the protected profile
+3. When an override or the fallback gate permits Playwright/CDP, verify that the protected profile
    path and run-state path are separate, then launch or attach to the approved
    browser endpoint.
 4. Submit prompts through the selected UI unless project instructions validate a

@@ -46,7 +46,11 @@ restart OpenCode after installing or changing a skill.
 - **Must not:** Substitute a blank or temporary profile, trust a filename or
   response body as image evidence, count element changes as generation success,
   wait indefinitely for a stalled provider, or delete raw runs before release.
-  Use Playwright/CDP only when project instructions require that override.
+   Use Playwright/CDP only for a project override or after the
+   [last-resort fallback gate](RESOURCE-SELECTION.md#last-resort-browser-fallback).
+   One failure is insufficient: diagnose and attempt bounded Obscura recovery,
+   including a required OpenCode restart, before proving no supported path remains.
+   Check prior submissions before retrying and state the actual browser used.
 - **Evidence:** Verified image bytes, run records, and a frozen dataset release
   when outputs are retained.
 - **Credential modes:** Default to ephemeral headless state. Persistent provider

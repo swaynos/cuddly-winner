@@ -99,6 +99,29 @@ the task unless a project override requires that approach. The helper cannot
 capture an existing Playwright login; if the wrong browser was used, explain the
 mistake before asking for another login.
 
+### Last-resort Browser Fallback
+
+A single timeout, disconnect, missing tool, or invalid call does not justify
+switching to Playwright/CDP. Diagnose the failed layer, correct invalid calls,
+and attempt bounded Obscura recovery: a fresh snapshot or read-only probe, then
+a supported reconnect or restart when needed. Request an OpenCode restart if
+that is the recovery path. Do not repeat identical failures without diagnosis.
+
+Before resubmitting any action, check its result in the original conversation or
+page. A disconnect leaves the outcome unknown; a blank page in another browser
+does not show that the action failed.
+
+Fallback requires concrete errors, recovery results, or a documented capability
+limit showing that no supported Obscura path remains. Pursue any plausible,
+untested recovery or report the blocker. Before switching, report the evidence,
+recovery attempts, remaining blocker, selected browser, configured mode, and
+credential scope. Keep all visible-browser and profile approval rules. A project
+that requires Obscura only still forbids fallback. Identify the browser actually
+used; never present a Playwright session as an Obscura reconnection.
+
+The deployed resource rule and image-generation skill carry this gate. It is an
+agent workflow contract, not an MCP-level block on Playwright tools.
+
 ### Capture Command
 
 Use the active configuration directory for `<config-root>` and choose a session

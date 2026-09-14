@@ -32,7 +32,22 @@ test("image-generation skill follows the default browser rule", async () => {
   assert.match(text, /use `cuddly-winner-browser` by default/);
   assert.match(text, /project instructions.*override/);
   assert.match(text, /check whether login is required/);
-  assert.match(text, /playwright.*only.*override/);
+  assert.match(text, /playwright.*only.*override|last-resort fallback gate/);
+});
+
+test("browser rules and image skill require evidence before a last-resort pivot", async () => {
+  for (const file of ["rules/resource-selection.md", "skills/playwright-image-generation/SKILL.md"]) {
+    const text = (await readFile(path.join(repo, file), "utf8")).toLowerCase().replace(/\s+/g, " ");
+    for (const clause of [
+      "a single timeout or disconnect is not grounds to switch",
+      "correct the call",
+      "bounded recovery",
+      "restart opencode",
+      "no supported obscura path remains",
+      "check whether the submitted action completed",
+      "do not describe playwright as a reconnected obscura session",
+    ]) assert.ok(text.includes(clause), `${file}: missing fallback safeguard: ${clause}`);
+  }
 });
 
 test("durable skill documentation records the browser-selection contract", async () => {

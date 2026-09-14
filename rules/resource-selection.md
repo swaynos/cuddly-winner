@@ -26,6 +26,31 @@ Do not complete the requested action in the user's browser unless project
 instructions explicitly require it. Do not claim success merely because login
 succeeded; verify the requested result in the browser that performs the action.
 
+## Last-resort fallback gate
+
+A single timeout or disconnect is not grounds to switch to Playwright/CDP.
+Unless a project override selects another browser, apply this gate first:
+
+1. Identify the failed layer from the tool error and available diagnostics. For
+   an invalid selector or unsupported argument, correct the call in Obscura.
+2. Attempt bounded recovery appropriate to the failure: a fresh snapshot or
+   read-only probe, then a supported reconnect or restart if needed. If recovery
+   requires the user to restart OpenCode, request that restart. An unavailable
+   tool in this session alone does not prove that Obscura cannot proceed.
+3. Check whether the submitted action completed before submitting it again.
+   A lost connection leaves the outcome unknown; it does not prove failure.
+4. Pivot only when concrete errors, recovery results, or a documented capability
+   limit show that no supported Obscura path remains. Repeated identical calls,
+   impatience, and an available Playwright tool do not meet this test. If a
+   plausible recovery remains untested, pursue it or report the blocker.
+5. Before switching, state the evidence, recovery attempts, remaining blocker,
+   and selected fallback. Check its configured mode and credential scope; retain
+   all visible-browser and profile approval rules. An Obscura-only project rule
+   still forbids fallback. Do not describe Playwright as a reconnected Obscura
+   session, and verify the result in the browser that actually performs it.
+
+## Evidence Sources
+
 Use the least disruptive evidence source that can answer the question:
 
 1. Session context and local project files.

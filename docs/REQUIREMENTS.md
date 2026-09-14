@@ -406,6 +406,14 @@ each short name to its secrets file and allowed https origins.
 
 ### Browser Actions and Login
 
+Browser fallback must meet the
+[last-resort gate](RESOURCE-SELECTION.md#last-resort-browser-fallback). A single
+failure never justifies a pivot. Diagnose and attempt bounded Obscura recovery,
+including an OpenCode restart when needed, before concluding from concrete
+evidence that no supported path remains. Check prior submissions before retrying,
+explain any pivot, and retain browser-mode and credential approval requirements.
+An Obscura-only project requirement still forbids fallback.
+
 Use `cuddly-winner-browser`, which runs Obscura, when a user requests an action
 that requires a browser. A project specification that requires another tool or
 approach takes precedence. Check for that override before choosing the tool.
