@@ -11,7 +11,7 @@
 // relayed both ways. The secrets registry is derived from the binary location as
 // <dirname(dirname(binary))>/cuddly-winner-secrets.json (the configuration root).
 import { spawn } from "node:child_process";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 
@@ -31,6 +31,21 @@ const REGISTRY_PATH = path.join(CONFIG_ROOT, "cuddly-winner-secrets.json");
 // browser_storage_state and browser_get_cookies stay denied, so a session flows
 // in but never back out to the model.
 const SESSIONS_DIR = path.join(CONFIG_ROOT, "cuddly-winner-sessions");
+// Optional run-local transport audit sink. The image runner sets this to its
+// manifest-authorized events file. It records the boundary calls here rather
+// than trusting a higher-level loop receipt.
+const TRANSPORT_TRACE = process.env.CUDDLY_WINNER_TRANSPORT_TRACE || "";
+const TRACE_SECRET_KEYS = /cookie|token|authorization|password|storage|url/i;
+function traceValue(value, key = "") {
+  if (TRACE_SECRET_KEYS.test(key)) return "[redacted]";
+  if (Array.isArray(value)) return value.map((item) => traceValue(item));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, traceValue(item, name)]));
+  return value;
+}
+function trace(record) {
+  if (!TRANSPORT_TRACE) return;
+  try { appendFileSync(TRANSPORT_TRACE, `${JSON.stringify({ transport: "obscura", at: new Date().toISOString(), ...record })}\n`, { mode: 0o600 }); } catch { /* auditing must not alter browser behavior */ }
+}
 
 // Tools removed from tools/list and rejected on call: each can hand the model
 // live session material (cookies, storage, or request bodies).
@@ -200,7 +215,10 @@ function sendToChild(message) {
 
 function forwardExternalTool(message) {
   lastExternalTool = message.params?.name ?? "unknown browser tool";
-  if (message.id !== undefined && message.id !== null) pendingExternal.set(message.id, lastExternalTool);
+  if (message.id !== undefined && message.id !== null) {
+    pendingExternal.set(message.id, lastExternalTool);
+    trace({ phase: "request", id: message.id, tool: lastExternalTool, arguments: traceValue(message.params?.arguments) });
+  }
   sendToChild(message);
 }
 function sendToClient(message) {
@@ -251,7 +269,10 @@ function handleChildLine(line) {
     resolve(message); // swallow: the model never sees the wrapper's own probe
     return;
   }
-  if (id !== undefined) pendingExternal.delete(id);
+  if (id !== undefined && pendingExternal.has(id)) {
+    trace({ phase: "result", id, tool: pendingExternal.get(id), error: message.error ? String(message.error.message ?? "error") : undefined, is_error: Boolean(message.result?.isError) });
+    pendingExternal.delete(id);
+  }
   if (id !== undefined && pendingToolsList.has(id)) {
     pendingToolsList.delete(id);
     if (message.result && Array.isArray(message.result.tools)) {
