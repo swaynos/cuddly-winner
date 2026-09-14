@@ -20,6 +20,7 @@ The durable source of truth lives in `docs/`:
 - [NEXT-ITERATION.md](docs/NEXT-ITERATION.md): Generated task-agent packages and fresh-context execution.
 - [SKILLS.md](docs/SKILLS.md): Skill contracts, catalog, and shared package rules.
 - [RESOURCE-SELECTION.md](docs/RESOURCE-SELECTION.md): Research source and browser credential policy.
+- [PLAYWRIGHT-MIGRATION.md](docs/PLAYWRIGHT-MIGRATION.md): Build handoff for the Playwright-only browser change.
 - [TEST-PLAN.md](docs/TEST-PLAN.md): Evidence classes, test cases, and platform coverage.
 - [USE-CASES.md](docs/USE-CASES.md): Native compatibility, planning, execution, review, and auditing examples.
 - [TESTING-METHODOLOGY.md](docs/TESTING-METHODOLOGY.md): Runtime evidence, verdicts, and harness conventions.
@@ -47,14 +48,16 @@ directories:
 - four agent definitions from `agents/`;
 - three plugins from `plugins/`;
 - four tools from `tools/`;
-- nine packaged skill directories from `skills/`;
+- eight packaged skill directories from `skills/`;
 - two shared rule files from `rules/`.
 
-It also installs the pinned OpenCode plugin SDK and Playwright runtime, bootstraps
-the pinned headless Obscura browser engine and registers the `cuddly-winner-browser`
-MCP that runs it, copies the browser wrapper and human-login capture helper to the
-configuration root, registers the shared rule files in OpenCode's instructions,
-and installs the local feedback locator.
+The target browser design installs the pinned OpenCode plugin SDK and Playwright
+runtime with one Playwright-backed browser service. It runs headlessly for normal
+work and uses a separate headed Playwright login helper only when a person must
+sign in. The current implementation has not completed this migration; see
+[PLAYWRIGHT-MIGRATION.md](docs/PLAYWRIGHT-MIGRATION.md). The installer also
+registers the shared rule files in OpenCode's instructions and installs the local
+feedback locator.
 
 ```bash
 bash scripts/deploy-opencode-agents.sh install
@@ -69,8 +72,8 @@ retired conflicts, discoverable skill backups, rule registration, MCP
 configuration, runtime packages, and feedback locator state. It aggregates all
 drift instead of stopping at the first fault and exits nonzero when any managed
 surface drifts. Use `--mode symlink` for live development installs. Plugins,
-`session_fetch`, and the browser control files remain copied so authentication
-code and runtime state resolve from the selected configuration root.
+`session_fetch`, and browser control files remain copied so authentication code
+and runtime state resolve from the selected configuration root.
 
 Backups live under `<config_dir>/backups/`, outside OpenCode's discovery
 directories. `remove` deletes only byte-identical managed copies or links to the

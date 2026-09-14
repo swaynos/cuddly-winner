@@ -450,8 +450,9 @@ opaque handle. Site profiles live in `session-fetch-sites.json` under the manage
 OpenCode configuration root.
 
 The tool accepts only configured HTTPS origins and `GET` or `HEAD`. It removes
-private session state on close or idle expiry. Opening the visible browser needs
-explicit approval.
+private session state on close or idle expiry. It uses headed Playwright only
+for an approved human login and performs later retrieval in a headless
+Playwright context.
 
 ### Static Package Validation
 
@@ -509,6 +510,11 @@ plugin-factory input shape.
 
 ## Deployment
 
+The browser paragraphs in this section describe the migration target. The
+current source and installed profile remain out of date until the work in
+[PLAYWRIGHT-MIGRATION.md](PLAYWRIGHT-MIGRATION.md) is complete. The generated
+agent, governance, and general deployment paragraphs describe current behavior.
+
 `scripts/deploy-opencode-agents.sh` supports `install`, `status`, and `remove`.
 It resolves one configuration root from `--config-dir`,
 `OPENCODE_DEPLOY_CONFIG_DIR`, or `opencode debug paths`, in that order.
@@ -516,19 +522,12 @@ It resolves one configuration root from `--config-dir`,
 Agent files, the three governance tools, skills, and rules use the selected copy
 or symlink mode. All three plugins and `session_fetch.ts` always install as
 copies. The installer deploys SDK version `1.17.15` and Playwright version
-`1.58.2`, which `session_fetch` still uses; browser download is disabled during
-package installation. It also bootstraps the Obscura headless browser engine
-through `scripts/opencode-browser-engine.mjs`, which downloads the pinned engine
-release, verifies it against a checksum, and installs it under
-`cuddly-winner-browser/` in the configuration root. It also installs the
-credential-substitution wrapper `scripts/opencode-browser-mcp.mjs` and login
-capture helper `scripts/opencode-browser-session.mjs` as copies at
-`<config_dir>/cuddly-winner-browser-mcp.mjs` and
-`<config_dir>/cuddly-winner-browser-session.mjs`. Both remain copies because they
-handle authentication state; `status` reports each one and `remove` deletes only
-an unmodified copy. It
-populates a clean sibling staging tree, compares it with the live runtime, backs
-up any
+`1.58.2` together with its pinned browser build. Playwright is the only browser
+backend. The installer also copies a headless browser service and a headed login
+helper into the configuration root. Both remain copies because they handle
+authentication state; `status` reports each one and `remove` deletes only an
+unmodified copy. The installer populates a clean sibling staging tree, compares
+it with the live runtime, backs up any
 noncurrent live tree intact, and moves the staged tree into place before using
 `scripts/opencode-runtime-integrity.mjs` to recursively hash the whole installed
 `node_modules` dependency tree and store its SHA-256 plus entry, file, and symlink
@@ -552,84 +551,43 @@ table.
 The installer writes each rule to `<config_dir>/rules/` and uses
 `scripts/opencode-instructions.mjs` to add or remove its absolute path in the
 `instructions` array of `<config_dir>/opencode.json`. It changes no other config
-key. A separate helper owns one namespaced browser MCP entry, `cuddly-winner-browser`,
-whose command is `node <config_dir>/cuddly-winner-browser-mcp.mjs
-<engine-binary> mcp`: the credential wrapper launches the headless Obscura engine
-binary, and the entry carries a `HEADLESS` environment marker. The wrapper
-resolves `${name:KEY}` placeholders in a fixed set of tool-argument slots
-(`browser_fill.value`, `browser_type.text`, `browser_fill_form.fields[].value`,
-`browser_set_cookie.value`) from a local `KEY=VALUE` file, checks the current
-page origin against the origins registered for that name before releasing a
-secret, denies the session-material tools (`browser_get_cookies`,
-`browser_storage_state`, `browser_network_requests`), and blocks the DOM-reading
-tools (`browser_evaluate`, `browser_get_attribute`, `browser_extract`) from just
-after a substitution until the next navigation. The model never sees a resolved
-value. `scripts/opencode-browser-secrets.mjs` manages the mode-`0600`
-schema-version-1 registry at `<config_dir>/cuddly-winner-secrets.json` that maps
-each short name to its secrets file and allowed https origins.
+key. A separate helper owns one namespaced browser MCP entry, `playwright`. Its
+service launches Playwright in headless mode and
+exposes the supported browser tools. It may read approved login state directly
+from the private state directory, but it never returns that state to the model.
 
-Browser actions use the managed Obscura tools by default. Project specifications
-may override that choice. The agent first checks in Obscura whether the action
-needs login. Only then, if needed, does it use the capture helper's visible
-browser for human login. After capture, the agent resumes the task in Obscura.
-If login is needed but no browser or GUI is available, or session reuse fails,
-the agent follows the user or project's fallback or stop instructions. See
+Browser actions begin in the headless service. When a page proves that login is
+required, the agent may invoke the separate login helper after user approval.
+The helper launches headed Playwright with a dedicated profile, lets the user
+log in, saves the approved state, and closes. The agent then starts or refreshes
+a headless context and confirms that the state works before continuing. If no
+GUI is available or state reuse fails, the action is blocked. See
 [Browser Actions and Login](RESOURCE-SELECTION.md#browser-actions-and-login) for
 the steps and completion checks.
 
-The global `ImmutabilityGuard` runs before every tool execution. It rejects
-`playwright_browser_*` calls unless the OpenCode process has the exact override
-`CUDDLY_WINNER_BROWSER_FALLBACK=playwright`. This is an execution boundary, not
-proof that a fallback is appropriate: the last-resort gate remains mandatory.
-For image generation, the workflow must verify the intended prompt after image
-mode is selected and the submitted prompt in the original conversation. It then
-accepts only a new output image associated with that submission. It never
-automatically replays a generation after a disconnect.
+The global `ImmutabilityGuard` does not treat Playwright as a fallback. It may
+still enforce the headed-login boundary and block browser operations that expose
+saved authentication state. Image generation must verify the final prompt and
+accept only a new output associated with that submission. No non-idempotent
+action is replayed automatically after a disconnect.
 
-The wrapper restores human-completed logins in headless Obscura. On
-startup it reads captured sessions from `<config_dir>/cuddly-winner-sessions/`,
-injects the single captured User-Agent through Obscura's `--user-agent` flag
-(none if two captures disagree), and the first time the agent navigates to a
-session's origin it hydrates that session's cookies through a filtered-out
-`browser_set_storage_state` call. Import only: the export tools stay denied, so
-a session flows in but never back to the model.
-If the engine exits while the MCP client remains open, the wrapper writes a
-credential-free diagnostic with its exit status and last external browser tool.
-It reports every interrupted request as an unknown outcome, restarts the engine
-once, repeats only the MCP initialization handshake, and leaves later calls
-usable. It never replays an interrupted browser tool. A second exit or failed
-initialization closes the wrapper and requires an OpenCode restart.
-The installed `cuddly-winner-browser-session.mjs` writes those sessions. It finds
-Chrome, Edge, or Brave in standard macOS, Linux, or Windows locations, rejects a
-non-file or non-executable candidate, and checks for `DISPLAY` or
-`WAYLAND_DISPLAY` on Linux. It opens the selected browser with a throwaway
-`--user-data-dir` and
-`--remote-debugging-port`, waits for a human login (detected by a target cookie
-or a completion URL), reads cookies over the Chrome DevTools Protocol using
-Node's built-in `WebSocket` and `fetch` (no Playwright, no downloaded browser),
-and writes an Obscura-shaped `{cookies, origins:[]}` state plus the User-Agent to
-a mode-`0600` `<name>.json`. The name comes from `--name`; the file lives under
-`<config_dir>/cuddly-winner-sessions/`. The helper cannot attach to an existing
-browser or export an earlier Playwright login. After capture, the user must
-restart OpenCode because the wrapper does not reload sessions while running.
-Spawn errors and exits before the DevTools endpoint or login completion fail
-promptly instead of waiting for the capture timeout. Session destination
-symlinks fail before launch, and all session actions reject a symlinked sessions
-directory. HTTP fetches, target checks, and WebSocket calls use the remaining
-capture deadline. Cleanup sends `SIGTERM`, waits for a bounded period, then sends
-`SIGKILL` if needed; it removes the temporary profile only after the browser
-exits. A child-process `error` does not count as process exit after spawn. Only
-cookies bridge: a probe proved Obscura restores
-cookies through `browser_set_storage_state` and they survive navigation, but it
-discards `localStorage` on navigation, so `localStorage`/`IndexedDB` logins are
-out of scope. The MCP-config helper that owns the `cuddly-winner-browser` entry
-also prunes the retired `cuddly-winner-notebooklm` and
-`cuddly-winner-research-browser` names by name, and the exact retired `notebooklm`
-shape in legacy `config.json`; other shapes survive.
-`scripts/opencode-browser-engine.mjs` bootstraps the engine: it downloads the
-pinned Obscura release, verifies it against a checksum, and installs it under
-`<config_dir>/cuddly-winner-browser/`. It is standalone, so another project can
-install, locate, or remove the same engine under its own root.
+Saved state lives under `<config_dir>/cuddly-winner-sessions/` in mode-`0600`
+files. Each record names its allowed origins and stores Playwright storage state.
+When needed, the login helper also records session storage separately and the
+headless service restores it before navigation. State values never enter model
+context or logs. The service loads state only for matching origins.
+
+The login helper checks `DISPLAY` or `WAYLAND_DISPLAY` on Linux, rejects unsafe
+or symlinked state paths, and uses a bounded deadline. Spawn errors and browser
+exit fail promptly. Cleanup closes the browser before removing temporary profile
+data. The helper uses the pinned Playwright browser rather than a personal or
+system browser profile.
+
+The installer and configuration helper remove project-owned files, binaries,
+configuration entries, environment gates, and integrity records from the retired
+browser stack. Modified or unrelated user files remain untouched and make status
+nonzero. The implementation checklist is in
+[PLAYWRIGHT-MIGRATION.md](PLAYWRIGHT-MIGRATION.md).
 
 `scripts/ci.sh` installs the CLI version named by `.opencode-cli-version` beneath
 its temporary profile and selects that exact binary through both `PATH` and

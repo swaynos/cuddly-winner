@@ -34,29 +34,6 @@ restart OpenCode after installing or changing a skill.
   missing content, or convert before review.
 - **Evidence:** Reviewed Markdown and successful output-format inspection.
 
-### `playwright-image-generation`
-
-- **Trigger:** Browser-based AI image generation or editing, especially where
-  authenticated profiles, generated-image capture, or dataset artifacts matter.
-- **Required behavior:** Follow a project browser override when present;
-  otherwise use `cuddly-winner-browser` by default and check whether login is
-  required before opening the user's browser. Protect browser profile state;
-  keep it separate from run state; verify saved image signatures and hashes;
-  classify failures; and freeze valuable outputs with manifests and checksums.
-- **Must not:** Substitute a blank or temporary profile, trust a filename or
-  response body as image evidence, count element changes as generation success,
-  wait indefinitely for a stalled provider, or delete raw runs before release.
-   Use Playwright/CDP only for a project override or after the
-   [last-resort fallback gate](RESOURCE-SELECTION.md#last-resort-browser-fallback).
-   One failure is insufficient: diagnose and attempt bounded Obscura recovery,
-   including a required OpenCode restart, before proving no supported path remains.
-   Check prior submissions before retrying and state the actual browser used.
-- **Evidence:** Verified image bytes, run records, and a frozen dataset release
-  when outputs are retained.
-- **Credential modes:** Default to ephemeral headless state. Persistent provider
-   profiles require explicit opt-in and one approved interactive setup; never use
-   personal browser profiles or an automatic headed fallback.
-
 ### `cuddly-winner-feedback`
 
 - **Trigger:** Recording negative or mixed Cuddly Winner feedback from another

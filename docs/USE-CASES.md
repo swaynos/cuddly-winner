@@ -352,44 +352,46 @@ task-specific project-local agent for each planning-ready task.
 
 ## Resource Selection
 
+The browser-specific cases in this section describe the migration target, not
+the current installed browser stack.
+
 ### UC-RESOURCE-01: Research avoids desktop disruption by default
 
 - **Given:** local evidence, direct web pages, public APIs, or text-only search
   can answer a question.
 - **When:** a managed agent gathers evidence.
 - **Then:** use those sources before browser automation.
-- **Never:** open a visible browser without stating the target, lower-impact
-  failures, and receiving user approval.
+- **Never:** open headed Playwright except for a required human login, or before
+  stating the target and receiving user approval.
 - **Evidence:** S agent and rule contract; B resource-order scenario.
 
-### UC-RESOURCE-02: Browser actions start in Obscura
+### UC-RESOURCE-02: Browser work stays headless
 
 - **Given:** a user requests an action that requires a browser.
 - **When:** the agent chooses a browser and determines whether the action needs
   login.
-- **Then:** follow any project override; otherwise start in
-  `cuddly-winner-browser`, use the user's browser only when login is required,
-  and return to Obscura to perform and verify the action. If Obscura exits, keep
-  MCP connected through one engine restart while leaving the interrupted action
-  unknown and unreplayed.
+- **Then:** use Playwright as the only browser backend; perform normal work
+  headlessly; use headed Playwright only for an approved human login; then
+  return to a fresh authenticated headless context to complete and verify the
+  action.
 - **Never:** open a login browser before establishing the need, finish the task
-  in that browser without an override, or wait through the full login timeout
-  after a known GUI or browser failure. Never replay an interrupted browser
-  action during engine recovery.
-- **Evidence:** S deployed rule and image-skill contracts; U browser resolution
+  in the login window, expose saved state, or replay an interrupted action whose
+  result is unknown.
+- **Evidence:** S deployed rule and durable resource contract; U mode, state,
   and launch-failure tests; F managed deployment fixture.
 
-### UC-RESOURCE-03: Image credentials are opt-in and provider-scoped
+### UC-RESOURCE-03: Browser login state is private and scoped
 
-- **Given:** a browser image-generation request.
-- **When:** managed credential state is selected.
-- **Then:** default to ephemeral headless state, require confirmation for visible
-  authentication, and keep persistent profiles provider-specific.
+- **Given:** a browser task needs saved login state.
+- **When:** the user approves headed authentication.
+- **Then:** save only the required Playwright state outside the repository,
+  restrict it to approved origins, close the headed browser, and confirm the
+  state in headless mode.
 - **Never:** use a personal browser profile, preserve credentials by default, or
-  silently fall back to visible operation.
+  return state values to the model or logs.
 - **Evidence:** U credential state tests; F managed deployment fixture.
 
-### UC-RESOURCE-04: Managed MCP configuration preserves user state
+### UC-RESOURCE-04: Managed browser configuration preserves user state
 
 - **Given:** an OpenCode configuration with unrelated MCP entries.
 - **When:** managed install, status, diagnose, or remove runs.
@@ -408,6 +410,17 @@ task-specific project-local agent for each planning-ready task.
 - **Never:** return session material, use an unconfigured origin, follow a
   foreign redirect, or make a write request.
 - **Evidence:** U session lifecycle tests; F profile and deployment fixture.
+
+### UC-RESOURCE-06: Browser files require local proof
+
+- **Given:** a browser task creates or downloads a file.
+- **When:** the page reports completion.
+- **Then:** tie the new page result to the current request, save the file through
+  the authenticated headless context, and verify its local bytes.
+- **Never:** count a preview, stale page item, successful click, or filename as
+  proof that the file was delivered.
+- **Evidence:** U download, path-collision, association, signature, and
+  interrupted-transfer tests.
 
 ## Skills Ecosystem
 

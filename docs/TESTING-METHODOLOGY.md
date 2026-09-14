@@ -139,7 +139,7 @@ fails it. These checks prevent a shortened or diverted flow from passing.
 The harness redirects `HOME`, all `XDG_*` roots, `ZDOTDIR`, and
 `OPENCODE_CONFIG_DIR`; supplies only the loopback provider; removes provider
 credentials; disables model fetching and automatic updates; and keeps the
-managed browser offline. It resolves temporary paths through symlinks
+Playwright browser service offline. It resolves temporary paths through symlinks
 before the run so OpenCode and the test agree on the worktree root.
 
 The hidden suite remains in `evals/seed_build/e2e/hidden/`. It never enters the
@@ -277,15 +277,17 @@ behavior, not a live agent's optimization judgment.
 
 ## Resource And Session-Fetch Testing
 
-Resource-selection tests use static prompts, JSON fixtures, synthetic browser
-profiles, and fake browser processes. They do not contact provider accounts or
-launch a real browser. Live provider checks remain opt-in diagnostics and use
-non-sensitive prompts.
+The browser migration replaces the current resource-selection fixtures with
+static prompts, JSON fixtures, synthetic browser state, and local Playwright
+pages. These tests do not contact real accounts. Live site checks remain optional
+and use harmless, non-sensitive actions.
 
-Session-fetch tests inject a fake browser and local HTTP boundary. They verify
-OpenCode approval, opaque handles, configured HTTPS origins, same-origin
-redirects, bounded bodies, private cookie forwarding, cross-session denial,
-capacity, expiry, and close without exposing credentials.
+The replacement browser tests must verify that headless mode handles normal work
+and headed mode opens only for approved human login. They cover storage-state
+handoff, explicit session storage, configured HTTPS origins, download delivery,
+unknown-action recovery, timeouts, cleanup, and secret redaction. Session-fetch
+tests also verify opaque handles, read-only methods, same-origin redirects,
+bounded bodies, capacity, expiry, and close.
 
 ## Skills Validation
 
