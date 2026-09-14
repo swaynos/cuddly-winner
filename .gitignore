@@ -72,6 +72,7 @@ evals/seed_build/reports/
 .task-loop/
 
 # BEGIN OpenCode generated task artifacts
+/.opencode/agents/*.md
 /.opencode/generated-agents.json
 /.opencode/tasks/
 /.spike/
