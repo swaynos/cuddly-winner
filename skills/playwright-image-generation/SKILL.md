@@ -41,6 +41,11 @@ fallback mode and credential scope. An Obscura-only project rule forbids fallbac
 Do not describe Playwright as a reconnected Obscura session. Existing approval
 requirements for visible browsers and protected profiles still apply.
 
+`playwright_browser_*` tools are blocked before execution unless the OpenCode
+process has `CUDDLY_WINNER_BROWSER_FALLBACK=playwright`. That explicit override
+permits a project fallback choice but does not waive this gate. Never
+automatically replay a generation after a disconnect.
+
 ## Playwright Credentials
 
 The modes in this section apply to a project override or a fallback that passes
@@ -88,9 +93,11 @@ Use this skill for ChatGPT, Gemini, or similar web UIs when the task involves:
 3. When an override or the fallback gate permits Playwright/CDP, verify that the protected profile
    path and run-state path are separate, then launch or attach to the approved
    browser endpoint.
-4. Submit prompts through the selected UI unless project instructions validate a
-   provider-specific API path.
-5. Detect newly generated images using stable page evidence such as new
+4. After image mode is selected, verify that the intended prompt remains in the
+   composer. Submit it, then verify the submitted prompt in the original
+   conversation.
+5. Detect a new output image associated with that submission using stable page
+   evidence such as new
    `currentSrc`/`src`, not just a larger element count.
 6. Save displayed generated images through browser-side extraction.
 7. Verify file signatures and record hashes before marking success.

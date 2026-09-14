@@ -68,6 +68,10 @@ function isPublishedTaskPackage(relPath: string): boolean {
   return relPath === ".opencode/generated-agents.json" || relPath.startsWith(".opencode/agents/") || relPath.startsWith(".opencode/tasks/");
 }
 
+function playwrightFallbackAllowed(): boolean {
+  return process.env.CUDDLY_WINNER_BROWSER_FALLBACK === "playwright";
+}
+
 function resolvedSession(result: unknown, sessionID: string): Record<string, any> | undefined {
   if (!result || typeof result !== "object" || Array.isArray(result)) return;
   const response = result as Record<string, unknown>;
@@ -282,6 +286,9 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       input: { tool: string; sessionID: string; callID: string },
       output: { args?: Record<string, unknown> },
     ) => {
+      if (input.tool.startsWith("playwright_browser_") && !playwrightFallbackAllowed()) {
+        throw new Error("ImmutabilityGuard: browser fallback is disabled. Use cuddly-winner-browser; set CUDDLY_WINNER_BROWSER_FALLBACK=playwright only for an explicit approved override.");
+      }
       if (!MUTATING_TOOLS.has(input.tool) && !SHELL_TOOLS.has(input.tool) && !PROMETHEUS_ONLY_TOOLS.has(input.tool)) return;
       const resolution = await resolveAgent(input.sessionID);
       if (!resolution.valid) throw new Error("ImmutabilityGuard: session has invalid or cyclic ancestry; mutation and shell access are denied.");

@@ -46,8 +46,18 @@ Unless a project override selects another browser, apply this gate first:
 5. Before switching, state the evidence, recovery attempts, remaining blocker,
    and selected fallback. Check its configured mode and credential scope; retain
    all visible-browser and profile approval rules. An Obscura-only project rule
-   still forbids fallback. Do not describe Playwright as a reconnected Obscura
-   session, and verify the result in the browser that actually performs it.
+    still forbids fallback. Do not describe Playwright as a reconnected Obscura
+    session, and verify the result in the browser that actually performs it.
+
+`playwright_browser_*` tools are blocked before execution unless the OpenCode
+process has the explicit `CUDDLY_WINNER_BROWSER_FALLBACK=playwright` override.
+That override does not waive this gate. Never automatically replay a generation:
+preserve the conversation URL, inspect it through Obscura after recovery, and
+submit again only when the earlier outcome is known.
+
+For image generation, verify the intended prompt after image mode is selected,
+verify the submitted prompt in the original conversation, and wait for a new
+output image associated with that submission. Existing page images do not count.
 
 ## Evidence Sources
 

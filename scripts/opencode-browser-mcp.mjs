@@ -186,15 +186,28 @@ if (distinctUserAgents.length === 1 && !spawnArgs.includes("--user-agent")) {
   process.stderr.write(`cuddly-winner: captured sessions disagree on User-Agent; none injected. Sessions: ${sessions.map((session) => session.name).join(", ")}\n`);
 }
 
+let clientClosed = false;
+let lastExternalTool = null;
 const child = spawn(obscuraBinary, spawnArgs, { stdio: ["pipe", "pipe", "inherit"] });
 child.on("error", (error) => {
   process.stderr.write(`obscura spawn failed: ${error.message}\n`);
   process.exit(1);
 });
-child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+child.on("exit", (code, signal) => {
+  if (!clientClosed) {
+    const status = code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`;
+    process.stderr.write(`cuddly-winner-browser: Obscura MCP exited unexpectedly (${status}) while ${lastExternalTool ?? "idle"}; restart OpenCode before retrying.\n`);
+  }
+  process.exit(code ?? (signal ? 1 : 0));
+});
 
 function sendToChild(message) {
   child.stdin.write(`${JSON.stringify(message)}\n`);
+}
+
+function forwardExternalTool(message) {
+  lastExternalTool = message.params?.name ?? "unknown browser tool";
+  sendToChild(message);
 }
 function sendToClient(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -328,7 +341,7 @@ async function handleClientLine(line) {
     // present for the very first request of the navigation. The probe confirmed
     // cookies set through browser_set_storage_state survive a navigation.
     if (name === "browser_navigate" && typeof args.url === "string") await hydrateForUrl(args.url);
-    sendToChild(message);
+    forwardExternalTool(message);
     return;
   }
 
@@ -366,7 +379,7 @@ async function handleClientLine(line) {
   }
   params.arguments = args;
   dirty = true; // a resolved secret is now potentially readable in the DOM
-  sendToChild(message);
+  forwardExternalTool(message);
 }
 
 let queue = Promise.resolve();
@@ -377,6 +390,7 @@ clientReader.on("line", (line) => {
   });
 });
 clientReader.on("close", () => {
+  clientClosed = true;
   queue = queue.then(() => {
     try {
       child.stdin.end();

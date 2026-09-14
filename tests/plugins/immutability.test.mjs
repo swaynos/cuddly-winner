@@ -63,6 +63,25 @@ async function assertInvalidRegisteredIdentityFailsClosed(root, agents) {
 async function guard(root, agents, parents = {}) { return ImmutabilityGuard({ directory: root, worktree: root, client: client(agents, parents) }); }
 function mutate(instance, sessionID, filePath) { return instance["tool.execute.before"]({ tool: "edit", sessionID, callID: "call" }, { args: { filePath, cwd: path.dirname(filePath) } }); }
 
+test("Playwright browser tools are blocked unless the configured fallback permits them", async () => fixture(async root => {
+  const instance = await guard(root, { build: "build" });
+  const hook = instance["tool.execute.before"];
+
+  await assert.rejects(
+    hook({ tool: "playwright_browser_navigate", sessionID: "build", callID: "blocked" }, { args: { url: "https://chatgpt.com" } }),
+    /browser fallback is disabled/,
+  );
+
+  const previous = process.env.CUDDLY_WINNER_BROWSER_FALLBACK;
+  process.env.CUDDLY_WINNER_BROWSER_FALLBACK = "playwright";
+  try {
+    await hook({ tool: "playwright_browser_navigate", sessionID: "build", callID: "allowed" }, { args: { url: "https://chatgpt.com" } });
+  } finally {
+    if (previous === undefined) delete process.env.CUDDLY_WINNER_BROWSER_FALLBACK;
+    else process.env.CUDDLY_WINNER_BROWSER_FALLBACK = previous;
+  }
+}));
+
 test("unregistered local and native agents remain unmanaged", async () => fixture(async root => {
   const instance = await guard(root, { local: "local-agent", build: "build" });
   await mutate(instance, "local", path.join(root, "plugins", "immutability.ts"));

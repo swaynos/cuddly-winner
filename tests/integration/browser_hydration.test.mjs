@@ -117,6 +117,22 @@ async function shim(engineDir, fake) {
   return shimPath;
 }
 
+test("an unexpected engine exit identifies the last external browser tool", async () => fixture(async (root) => {
+  const { engineDir } = await layout(root);
+  const fake = path.join(engineDir, "exit.mjs");
+  const bin = await shim(engineDir, fake);
+  await writeFile(fake, `process.stdin.resume(); setTimeout(() => process.exit(23), 100);\n`);
+
+  const child = spawn("node", [wrapper, bin, "mcp"], { stdio: ["pipe", "pipe", "pipe"] });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "browser_wait_for_text", arguments: { text: "done" } } })}\n`);
+  const [code] = await once(child, "exit");
+
+  assert.equal(code, 23);
+  assert.match(stderr, /Obscura MCP exited unexpectedly \(code 23\).*browser_wait_for_text/);
+}));
+
 test("navigating to a registered origin hydrates its session and injects the captured User-Agent", async () => fixture(async (root) => {
   const { engineDir, fake } = await layout(root);
   const bin = await shim(engineDir, fake);

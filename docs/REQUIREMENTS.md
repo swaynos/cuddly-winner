@@ -432,8 +432,23 @@ approach takes precedence. Check for that override before choosing the tool.
    saved sessions at startup. Reopen the site through Obscura and confirm that
    login worked.
 5. Perform the requested action through Obscura and verify the result. For image
-   generation, save the image and verify its file signature before reporting
-   success.
+    generation, save the image and verify its file signature before reporting
+    success.
+
+For image generation, the agent must verify the intended prompt after image mode
+is selected and verify the submitted prompt in the original conversation. It
+must detect a new output image associated with that submission, not an image
+already present on the page.
+
+The agent must never automatically replay a generation after a disconnect. It
+must preserve and inspect the original conversation after bounded Obscura
+recovery. An unexpected wrapper exit reports its process status and last external
+browser tool; the user must restart OpenCode before retrying.
+
+`playwright_browser_*` tool calls must fail before execution unless the OpenCode
+process has the exact explicit override
+`CUDDLY_WINNER_BROWSER_FALLBACK=playwright`. This override permits a project
+fallback choice but does not waive the last-resort gate or any approval rule.
 
 If login is required but no browser or GUI is available, report that the browser
 attempt is blocked. Follow the user or project instructions: use an allowed

@@ -87,7 +87,12 @@ signed in. A public task on another site may not need an account at all.
    loads the saved session. Reopen the site through Obscura and confirm that it
    is signed in.
 5. Complete the task through Obscura and check the result. For an image, save the
-   generated file and verify its signature before reporting success.
+    generated file and verify its signature before reporting success.
+
+For image generation, verify that the intended prompt remains in the composer
+after image mode is selected, then verify the submitted prompt in the original
+conversation. Wait only for a new output image associated with that submission;
+an existing page image is not success. Save the image and verify its signature.
 
 If login is required but the user's browser cannot open, including on a machine
 with no GUI, report the blocker. Follow the user or project instructions for
@@ -111,6 +116,12 @@ Before resubmitting any action, check its result in the original conversation or
 page. A disconnect leaves the outcome unknown; a blank page in another browser
 does not show that the action failed.
 
+Never automatically replay a generation after a disconnect. Preserve the
+conversation URL and inspect it through Obscura after bounded recovery. The
+wrapper reports an unexpected Obscura exit with its process status and last
+external browser tool; include that diagnostic when requesting an OpenCode
+restart.
+
 Fallback requires concrete errors, recovery results, or a documented capability
 limit showing that no supported Obscura path remains. Pursue any plausible,
 untested recovery or report the blocker. Before switching, report the evidence,
@@ -120,7 +131,10 @@ that requires Obscura only still forbids fallback. Identify the browser actually
 used; never present a Playwright session as an Obscura reconnection.
 
 The deployed resource rule and image-generation skill carry this gate. It is an
-agent workflow contract, not an MCP-level block on Playwright tools.
+agent workflow contract enforced before tool execution. The global guard blocks
+`playwright_browser_*` tools unless the OpenCode process was explicitly started
+with `CUDDLY_WINNER_BROWSER_FALLBACK=playwright`. That setting permits a project
+override; it does not prove the fallback gate has passed.
 
 ### Capture Command
 

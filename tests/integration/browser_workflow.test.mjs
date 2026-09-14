@@ -59,3 +59,13 @@ test("durable skill documentation records the browser-selection contract", async
   assert.match(text, /check whether login is required/);
   assert.match(text, /playwright\/cdp only/);
 });
+
+test("browser documentation requires an explicit fallback policy and verified image output", async () => {
+  for (const file of ["docs/RESOURCE-SELECTION.md", "docs/ARCHITECTURE.md", "docs/REQUIREMENTS.md"]) {
+    const text = (await readFile(path.join(repo, file), "utf8")).toLowerCase().replace(/\s+/g, " ");
+    assert.match(text, /cuddly_winner_browser_fallback=playwright/);
+    assert.match(text, /never automatically replay.*generation/);
+    assert.match(text, /verify.*prompt.*after.*image mode/);
+    assert.match(text, /new.*output image/);
+  }
+});

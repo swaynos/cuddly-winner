@@ -577,6 +577,15 @@ the agent follows the user or project's fallback or stop instructions. See
 [Browser Actions and Login](RESOURCE-SELECTION.md#browser-actions-and-login) for
 the steps and completion checks.
 
+The global `ImmutabilityGuard` runs before every tool execution. It rejects
+`playwright_browser_*` calls unless the OpenCode process has the exact override
+`CUDDLY_WINNER_BROWSER_FALLBACK=playwright`. This is an execution boundary, not
+proof that a fallback is appropriate: the last-resort gate remains mandatory.
+For image generation, the workflow must verify the intended prompt after image
+mode is selected and the submitted prompt in the original conversation. It then
+accepts only a new output image associated with that submission. It never
+automatically replays a generation after a disconnect.
+
 The wrapper restores human-completed logins in headless Obscura. On
 startup it reads captured sessions from `<config_dir>/cuddly-winner-sessions/`,
 injects the single captured User-Agent through Obscura's `--user-agent` flag
@@ -584,6 +593,10 @@ injects the single captured User-Agent through Obscura's `--user-agent` flag
 session's origin it hydrates that session's cookies through a filtered-out
 `browser_set_storage_state` call. Import only: the export tools stay denied, so
 a session flows in but never back to the model.
+If the engine exits while the MCP client remains open, the wrapper writes a
+credential-free diagnostic with its exit status and last external browser tool,
+then exits. Recovery requires an OpenCode restart; it does not replay the tool
+call.
 The installed `cuddly-winner-browser-session.mjs` writes those sessions. It finds
 Chrome, Edge, or Brave in standard macOS, Linux, or Windows locations, rejects a
 non-file or non-executable candidate, and checks for `DISPLAY` or
