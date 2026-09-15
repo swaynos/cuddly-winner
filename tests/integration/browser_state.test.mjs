@@ -86,6 +86,34 @@ test("loadStateForOrigin releases state only for an approved origin", () => {
   assert.equal(missing, null);
 });
 
+test("state records retain only cookies and storage for approved origins", () => {
+  const configDir = tmpConfig();
+  saveState({
+    configDir,
+    name: "acct",
+    origins: ["https://example.com"],
+    storageState: {
+      cookies: [
+        { name: "approved", value: "A", domain: ".example.com", path: "/" },
+        { name: "identity-provider", value: "B", domain: "login.example.net", path: "/" },
+      ],
+      origins: [
+        { origin: "https://example.com", localStorage: [{ name: "token", value: "A" }] },
+        { origin: "https://login.example.net", localStorage: [{ name: "token", value: "B" }] },
+      ],
+    },
+    sessionStorage: {
+      "https://example.com": { token: "A" },
+      "https://login.example.net": { token: "B" },
+    },
+  });
+
+  const loaded = loadStateForOrigin({ configDir, name: "acct", origin: "https://example.com" });
+  assert.deepEqual(loaded.storageState.cookies.map((cookie) => cookie.name), ["approved"]);
+  assert.deepEqual(loaded.storageState.origins.map((entry) => entry.origin), ["https://example.com"]);
+  assert.deepEqual(Object.keys(loaded.sessionStorage), ["https://example.com"]);
+});
+
 test("metadata surfaces never contain secret values", () => {
   const configDir = tmpConfig();
   saveState({ configDir, name: "acct", origins: ["https://example.com"], storageState: sampleState });

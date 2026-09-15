@@ -190,13 +190,10 @@ and separate headed login helper. Deterministic tests cover login state,
 downloads, collision-safe local placement, validation, non-replay, and retired
 skill cleanup.
 
-`plugins/immutability.ts` still rejects the `playwright_browser_*` tool prefix
-unless its fallback environment gate is set. That trusted control-plane change
-is outside this migration package and must be made by its owner before the
-managed tools can run in native Build mode. The managed MCP entry name also needs
-an operator decision because the namespaced installed entry differs from the
-architecture's `playwright` target; do not rename either side without that
-recorded decision.
+`plugins/immutability.ts` permits the managed Playwright browser tools. It still
+blocks browser state-export tools and must not permit another path that returns
+hydrated credentials to the model. The managed MCP entry is named
+`cuddly-winner-browser`; installation preserves unrelated user entries.
 
 The final report should list changed files, removed components, exact test
 commands and exit codes, deployment-fixture results, repository search results,

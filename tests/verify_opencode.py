@@ -126,9 +126,12 @@ def _managed_profile_file_mismatches(config: pathlib.Path) -> list[str]:
         *(ROOT / "tools").glob("*.ts"),
         *(ROOT / "skills").iterdir(),
         *(ROOT / "rules").glob("*.md"),
+        ROOT / "scripts" / "opencode-playwright-mcp.mjs",
+        ROOT / "scripts" / "opencode-browser-state.mjs",
+        ROOT / "scripts" / "opencode-browser-login.mjs",
     ]
     for source in expected_paths:
-        destination = config / source.relative_to(ROOT)
+        destination = config / (source.name if source.parent == ROOT / "scripts" else source.relative_to(ROOT))
         if not destination.exists():
             mismatches.append(f"missing active profile file: {destination}")
         elif source.is_dir():

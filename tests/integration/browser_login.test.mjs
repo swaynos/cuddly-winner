@@ -58,6 +58,10 @@ test("capture rejects incomplete arguments before opening a browser", async () =
     invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com"]),
     (e) => e.code === 1 && /capture requires --cookie or --complete-url/.test(e.stderr),
   );
+  await assert.rejects(
+    invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com", "--complete-url", "https://identity.example/complete"]),
+    (e) => e.code === 1 && /complete-url origin must be approved/.test(e.stderr),
+  );
 }));
 
 test("a bad action and a missing name or config-dir are rejected", async () => fixture(async (root) => {

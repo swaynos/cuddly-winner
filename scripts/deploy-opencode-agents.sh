@@ -410,7 +410,7 @@ retired_artifact_owned() {
 
 retired_browser_skill_owned() {
   local dst="${SKILLS_DIR}/playwright-image-generation"
-  [[ -L "$dst" ]] && links_equal "${REPO_ROOT}/skills/playwright-image-generation" "$dst"
+  [[ -L "$dst" && "$(readlink "$dst")" == "${REPO_ROOT}/skills/playwright-image-generation" ]]
 }
 
 sync_retired_browser_skill() {
@@ -468,6 +468,36 @@ sync_retired_artifacts() {
       fi
     fi
   done
+}
+
+sync_retired_browser_stack() {
+  local wrapper="${CONFIG_DIR}/cuddly-winner-browser-mcp.mjs"
+  local session="${CONFIG_DIR}/cuddly-winner-browser-session.mjs"
+  local engine="${CONFIG_DIR}/cuddly-winner-browser"
+  [[ -e "$wrapper" || -e "$session" || -e "$engine" || -L "$wrapper" || -L "$session" || -L "$engine" ]] || return 0
+  if node -e '
+    const { createHash } = require("node:crypto");
+    const { readFileSync, lstatSync } = require("node:fs");
+    const [wrapper, session] = process.argv.slice(1);
+    const digest = file => createHash("sha256").update(readFileSync(file)).digest("hex");
+    try {
+      process.exit(lstatSync(wrapper).isFile() && lstatSync(session).isFile()
+        && digest(wrapper) === "10b0d12cb1f8d1ad47ac6cd4a251d4306cde942a6d3a3c10062e50750cb48403"
+        && digest(session) === "6c9bd50220ab75cb4e6061a22d1387f7c24ebc0c75e5909eef51245b1df3f722" ? 0 : 1);
+    } catch { process.exit(1); }
+  ' "$wrapper" "$session"; then
+    if [[ "$ACTION" == "status" ]]; then
+      printf '  [retired managed browser stack] %s\n' "$CONFIG_DIR"
+      mark_status_drift
+    else
+      rm -f "$wrapper" "$session"
+      rm -rf "$engine"
+      printf 'Removed retired managed browser stack from %s\n' "$CONFIG_DIR"
+    fi
+  else
+    printf 'Retired browser stack conflict: %s (ownership not proven; preserved)\n' "$CONFIG_DIR"
+    [[ "$ACTION" == "status" ]] && mark_status_drift
+  fi
 }
 
 record_agent_state() {
@@ -608,6 +638,18 @@ install_tool_sdk() {
     rm -rf "$stage_root"
     die "Clean runtime staging did not produce the pinned package versions"
   fi
+  if ! "${stage_runtime}/.bin/playwright" install chromium >/dev/null; then
+    rm -rf "$stage_root"
+    die "Unable to install the pinned Playwright Chromium build"
+  fi
+  if ! node -e '
+    const { existsSync } = require("node:fs");
+    const { chromium } = require(process.argv[1]);
+    process.exit(existsSync(chromium.executablePath()) ? 0 : 1);
+  ' "${stage_runtime}/playwright"; then
+    rm -rf "$stage_root"
+    die "Pinned Playwright Chromium build is unavailable after installation"
+  fi
 
   if [[ -e "$runtime_root" || -L "$runtime_root" ]]; then
     if node "$RUNTIME_INTEGRITY_HELPER" compare --root "$runtime_root" --state "$RUNTIME_INTEGRITY_STATE" --expected-root "$stage_runtime" &&
@@ -702,6 +744,16 @@ runtime_status() {
   printf 'Runtime packages:\n'
   runtime_package_status "@opencode-ai/plugin" "$SDK_VERSION"
   runtime_package_status "playwright" "$PLAYWRIGHT_VERSION"
+  if ! node -e '
+    const { existsSync } = require("node:fs");
+    const { chromium } = require(process.argv[1]);
+    process.exit(existsSync(chromium.executablePath()) ? 0 : 1);
+  ' "${CONFIG_DIR}/node_modules/playwright"; then
+    printf '  [missing] runtime browser: Playwright Chromium\n'
+    mark_status_drift
+  else
+    printf '  [current] runtime browser: Playwright Chromium\n'
+  fi
   browser_control_file_status "$BROWSER_MCP_SERVER_SOURCE" "$BROWSER_MCP_SERVER_DEST"
   browser_control_file_status "$BROWSER_STATE_SOURCE" "$BROWSER_STATE_DEST"
   browser_control_file_status "$BROWSER_LOGIN_SOURCE" "$BROWSER_LOGIN_DEST"
@@ -787,7 +839,10 @@ RUNTIME_INTEGRITY_HELPER="${SCRIPT_DIR}/opencode-runtime-integrity.mjs"
 
 shopt -s nullglob
 AGENT_SOURCES=("${REPO_ROOT}"/agents/*.md)
-SKILL_SOURCES=("${REPO_ROOT}"/skills/*)
+SKILL_SOURCES=()
+for source in "${REPO_ROOT}"/skills/*; do
+  [[ -f "$source/SKILL.md" ]] && SKILL_SOURCES+=("$source")
+done
 RULE_SOURCES=("${REPO_ROOT}"/rules/*.md)
 shopt -u nullglob
 PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/autonomous-kpis.ts" "${REPO_ROOT}/plugins/announce-hygiene.ts")
@@ -819,7 +874,8 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
   sync_discoverable_skill_backups
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
-  sync_retired_artifacts
+   sync_retired_artifacts
+   sync_retired_browser_stack
   sync_retired_browser_skill
   if [[ "$ACTION" == "status" ]]; then
     if [[ "$MANAGED_ENTRY_DRIFT" == 0 ]]; then
@@ -860,6 +916,7 @@ fi
 sync_retired_agents "$AGENT_STATE_FILE"
 sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
 sync_retired_artifacts
+sync_retired_browser_stack
 sync_retired_browser_skill
 record_agent_state "$AGENT_STATE_FILE"
 sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"

@@ -26,6 +26,10 @@ function fixtureServer() {
       res.end(payload);
       return;
     }
+    if (req.url === "/empty") {
+      res.writeHead(204).end();
+      return;
+    }
     res.setHeader("set-cookie", "fixture-auth=approved; Path=/");
     res.setHeader("content-type", "text/html");
     res.end("<!doctype html><title>Download fixture</title>");
@@ -85,6 +89,12 @@ test("authenticated headless downloads validate bytes and never replace an exist
     const badSignature = await c.call("browser_download", { url: `${base}/download`, path: invalid, signature_hex: "0000" });
     assert.equal(badSignature.isError, true);
     await assert.rejects(readFile(invalid), { code: "ENOENT" });
+
+    const empty = path.join(destinationDir, "empty.bin");
+    const emptyResult = await c.call("browser_download", { url: `${base}/empty`, path: empty });
+    assert.equal(emptyResult.isError, true);
+    assert.match(c.textOf(emptyResult), /empty/);
+    await assert.rejects(readFile(empty), { code: "ENOENT" });
   } finally {
     c.close();
     httpServer.close();

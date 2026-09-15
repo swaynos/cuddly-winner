@@ -127,6 +127,7 @@ function validateCaptureArgs(args) {
       throw new LoginError("--complete-url must be an https URL");
     }
     if (cu.protocol !== "https:") throw new LoginError("--complete-url must be https");
+    if (!origins.includes(cu.origin)) throw new LoginError("--complete-url origin must be approved by --origin");
   }
   if (!cookie && !completeUrl) throw new LoginError("capture requires --cookie or --complete-url");
 
@@ -184,27 +185,17 @@ async function waitForCompletion(context, page, opts, deadline) {
 }
 
 // Capture session storage per approved origin, only when explicitly requested.
-async function captureSessionStorage(context, origins) {
+async function captureSessionStorage(page, origins) {
   const result = {};
-  for (const origin of origins) {
-    const page = await context.newPage();
-    try {
-      await page.goto(origin, { waitUntil: "domcontentloaded" });
-      const entries = await page.evaluate(() => {
-        const out = {};
-        for (let i = 0; i < window.sessionStorage.length; i++) {
-          const k = window.sessionStorage.key(i);
-          out[k] = window.sessionStorage.getItem(k);
-        }
-        return out;
-      });
-      if (entries && Object.keys(entries).length) result[origin] = entries;
-    } catch {
-      /* origin may be unreachable during capture; skip its session storage */
-    } finally {
-      await page.close();
-    }
+  let origin;
+  try {
+    origin = new URL(page.url()).origin;
+  } catch {
+    return undefined;
   }
+  if (!origins.includes(origin)) return undefined;
+  const entries = await page.evaluate(() => Object.fromEntries(Object.keys(window.sessionStorage).map((key) => [key, window.sessionStorage.getItem(key)])));
+  if (entries && Object.keys(entries).length) result[origin] = entries;
   return Object.keys(result).length ? result : undefined;
 }
 
@@ -227,7 +218,7 @@ async function capture(args) {
     await waitForCompletion(context, page, opts, Date.now() + opts.timeout * 1000);
 
     const storageState = await context.storageState();
-    const sessionStorage = opts.captureSessionStorage ? await captureSessionStorage(context, opts.origins) : undefined;
+    const sessionStorage = opts.captureSessionStorage ? await captureSessionStorage(page, opts.origins) : undefined;
     saveState({ configDir: opts.configDir, name: opts.name, origins: opts.origins, storageState, sessionStorage });
     // Never print state values; only metadata.
     process.stdout.write(

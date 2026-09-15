@@ -31,6 +31,7 @@ import { loadStateForOrigin, listStates } from "./opencode-browser-state.mjs";
 const CONFIG_DIR = process.env.CUDDLY_WINNER_CONFIG_DIR || "";
 const EXECUTABLE = process.env.CUDDLY_WINNER_BROWSER_EXECUTABLE || undefined;
 const DEFAULT_TIMEOUT = Number(process.env.CUDDLY_WINNER_BROWSER_TIMEOUT_MS || 30000);
+const MAX_DOWNLOAD_BYTES = Number(process.env.CUDDLY_WINNER_BROWSER_MAX_DOWNLOAD_BYTES || 50 * 1024 * 1024);
 const STATE_NAMES = (process.env.CUDDLY_WINNER_BROWSER_STATES || "")
   .split(",")
   .map((s) => s.trim())
@@ -87,6 +88,7 @@ let pages = []; // ordered list of Page
 let activeIndex = 0;
 const consoleMessages = [];
 const hydratedOrigins = new Set();
+let hasHydratedAuthentication = false;
 
 async function ensureChromium() {
   if (!chromium) ({ chromium } = await import("playwright"));
@@ -124,6 +126,7 @@ async function closeBrowser() {
   pages = [];
   activeIndex = 0;
   hydratedOrigins.clear();
+  hasHydratedAuthentication = false;
   consoleMessages.length = 0;
   if (toClose) {
     try {
@@ -178,17 +181,21 @@ async function maybeHydrate(url) {
     }
     const originStores = Array.isArray(loaded.storageState?.origins) ? loaded.storageState.origins : [];
     const sessionStores = loaded.sessionStorage && typeof loaded.sessionStorage === "object" ? loaded.sessionStorage : {};
+    hasHydratedAuthentication = Boolean(cookies.length || originStores.length || Object.keys(sessionStores).length);
     if (originStores.length || Object.keys(sessionStores).length) {
       await context.addInitScript(
         ({ localStores, sessionStores: sess }) => {
           try {
             const here = location.origin;
+            const marker = `__cuddly_winner_hydrated__:${here}`;
+            if (window.name.includes(marker)) return;
             for (const entry of localStores) {
               if (entry.origin !== here) continue;
               for (const item of entry.localStorage || []) window.localStorage.setItem(item.name, item.value);
             }
             const s = sess[here];
             if (s) for (const [k, v] of Object.entries(s)) window.sessionStorage.setItem(k, v);
+            window.name = `${window.name}${marker}`;
           } catch {
             /* storage may be unavailable on some origins */
           }
@@ -385,6 +392,7 @@ const HANDLERS = {
   },
   async browser_evaluate(args) {
     if (typeof args.expression !== "string") throw new Error("expression is required");
+    if (hasHydratedAuthentication) throw new Error("browser_evaluate is unavailable while saved authentication state is loaded");
     let value;
     try {
       value = await activePage().evaluate(args.expression);
@@ -438,9 +446,33 @@ const HANDLERS = {
       if (err?.code !== "ENOENT") throw err;
     }
     const page = activePage();
-    const fetched = await page.evaluate(async (url) => {
-      const response = await fetch(url, { credentials: "include" });
-      const bytes = new Uint8Array(await response.arrayBuffer());
+    const fetched = await page.evaluate(async ({ url, timeoutMs, maxBytes }) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const response = await fetch(url, { credentials: "include", signal: controller.signal });
+      const declared = Number(response.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > maxBytes) throw new Error("download exceeds maximum size");
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("download response has no body");
+      const chunks = [];
+      let total = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > maxBytes) throw new Error("download exceeds maximum size");
+          chunks.push(value);
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
       let binary = "";
       for (const byte of bytes) binary += String.fromCharCode(byte);
       return {
@@ -448,9 +480,10 @@ const HANDLERS = {
         contentType: response.headers.get("content-type") || "",
         data: btoa(binary),
       };
-    }, args.url);
+    }, { url: args.url, timeoutMs: DEFAULT_TIMEOUT, maxBytes: MAX_DOWNLOAD_BYTES });
     if (fetched.status < 200 || fetched.status >= 300) throw new Error(`download request failed with status ${fetched.status}`);
     const bytes = Buffer.from(fetched.data, "base64");
+    if (!bytes.length) throw new Error("download is empty");
     const contentType = fetched.contentType.toLowerCase();
     if (typeof args.expected_content_type === "string" && !contentType.includes(args.expected_content_type.toLowerCase())) {
       throw new Error(`download content type mismatch: ${fetched.contentType || "(missing)"}`);

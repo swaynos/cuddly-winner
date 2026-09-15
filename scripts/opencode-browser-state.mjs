@@ -132,6 +132,30 @@ function ensureSessionsDir(configDir) {
   return dir;
 }
 
+function hostMatchesCookieDomain(host, domain) {
+  if (typeof domain !== "string" || !domain) return false;
+  const normalized = domain.replace(/^\./, "").toLowerCase();
+  const target = host.toLowerCase();
+  return target === normalized || target.endsWith(`.${normalized}`);
+}
+
+function filterState(origins, storageState, sessionStorage) {
+  const allowed = new Set(origins);
+  const hosts = origins.map((origin) => new URL(origin).hostname);
+  const cookies = (Array.isArray(storageState?.cookies) ? storageState.cookies : [])
+    .filter((cookie) => cookie && hosts.some((host) => hostMatchesCookieDomain(host, cookie.domain)));
+  const originStores = (Array.isArray(storageState?.origins) ? storageState.origins : [])
+    .filter((entry) => entry && allowed.has(entry.origin));
+  const sessions = {};
+  if (sessionStorage && typeof sessionStorage === "object") {
+    for (const origin of origins) {
+      const entries = sessionStorage[origin];
+      if (entries && typeof entries === "object") sessions[origin] = entries;
+    }
+  }
+  return { storageState: { cookies, origins: originStores }, sessionStorage: Object.keys(sessions).length ? sessions : undefined };
+}
+
 /**
  * Persist a state record (mode 0600). Overwrites any existing record of the
  * same name. `storageState` is the object returned by Playwright's
@@ -146,18 +170,16 @@ export function saveState({ configDir, name, origins, storageState, sessionStora
   }
   ensureSessionsDir(configDir);
   const file = recordPath(configDir, name);
+  const filtered = filterState(normOrigins, storageState, sessionStorage);
   const record = {
     schemaVersion: STATE_SCHEMA_VERSION,
     name,
     origins: normOrigins,
     capturedAt: new Date().toISOString(),
-    storageState: {
-      cookies: Array.isArray(storageState.cookies) ? storageState.cookies : [],
-      origins: Array.isArray(storageState.origins) ? storageState.origins : [],
-    },
+    storageState: filtered.storageState,
   };
-  if (sessionStorage && typeof sessionStorage === "object") {
-    record.sessionStorage = sessionStorage;
+  if (filtered.sessionStorage) {
+    record.sessionStorage = filtered.sessionStorage;
   }
   const tmp = `${file}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
@@ -211,9 +233,10 @@ export function loadStateForOrigin({ configDir, name, origin }) {
   const record = readRecord(configDir, name);
   if (!record) return null;
   if (!record.origins.includes(normOrigin)) return null;
+  const filtered = filterState(record.origins, record.storageState, record.sessionStorage);
   return {
-    storageState: record.storageState,
-    sessionStorage: record.sessionStorage || null,
+    storageState: filtered.storageState,
+    sessionStorage: filtered.sessionStorage || null,
     origins: record.origins.slice(),
   };
 }
