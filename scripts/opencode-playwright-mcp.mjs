@@ -23,8 +23,8 @@
 //   CUDDLY_WINNER_BROWSER_TIMEOUT_MS default per-action timeout (default 30000)
 
 import { createInterface } from "node:readline";
-import { createHash } from "node:crypto";
-import { lstat, mkdir, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadStateForOrigin, listStates } from "./opencode-browser-state.mjs";
 
@@ -70,7 +70,7 @@ const TOOLS = [
   { name: "browser_wait_for", description: "Wait for a selector to appear.", inputSchema: { type: "object", properties: { selector: { type: "string" }, timeout: { type: "number" } }, required: ["selector"] } },
   { name: "browser_wait_for_text", description: "Wait for text to appear in the page.", inputSchema: { type: "object", properties: { text: { type: "string" }, timeout: { type: "number" } }, required: ["text"] } },
   { name: "browser_screenshot", description: "Capture the viewport as a PNG saved to path.", inputSchema: { type: "object", properties: { path: { type: "string" }, full_page: { type: "boolean" } }, required: ["path"] } },
-  { name: "browser_download", description: "Retrieve a file through the current authenticated headless page and save it only after validation.", inputSchema: { type: "object", properties: { url: { type: "string" }, path: { type: "string" }, min_bytes: { type: "number" }, expected_sha256: { type: "string" }, expected_content_type: { type: "string" }, signature_hex: { type: "string" } }, required: ["url", "path"] } },
+  { name: "browser_download", description: "Capture a page download event or retrieve a URL through the current authenticated headless page; save only after validation.", inputSchema: { type: "object", properties: { url: { type: "string" }, selector: { type: "string" }, path: { type: "string" }, min_bytes: { type: "number" }, expected_sha256: { type: "string" }, expected_content_type: { type: "string" }, signature_hex: { type: "string" } }, required: ["path"] } },
   { name: "browser_tab_new", description: "Open a new tab, optionally navigating to a URL.", inputSchema: { type: "object", properties: { url: { type: "string" } } } },
   { name: "browser_tab_list", description: "List open tabs.", inputSchema: { type: "object", properties: {} } },
   { name: "browser_tab_switch", description: "Switch the active tab by index.", inputSchema: { type: "object", properties: { index: { type: "number" } }, required: ["index"] } },
@@ -437,7 +437,9 @@ const HANDLERS = {
     return text(`screenshot saved to ${path.resolve(args.path)}`);
   },
   async browser_download(args) {
-    if (typeof args.url !== "string" || typeof args.path !== "string") throw new Error("url and path are required");
+    if (typeof args.path !== "string" || (typeof args.url !== "string" && typeof args.selector !== "string")) {
+      throw new Error("path and either url or selector are required");
+    }
     const destination = path.resolve(args.path);
     try {
       await lstat(destination);
@@ -446,7 +448,23 @@ const HANDLERS = {
       if (err?.code !== "ENOENT") throw err;
     }
     const page = activePage();
-    const fetched = await page.evaluate(async ({ url, timeoutMs, maxBytes }) => {
+    let bytes;
+    let contentType = "";
+    if (typeof args.selector === "string") {
+      const downloadPromise = page.waitForEvent("download", { timeout: DEFAULT_TIMEOUT });
+      await page.locator(args.selector).first().click({ timeout: DEFAULT_TIMEOUT });
+      const download = await downloadPromise;
+      const failure = await download.failure();
+      if (failure) throw new Error(`browser download failed: ${failure}`);
+      const temporary = path.join(path.dirname(destination), `.cuddly-winner-download-${randomUUID()}`);
+      try {
+        await download.saveAs(temporary);
+        bytes = await readFile(temporary);
+      } finally {
+        await rm(temporary, { force: true });
+      }
+    } else {
+      const fetched = await page.evaluate(async ({ url, timeoutMs, maxBytes }) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       const response = await fetch(url, { credentials: "include", signal: controller.signal });
@@ -480,13 +498,14 @@ const HANDLERS = {
         contentType: response.headers.get("content-type") || "",
         data: btoa(binary),
       };
-    }, { url: args.url, timeoutMs: DEFAULT_TIMEOUT, maxBytes: MAX_DOWNLOAD_BYTES });
-    if (fetched.status < 200 || fetched.status >= 300) throw new Error(`download request failed with status ${fetched.status}`);
-    const bytes = Buffer.from(fetched.data, "base64");
+      }, { url: args.url, timeoutMs: DEFAULT_TIMEOUT, maxBytes: MAX_DOWNLOAD_BYTES });
+      if (fetched.status < 200 || fetched.status >= 300) throw new Error(`download request failed with status ${fetched.status}`);
+      bytes = Buffer.from(fetched.data, "base64");
+      contentType = fetched.contentType.toLowerCase();
+    }
     if (!bytes.length) throw new Error("download is empty");
-    const contentType = fetched.contentType.toLowerCase();
     if (typeof args.expected_content_type === "string" && !contentType.includes(args.expected_content_type.toLowerCase())) {
-      throw new Error(`download content type mismatch: ${fetched.contentType || "(missing)"}`);
+      throw new Error(`download content type mismatch: ${contentType || "(missing)"}`);
     }
     if (Number.isFinite(args.min_bytes) && bytes.length < args.min_bytes) throw new Error(`download is smaller than ${args.min_bytes} bytes`);
     if (typeof args.signature_hex === "string") {
