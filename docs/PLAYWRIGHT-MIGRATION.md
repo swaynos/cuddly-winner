@@ -2,10 +2,8 @@
 
 ## Purpose
 
-This is the build handoff for replacing the current browser implementation.
-The durable requirements already describe the target behavior. The source code,
-tests, runtime prompts, generated task files, and installed profile still need
-to be brought into line with those requirements.
+This migration is complete in source, tests, runtime prompts, and the managed
+profile. The durable requirements describe the resulting behavior.
 
 The finished system has one browser backend: Playwright. Headless Playwright
 does all normal work. Headed Playwright opens only while a person completes a
@@ -183,6 +181,22 @@ Before completion:
    validation before reporting success.
 
 ## Completion Evidence
+
+## Completed Work And Outstanding Precondition
+
+The retired browser stack and browser image experiment have been removed. The
+managed profile installs the headless Playwright service, secure state store,
+and separate headed login helper. Deterministic tests cover login state,
+downloads, collision-safe local placement, validation, non-replay, and retired
+skill cleanup.
+
+`plugins/immutability.ts` still rejects the `playwright_browser_*` tool prefix
+unless its fallback environment gate is set. That trusted control-plane change
+is outside this migration package and must be made by its owner before the
+managed tools can run in native Build mode. The managed MCP entry name also needs
+an operator decision because the namespaced installed entry differs from the
+architecture's `playwright` target; do not rename either side without that
+recorded decision.
 
 The final report should list changed files, removed components, exact test
 commands and exit codes, deployment-fixture results, repository search results,

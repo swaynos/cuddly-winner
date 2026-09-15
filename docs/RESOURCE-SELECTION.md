@@ -111,8 +111,8 @@ headless-work split. The tool returns an opaque handle, allows only `GET` and
 
 ## Implementation Status
 
-This document defines the target design. The current code and installed profile
-still contain the retired browser stack and browser image experiment. The next
-implementation must follow
-[PLAYWRIGHT-MIGRATION.md](PLAYWRIGHT-MIGRATION.md) before the browser feature is
-considered current.
+The source and managed profile implement this Playwright-only design. The
+remaining runtime precondition sits in the trusted immutability guard: it must
+permit the managed Playwright tool prefix before those tools can run in native
+Build mode. That control-plane change is owned separately. See
+[PLAYWRIGHT-MIGRATION.md](PLAYWRIGHT-MIGRATION.md) for its recorded status.

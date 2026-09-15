@@ -510,10 +510,12 @@ plugin-factory input shape.
 
 ## Deployment
 
-The browser paragraphs in this section describe the migration target. The
-current source and installed profile remain out of date until the work in
-[PLAYWRIGHT-MIGRATION.md](PLAYWRIGHT-MIGRATION.md) is complete. The generated
-agent, governance, and general deployment paragraphs describe current behavior.
+The browser paragraphs in this section describe the current Playwright-only
+implementation. The immutability guard still needs a separately owned change
+before the managed Playwright tools are callable in native Build mode. See
+[PLAYWRIGHT-MIGRATION.md](PLAYWRIGHT-MIGRATION.md) for that outstanding
+precondition. The generated agent, governance, and general deployment paragraphs
+describe current behavior.
 
 `scripts/deploy-opencode-agents.sh` supports `install`, `status`, and `remove`.
 It resolves one configuration root from `--config-dir`,

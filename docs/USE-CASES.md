@@ -352,8 +352,8 @@ task-specific project-local agent for each planning-ready task.
 
 ## Resource Selection
 
-The browser-specific cases in this section describe the migration target, not
-the current installed browser stack.
+The browser-specific cases in this section describe the current managed
+Playwright browser stack.
 
 ### UC-RESOURCE-01: Research avoids desktop disruption by default
 

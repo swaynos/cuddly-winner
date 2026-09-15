@@ -408,6 +408,31 @@ retired_artifact_owned() {
   esac
 }
 
+retired_browser_skill_owned() {
+  local dst="${SKILLS_DIR}/playwright-image-generation"
+  [[ -L "$dst" ]] && links_equal "${REPO_ROOT}/skills/playwright-image-generation" "$dst"
+}
+
+sync_retired_browser_skill() {
+  local dst="${SKILLS_DIR}/playwright-image-generation"
+  assert_managed_destination "$dst"
+  [[ -e "$dst" || -L "$dst" ]] || return 0
+  if retired_browser_skill_owned; then
+    if [[ "$ACTION" == "status" ]]; then
+      printf '  [retired managed skill] %s\n' "$dst"
+      mark_managed_entry_drift
+    else
+      rm -f "$dst"
+      printf 'Removed retired managed skill: %s\n' "$dst"
+    fi
+  else
+    printf 'Retired skill conflict: %s (ownership not proven; preserved)\n' "$dst"
+    if [[ "$ACTION" == "status" ]]; then
+      mark_managed_entry_drift
+    fi
+  fi
+}
+
 remove_owned_retired_artifact() {
   local relative="$1"
   local dst="${CONFIG_DIR}/${relative}"
@@ -795,6 +820,7 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_discoverable_skill_backups
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
   sync_retired_artifacts
+  sync_retired_browser_skill
   if [[ "$ACTION" == "status" ]]; then
     if [[ "$MANAGED_ENTRY_DRIFT" == 0 ]]; then
       printf 'Managed entries: current\n'
@@ -834,6 +860,7 @@ fi
 sync_retired_agents "$AGENT_STATE_FILE"
 sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
 sync_retired_artifacts
+sync_retired_browser_skill
 record_agent_state "$AGENT_STATE_FILE"
 sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
 sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"

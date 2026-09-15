@@ -70,9 +70,9 @@ change here.
 The repository supports Node.js `>=22.22.2 <25`. CI uses Node.js `24.15.0`.
 Deployment uses the active `node` and `npm` on the user's `PATH` and currently
 installs `@opencode-ai/plugin` version `1.17.15` and Playwright version `1.58.2`.
-The browser migration target adds a pinned Playwright browser service and its
-matching browser build. Playwright will then be the only supported browser
-backend, suitable for both headless work and approved headed login.
+The managed profile includes a pinned Playwright browser service and matching
+browser build. Playwright is the only supported browser backend, suitable for
+headless work and approved headed login.
 Installation records owner-only integrity state for the full runtime dependency
 content trees. Status and live repository-profile preflight use that recorded
 state and fail on missing or invalid state or modified, missing, or unsafe
@@ -379,8 +379,8 @@ not change the Git index.
 
 ### Session Fetch
 
-This subsection and the two browser subsections below define the migration
-target. They do not describe the browser stack in the current installation.
+This subsection and the two browser subsections below describe the current
+managed browser stack.
 
 `session_fetch` supports an explicit interactive browser bootstrap, completion,
 private read-only request, and close lifecycle for a configured site. A profile
@@ -467,10 +467,10 @@ recursive hash plus entry, file, and symlink counts for the whole `node_modules`
 dependency tree in a checksummed mode-`0600` state file beneath
 `<config_dir>/node_modules/`.
 
-The browser migration target adds the pinned Playwright packages, browser build,
-and control files required for headed login and headless work. At that point the
-installer also removes project-owned files and configuration from the old
-browser stack while preserving modified or unrelated user files.
+The installer includes pinned Playwright packages, a browser build, and control
+files for headed login and headless work. It removes project-owned retired
+browser files and configuration while preserving modified or unrelated user
+files.
 
 The configuration root resolves in this order: `--config-dir`,
 `OPENCODE_DEPLOY_CONFIG_DIR`, then `opencode debug paths`. The supported actions
