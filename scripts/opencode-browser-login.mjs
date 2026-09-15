@@ -37,7 +37,6 @@ import {
   removeState,
 } from "./opencode-browser-state.mjs";
 
-const EXECUTABLE = process.env.CUDDLY_WINNER_BROWSER_EXECUTABLE || undefined;
 const DEFAULT_TIMEOUT_SECONDS = 180;
 const POLL_MS = 500;
 
@@ -210,7 +209,7 @@ async function capture(args) {
   try {
     context = await chromium.launchPersistentContext(profileDir, {
       headless: false,
-      executablePath: EXECUTABLE,
+      channel: "chromium",
     });
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(opts.url);

@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
 const deploy = path.join(repo, "scripts", "deploy-opencode-agents.sh");
+const intermediateWrapperSha256 = "061acc2e31017957bb03fe9e421fc946747e5e09478284904cdd8146c2ceacfb";
 
 async function fixture(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "retired-browser-"));
@@ -22,6 +23,11 @@ async function deployFixture(root, action) {
   await writeFile(path.join(bin, "opencode"), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
   return run("bash", [deploy, action, "--config-dir", config], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
 }
+
+test("installer recognizes the deployed intermediate retired browser wrapper revision", async () => {
+  const installer = await (await import("node:fs/promises")).readFile(deploy, "utf8");
+  assert.match(installer, new RegExp(`"${intermediateWrapperSha256}"`));
+});
 
 test("installer removes only a proved retired browser-image skill and preserves a conflict", async () => fixture(async (root) => {
   const skill = path.join(root, "config", "skills", "playwright-image-generation");

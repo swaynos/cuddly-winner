@@ -482,7 +482,10 @@ sync_retired_browser_stack() {
     const digest = file => createHash("sha256").update(readFileSync(file)).digest("hex");
     try {
       process.exit(lstatSync(wrapper).isFile() && lstatSync(session).isFile()
-        && digest(wrapper) === "10b0d12cb1f8d1ad47ac6cd4a251d4306cde942a6d3a3c10062e50750cb48403"
+        && [
+          "10b0d12cb1f8d1ad47ac6cd4a251d4306cde942a6d3a3c10062e50750cb48403",
+          "061acc2e31017957bb03fe9e421fc946747e5e09478284904cdd8146c2ceacfb",
+        ].includes(digest(wrapper))
         && digest(session) === "6c9bd50220ab75cb4e6061a22d1387f7c24ebc0c75e5909eef51245b1df3f722" ? 0 : 1);
     } catch { process.exit(1); }
   ' "$wrapper" "$session"; then

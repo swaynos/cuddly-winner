@@ -19,7 +19,6 @@
 //   CUDDLY_WINNER_CONFIG_DIR         config root holding cuddly-winner-sessions/
 //   CUDDLY_WINNER_BROWSER_STATES     optional comma list of state record names
 //                                    to consider for hydration (default: all)
-//   CUDDLY_WINNER_BROWSER_EXECUTABLE optional Chromium executable override
 //   CUDDLY_WINNER_BROWSER_TIMEOUT_MS default per-action timeout (default 30000)
 
 import { createInterface } from "node:readline";
@@ -98,7 +97,7 @@ async function ensureChromium() {
 async function ensureContext() {
   if (context) return context;
   await ensureChromium();
-  browser = await chromium.launch({ headless: true, executablePath: EXECUTABLE });
+  browser = await chromium.launch({ headless: true, channel: "chromium" });
   context = await browser.newContext();
   context.setDefaultTimeout(DEFAULT_TIMEOUT);
   const page = await context.newPage();
