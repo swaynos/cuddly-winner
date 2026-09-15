@@ -5,18 +5,19 @@ import { readFile } from "node:fs/promises";
 
 const repo = path.resolve(import.meta.dirname, "../..");
 
-test("deployed rule defines the Obscura-first browser decision flow", async () => {
-  const text = (await readFile(path.join(repo, "rules", "resource-selection.md"), "utf8"))
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+function normalize(text) {
+  return text.toLowerCase().replace(/\s+/g, " ");
+}
+
+test("deployed rule defines the Playwright-only headless/headed decision flow", async () => {
+  const text = normalize(await readFile(path.join(repo, "rules", "resource-selection.md"), "utf8"));
   const orderedSteps = [
-    "project instructions override",
-    "use `cuddly-winner-browser`",
-    "check whether login is required",
-    "already signed in",
-    "user's browser",
-    "no gui",
-    "allowed alternative",
+    "playwright is the project's only browser backend",
+    "headless playwright performs all normal work",
+    "headed playwright opens only for a person to complete a required login",
+    "ask for approval",
+    "new headless context",
+    "report the blocker",
   ];
 
   let previous = -1;
@@ -27,45 +28,43 @@ test("deployed rule defines the Obscura-first browser decision flow", async () =
   }
 });
 
-test("image-generation skill follows the default browser rule", async () => {
-  const text = (await readFile(path.join(repo, "skills", "playwright-image-generation", "SKILL.md"), "utf8")).toLowerCase();
-  assert.match(text, /use `cuddly-winner-browser` by default/);
-  assert.match(text, /project instructions.*override/);
-  assert.match(text, /check whether login is required/);
-  assert.match(text, /playwright.*only.*override|last-resort fallback gate/);
-});
-
-test("browser rules and image skill require evidence before a last-resort pivot", async () => {
-  for (const file of ["rules/resource-selection.md", "skills/playwright-image-generation/SKILL.md"]) {
-    const text = (await readFile(path.join(repo, file), "utf8")).toLowerCase().replace(/\s+/g, " ");
-    for (const clause of [
-      "a single timeout or disconnect is not grounds to switch",
-      "correct the call",
-      "bounded recovery",
-      "restart opencode",
-      "no supported obscura path remains",
-      "check whether the submitted action completed",
-      "do not describe playwright as a reconnected obscura session",
-    ]) assert.ok(text.includes(clause), `${file}: missing fallback safeguard: ${clause}`);
+test("deployed rule keeps the Playwright login-state and safety safeguards", async () => {
+  const text = normalize(await readFile(path.join(repo, "rules", "resource-selection.md"), "utf8"));
+  for (const clause of [
+    "mode 0600",
+    "state values must not appear in model context",
+    "a page preview is not a delivered file",
+    "mark the outcome unknown",
+    "never repeat an unknown non-idempotent action automatically",
+  ]) {
+    assert.ok(text.includes(clause), `rule missing safeguard: ${clause}`);
   }
 });
 
-test("durable skill documentation records the browser-selection contract", async () => {
-  const text = (await readFile(path.join(repo, "docs", "SKILLS.md"), "utf8"))
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-  assert.match(text, /`cuddly-winner-browser` by default/);
-  assert.match(text, /project.*override/);
-  assert.match(text, /check whether login is required/);
-  assert.match(text, /playwright\/cdp only/);
+test("deployed rule no longer references the retired browser stack or fallback gate", async () => {
+  const text = normalize(await readFile(path.join(repo, "rules", "resource-selection.md"), "utf8"));
+  assert.doesNotMatch(text, /obscura/, "rule still names the retired Obscura engine");
+  assert.doesNotMatch(text, /cuddly_winner_browser_fallback/, "rule still names the retired fallback env gate");
+  assert.doesNotMatch(text, /playwright-image-generation/, "rule still references the retired image-generation skill");
 });
 
-test("browser documentation requires an explicit fallback policy and verified image output", async () => {
+test("durable browser documentation records the Playwright-only backend", async () => {
   for (const file of ["docs/RESOURCE-SELECTION.md", "docs/ARCHITECTURE.md", "docs/REQUIREMENTS.md"]) {
-    const text = (await readFile(path.join(repo, file), "utf8")).toLowerCase().replace(/\s+/g, " ");
-    assert.match(text, /cuddly_winner_browser_fallback=playwright/);
-    assert.match(text, /never automatically replay.*generation/);
-    assert.match(text, /verify.*prompt.*after.*image mode/);
-    assert.match(text, /new.*output image/);
+    const text = normalize(await readFile(path.join(repo, file), "utf8"));
+    assert.match(text, /playwright/, `${file}: missing Playwright backend`);
+    assert.match(text, /headless/, `${file}: missing headless mode`);
+    assert.match(text, /headed/, `${file}: missing headed login mode`);
+    assert.doesNotMatch(text, /obscura/, `${file}: still references the retired Obscura engine`);
+    assert.doesNotMatch(text, /cuddly_winner_browser_fallback/, `${file}: still references the retired fallback env gate`);
+  }
+});
+
+test("durable documentation keeps the image-generation and no-auto-replay safeguards", async () => {
+  const requirements = normalize(await readFile(path.join(repo, "docs", "REQUIREMENTS.md"), "utf8"));
+  assert.match(requirements, /never automatically replay/, "REQUIREMENTS lost the no-auto-replay safeguard");
+
+  for (const file of ["docs/RESOURCE-SELECTION.md", "docs/REQUIREMENTS.md"]) {
+    const text = normalize(await readFile(path.join(repo, file), "utf8"));
+    assert.match(text, /existing.*image is not success|existing page image|not an image\s*already present on the page/, `${file}: lost the new-output-image safeguard`);
   }
 });

@@ -68,8 +68,21 @@ function isPublishedTaskPackage(relPath: string): boolean {
   return relPath === ".opencode/generated-agents.json" || relPath.startsWith(".opencode/agents/") || relPath.startsWith(".opencode/tasks/");
 }
 
-function playwrightFallbackAllowed(): boolean {
-  return process.env.CUDDLY_WINNER_BROWSER_FALLBACK === "playwright";
+// Browser tools that can hand saved authentication state (cookies, storage,
+// captured network traffic) back to the model. The managed headless Playwright
+// server does not expose these at all; this global block is defence in depth
+// against any raw Playwright MCP surface that does. Playwright is now the
+// sanctioned backend, so ordinary browser tools are permitted without any
+// environment gate. See docs/ARCHITECTURE.md "Deployment".
+const BROWSER_STATE_EXPORT_TOOLS = new Set([
+  "browser_get_cookies",
+  "browser_storage_state",
+  "browser_network_requests",
+]);
+
+function exposesBrowserState(tool: string): boolean {
+  const bare = tool.startsWith("playwright_") ? tool.slice("playwright_".length) : tool;
+  return BROWSER_STATE_EXPORT_TOOLS.has(tool) || BROWSER_STATE_EXPORT_TOOLS.has(bare);
 }
 
 function resolvedSession(result: unknown, sessionID: string): Record<string, any> | undefined {
@@ -286,8 +299,8 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       input: { tool: string; sessionID: string; callID: string },
       output: { args?: Record<string, unknown> },
     ) => {
-      if (input.tool.startsWith("playwright_browser_") && !playwrightFallbackAllowed()) {
-        throw new Error("ImmutabilityGuard: browser fallback is disabled. Use cuddly-winner-browser; set CUDDLY_WINNER_BROWSER_FALLBACK=playwright only for an explicit approved override.");
+      if (exposesBrowserState(input.tool)) {
+        throw new Error(`ImmutabilityGuard: ${input.tool} is blocked because it can hand saved browser authentication state to the model. Managed browser tools load login state privately; export tools are never permitted.`);
       }
       if (!MUTATING_TOOLS.has(input.tool) && !SHELL_TOOLS.has(input.tool) && !PROMETHEUS_ONLY_TOOLS.has(input.tool)) return;
       const resolution = await resolveAgent(input.sessionID);

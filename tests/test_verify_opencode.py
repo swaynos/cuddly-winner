@@ -96,11 +96,12 @@ class BehavioralAssertionTests(unittest.TestCase):
                                 "type": "local",
                                 "command": [
                                     "node",
-                                    str(config / "cuddly-winner-browser-mcp.mjs"),
-                                    str(config / "cuddly-winner-browser" / "obscura"),
-                                    "mcp",
+                                    str(config / "opencode-playwright-mcp.mjs"),
                                 ],
-                                "environment": {"HEADLESS": "true"},
+                                "environment": {
+                                    "HEADLESS": "true",
+                                    "CUDDLY_WINNER_CONFIG_DIR": str(config),
+                                },
                                 "enabled": True,
                             }
                         },

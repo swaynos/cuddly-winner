@@ -553,47 +553,6 @@ def test_project_local_suggestion(model: str | None, skip_llm: bool) -> list[Tes
     return failures
 
 
-# ---------------------------------------------------------------------------
-# Test 7: Playwright image-generation skill contains safety gates
-# ---------------------------------------------------------------------------
-
-def test_playwright_image_generation_skill_content() -> list[TestFailure]:
-    failures = []
-    _print_header("Test 7: Playwright image-generation safety gates")
-
-    skill = SKILLS_DIR / "playwright-image-generation" / "SKILL.md"
-    chatgpt_ref = SKILLS_DIR / "playwright-image-generation" / "references" / "chatgpt.md"
-    gemini_ref = SKILLS_DIR / "playwright-image-generation" / "references" / "gemini.md"
-
-    required_files = [skill, chatgpt_ref, gemini_ref]
-    for path in required_files:
-        if not path.exists():
-            failures.append(TestFailure("playwright_image_generation_content", f"Missing file: {path}"))
-            _print_fail(f"Missing {path.relative_to(SKILLS_DIR)}")
-            return failures
-
-    text = "\n".join(path.read_text(encoding="utf-8") for path in required_files).lower()
-    checks = [
-        ("blank, default, temporary" in text, "blocks blank/default/temp profiles"),
-        ("cdp attach" in text or "connect_over_cdp" in text, "documents CDP attach"),
-        ("png signature" in text, "requires PNG signature verification"),
-        ("currentSrc".lower() in text or "new source" in text, "guards against image-count-only detection"),
-        ("connection interrupted. waiting for the complete answer" in text, "records ChatGPT connection-interrupted stalls"),
-        ("dataset release" in text and "checksums" in text, "protects datasets with releases/checksums"),
-        ("gemini" in text and "chatgpt" in text, "keeps provider-neutral scope"),
-        ("ephemeral" in text and "persistent-headless" in text, "documents credential modes"),
-        ("Do not use a personal default browser profile".lower() in text, "blocks personal browser profiles"),
-    ]
-    for ok, desc in checks:
-        if ok:
-            _print_pass(desc)
-        else:
-            failures.append(TestFailure("playwright_image_generation_content", f"Missing required gate: {desc}"))
-            _print_fail(desc)
-
-    return failures
-
-
 def test_cuddly_winner_feedback_skill_content() -> list[TestFailure]:
     failures = []
     _print_header("Test 8: Cuddly Winner feedback skill safety gates")
@@ -665,7 +624,6 @@ def main() -> None:
     all_failures += test_symlink_deploy()
     all_failures += test_skill_discovery()  # No OpenCode binary in this context
     all_failures += test_project_local_suggestion(args.model, args.skip_llm)
-    all_failures += test_playwright_image_generation_skill_content()
     all_failures += test_cuddly_winner_feedback_skill_content()
 
     sys.exit(report(all_failures))

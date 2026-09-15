@@ -201,16 +201,13 @@ def _managed_profile_file_mismatches(config: pathlib.Path) -> list[str]:
         if expected not in instructions:
             mismatches.append(f"rule instruction missing: {expected}")
 
-    engine_binary = "obscura.exe" if os.name == "nt" else "obscura"
     expected_mcp = {
         "type": "local",
         "command": [
             "node",
-            str(config / "cuddly-winner-browser-mcp.mjs"),
-            str(config / "cuddly-winner-browser" / engine_binary),
-            "mcp",
+            str(config / "opencode-playwright-mcp.mjs"),
         ],
-        "environment": {"HEADLESS": "true"},
+        "environment": {"HEADLESS": "true", "CUDDLY_WINNER_CONFIG_DIR": str(config)},
         "enabled": True,
     }
     mcp = configured.get("mcp", {}) if isinstance(configured, dict) else {}
@@ -910,13 +907,14 @@ def main() -> int:
         "durable Prometheus publication gate missing",
     )
     require(
-        "visible browser" in resource_selection.lower()
+        "headed playwright" in resource_selection.lower()
         and "approval" in resource_selection.lower(),
-        "resource-selection visible-browser gate missing",
+        "resource-selection headed-login approval gate missing",
     )
     require(
-        "ephemeral" in resource_selection and "persistent" in resource_selection,
-        "image credential modes missing",
+        "ephemeral" in resource_selection.lower()
+        and "persistent" in resource_selection.lower(),
+        "login state ephemeral/persistent modes missing",
     )
     require(
         (ROOT / "rules/resource-selection.md").is_file(),
@@ -927,12 +925,16 @@ def main() -> int:
         in (ROOT / "scripts/opencode-mcp-config.mjs").read_text(encoding="utf-8"),
         "managed browser is not marked headless",
     )
+    login_helper = (ROOT / "scripts/opencode-browser-login.mjs").read_text(
+        encoding="utf-8"
+    )
     require(
-        "--confirm"
-        in (ROOT / "scripts/opencode-browser-credentials.mjs").read_text(
-            encoding="utf-8"
-        ),
-        "credential confirmation gate missing",
+        "DISPLAY" in login_helper and "WAYLAND_DISPLAY" in login_helper,
+        "headed login helper is missing its graphical-session gate",
+    )
+    require(
+        "headless: false" in login_helper,
+        "headed login helper does not open a headed context",
     )
 
     require(not (ROOT / "progress.txt").exists(), "stale root progress.txt remains")

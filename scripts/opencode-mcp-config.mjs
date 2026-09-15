@@ -4,22 +4,23 @@ import { copyFileSync, existsSync, readFileSync, realpathSync, writeFileSync } f
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { binaryPath } from "./opencode-browser-engine.mjs";
 
-// The managed browser MCP entry runs the Obscura engine binary installed under
-// the OpenCode config root by opencode-browser-engine.mjs, launched through the
-// credential-substitution wrapper (opencode-browser-mcp.mjs) so ${name:KEY}
-// placeholders resolve from a local secrets file without the model ever seeing a
-// value. Obscura is headless-only and has no --headless flag, so the HEADLESS
-// environment marker still lets modeOf classify it as headless without
-// engine-specific knowledge.
+// The managed browser MCP entry runs the headless Playwright MCP server
+// (opencode-playwright-mcp.mjs) installed under the OpenCode config root. It is
+// the project's single browser backend: headless only, with no secret-typing
+// path. Approved login state is written out of band by opencode-browser-login.mjs
+// and loaded privately by the server; a required human login uses the separate
+// headed helper, never this entry. The server reads its config root (and hence
+// the cuddly-winner-sessions/ state store) from CUDDLY_WINNER_CONFIG_DIR, and the
+// HEADLESS environment marker lets modeOf classify it as headless without
+// backend-specific knowledge.
 export function buildManagedMcp(configPath) {
   const configRoot = path.dirname(configPath);
   return {
     "cuddly-winner-browser": {
       type: "local",
-      command: ["node", path.join(configRoot, "cuddly-winner-browser-mcp.mjs"), binaryPath(configRoot), "mcp"],
-      environment: { HEADLESS: "true" },
+      command: ["node", path.join(configRoot, "opencode-playwright-mcp.mjs")],
+      environment: { HEADLESS: "true", CUDDLY_WINNER_CONFIG_DIR: configRoot },
       enabled: true,
     },
   };

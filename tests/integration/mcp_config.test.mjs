@@ -9,8 +9,6 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
 const mcp = path.join(repo, "scripts", "opencode-mcp-config.mjs");
-const engine = path.join(repo, "scripts", "opencode-browser-engine.mjs");
-const credentials = path.join(repo, "scripts", "opencode-browser-credentials.mjs");
 
 async function fixture(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "cuddly-mcp-"));
@@ -19,21 +17,18 @@ async function fixture(fn) {
 async function invoke(script, args) { return run("node", [script, ...args]); }
 async function config(file) { return JSON.parse(await readFile(file, "utf8")); }
 
-test("managed MCP install preserves user entries and installs the headless engine entry", async () => fixture(async (root, file) => {
+test("managed MCP install preserves user entries and installs the headless Playwright entry", async () => fixture(async (root, file) => {
   await writeFile(file, JSON.stringify({ mcp: { "user-browser": { type: "local", command: ["example"] } }, keep: true }));
   await invoke(mcp, ["install", "--config", file]);
   const result = await config(file);
   assert.equal(result.keep, true);
   assert.deepEqual(result.mcp["user-browser"], { type: "local", command: ["example"] });
   const entry = result.mcp["cuddly-winner-browser"];
-  assert.equal(entry.command.at(-1), "mcp");
   assert.deepEqual(entry.command, [
     "node",
-    path.join(root, "cuddly-winner-browser-mcp.mjs"),
-    path.join(root, "cuddly-winner-browser", "obscura"),
-    "mcp",
+    path.join(root, "opencode-playwright-mcp.mjs"),
   ]);
-  assert.deepEqual(entry.environment, { HEADLESS: "true" });
+  assert.deepEqual(entry.environment, { HEADLESS: "true", CUDDLY_WINNER_CONFIG_DIR: root });
   const second = await invoke(mcp, ["install", "--config", file]);
   assert.match(second.stdout, /Unchanged/);
   const diagnosis = await invoke(mcp, ["diagnose", "--config", file]);
@@ -142,7 +137,6 @@ test("MCP helper runs directly from a path containing spaces", async () => fixtu
   const spacedHelper = path.join(spacedDirectory, "opencode mcp config.mjs");
   await mkdir(spacedDirectory);
   await copyFile(mcp, spacedHelper);
-  await copyFile(engine, path.join(spacedDirectory, "opencode-browser-engine.mjs"));
 
   await invoke(spacedHelper, ["install", "--config", file]);
   assert.ok((await config(file)).mcp["cuddly-winner-browser"]);
@@ -157,24 +151,4 @@ test("managed MCP removal preserves modified entries", async () => fixture(async
   assert.match(result.stdout, /Skipped modified managed entry/);
   const after = await config(file);
   assert.ok(after.mcp["cuddly-winner-browser"]);
-}));
-
-test("credential modes require confirmation and flush only the selected managed profile", async () => fixture(async (root, file) => {
-  await mkdir(path.dirname(file), { recursive: true });
-  await assert.rejects(invoke(credentials, ["set", "--config", file, "--provider", "chatgpt", "--mode", "auth"]), /--confirm/);
-  await invoke(credentials, ["set", "--config", file, "--provider", "chatgpt", "--mode", "auth", "--confirm"]);
-  let value = await config(file);
-  assert.equal(value.mcp["cuddly-winner-image-chatgpt"].command.includes("--headless"), false);
-  await invoke(credentials, ["set", "--config", file, "--provider", "chatgpt", "--mode", "persistent-headless"]);
-  value = await config(file);
-  assert.ok(value.mcp["cuddly-winner-image-chatgpt"].command.includes("--headless"));
-  const profile = path.join(root, "cuddly-winner-profiles", "chatgpt");
-  await writeFile(path.join(profile, "cookie-canary"), "not-a-real-cookie");
-  await assert.rejects(invoke(credentials, ["flush", "--config", file, "--provider", "chatgpt"]), /--confirm/);
-  await invoke(credentials, ["flush", "--config", file, "--provider", "chatgpt", "--confirm"]);
-  value = await config(file);
-  assert.deepEqual(value.mcp["cuddly-winner-image-chatgpt"].command.slice(-2), ["--headless", "--isolated"]);
-  await assert.rejects(stat(profile));
-  const status = await invoke(credentials, ["status", "--config", file, "--provider", "chatgpt"]);
-  assert.match(status.stdout, /mode=ephemeral profile=absent/);
 }));

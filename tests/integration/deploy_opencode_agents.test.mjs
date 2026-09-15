@@ -1,4 +1,4 @@
-import test, { before, after } from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import os from "node:os";
@@ -11,30 +11,15 @@ const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
 const deploy = path.join(repo, "scripts/deploy-opencode-agents.sh");
 
-// A checksum-verified engine archive built once for the whole suite. Every
-// deploy install runs the real browser-engine helper; supplying a local archive
-// plus its checksum keeps that step fully offline instead of downloading the
-// pinned release.
-let engineArchiveRoot = "";
-let engineArchive = "";
-let engineChecksum = "";
-
-before(async () => {
-  engineArchiveRoot = await mkdtemp(path.join(os.tmpdir(), "deploy-engine-"));
-  const source = path.join(engineArchiveRoot, "src");
-  await mkdir(source, { recursive: true });
-  const worker = process.platform === "win32" ? "obscura-worker.exe" : "obscura-worker";
-  const binary = process.platform === "win32" ? "obscura.exe" : "obscura";
-  await writeFile(path.join(source, binary), "#!/bin/sh\necho obscura fake\n");
-  await writeFile(path.join(source, worker), "#!/bin/sh\necho worker fake\n");
-  engineArchive = path.join(engineArchiveRoot, "engine.tar.gz");
-  await run("tar", ["-czf", engineArchive, "-C", source, binary, worker]);
-  engineChecksum = createHash("sha256").update(await readFile(engineArchive)).digest("hex");
-});
-
-after(async () => {
-  if (engineArchiveRoot) await rm(engineArchiveRoot, { recursive: true, force: true });
-});
+// The single Playwright browser backend installs as three copies at the config
+// root: the headless MCP server, the shared secure state store it imports, and
+// the headed login helper. There is no engine binary to download, so installs
+// need no offline archive scaffolding.
+const BROWSER_CONTROL_FILES = [
+  "opencode-playwright-mcp.mjs",
+  "opencode-browser-state.mjs",
+  "opencode-browser-login.mjs",
+];
 
 async function fixture(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "deploy-opencode-"));
@@ -50,8 +35,6 @@ async function deployFixture(root, action = "install", options = [], extraEnv = 
     env: {
       ...process.env,
       PATH: `${bin}:${process.env.PATH}`,
-      CUDDLY_WINNER_BROWSER_ARCHIVE: engineArchive,
-      CUDDLY_WINNER_BROWSER_CHECKSUM: engineChecksum,
       ...extraEnv,
     },
   });
@@ -84,23 +67,25 @@ test("default copy install is idempotent and includes the complete managed profi
   await stat(path.join(config, "node_modules", "@opencode-ai", "plugin", "package.json"));
   await stat(path.join(config, "node_modules", "playwright", "package.json"));
   await stat(path.join(config, "skills", "systematic-debugging", "SKILL.md"));
-  const captureHelper = path.join(config, "cuddly-winner-browser-session.mjs");
-  await stat(captureHelper);
-  const helperStatus = await run(process.execPath, [captureHelper, "status", "--config-dir", config]);
+  for (const name of ["opencode-playwright-mcp.mjs", "opencode-browser-state.mjs", "opencode-browser-login.mjs"]) {
+    await stat(path.join(config, name));
+  }
+  const loginHelper = path.join(config, "opencode-browser-login.mjs");
+  const helperStatus = await run(process.execPath, [loginHelper, "status", "--config-dir", config]);
   assert.match(helperStatus.stdout, /No captured sessions/);
 
   const second = await deployFixture(root);
   assert.match(second.stdout, /Unchanged:/);
 }));
 
-test("status detects a modified capture helper and remove preserves it", async () => fixture(async root => {
+test("status detects a modified browser control file and remove preserves it", async () => fixture(async root => {
   const config = path.join(root, "config");
-  const helper = path.join(config, "cuddly-winner-browser-session.mjs");
+  const helper = path.join(config, "opencode-browser-login.mjs");
   await deployFixture(root);
   await writeFile(helper, "user-owned replacement\n");
 
   const status = await expectStatusDrift(root);
-  assert.match(status.stdout, /\[stale or modified copy\].*cuddly-winner-browser-session\.mjs/);
+  assert.match(status.stdout, /\[stale or modified copy\].*opencode-browser-login\.mjs/);
 
   await deployFixture(root, "remove");
   assert.equal(await readFile(helper, "utf8"), "user-owned replacement\n");
@@ -137,12 +122,14 @@ test("symlink install and mode-independent remove cover all managed groups", asy
   assert.equal((await lstat(path.join(config, "plugins", "immutability.ts"))).isSymbolicLink(), false);
   assert.equal((await lstat(path.join(config, "plugins", "autonomous-kpis.ts"))).isSymbolicLink(), false);
   assert.equal((await lstat(path.join(config, "tools", "session_fetch.ts"))).isSymbolicLink(), false);
-  assert.equal((await lstat(path.join(config, "cuddly-winner-browser-session.mjs"))).isSymbolicLink(), false);
+  for (const name of BROWSER_CONTROL_FILES) {
+    assert.equal((await lstat(path.join(config, name))).isSymbolicLink(), false, name);
+  }
   assert.equal((await lstat(path.join(config, "tools", "spike.ts"))).isSymbolicLink(), true);
-  assert.equal((await lstat(path.join(config, "skills", "playwright-image-generation"))).isSymbolicLink(), true);
+  assert.equal((await lstat(path.join(config, "skills", "systematic-debugging"))).isSymbolicLink(), true);
 
   await deployFixture(root);
-  assert.equal(await exists(path.join(config, "skills", "playwright-image-generation")), true);
+  assert.equal(await exists(path.join(config, "skills", "systematic-debugging")), true);
 
   await deployFixture(root, "remove");
   for (const relative of [
@@ -150,8 +137,8 @@ test("symlink install and mode-independent remove cover all managed groups", asy
     "plugins/immutability.ts",
     "plugins/autonomous-kpis.ts",
     "tools/session_fetch.ts",
-    "cuddly-winner-browser-session.mjs",
-    "skills/playwright-image-generation",
+    ...BROWSER_CONTROL_FILES,
+    "skills/systematic-debugging",
   ]) assert.equal(await exists(path.join(config, relative)), false, relative);
 }));
 

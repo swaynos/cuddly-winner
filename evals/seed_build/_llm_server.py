@@ -260,9 +260,9 @@ def provider_config(url: str, *, model: str = "test-model") -> dict:
         # Even if a real provider credential leaks into the environment, only the
         # scripted loopback provider can be selected.
         "enabled_providers": ["test"],
-        # The managed profile registers a browser MCP server that would launch the
-        # Obscura engine binary on session start. Disable it by name so the test
-        # stays offline without editing the installed profile.
+        # The managed profile registers a headless Playwright browser MCP server
+        # that would launch Chromium on session start. Disable it by name so the
+        # test stays offline without editing the installed profile.
         "mcp": {"cuddly-winner-browser": {"type": "local", "command": ["true"], "enabled": False}},
         "small_model": f"test/{model}",
         "model": f"test/{model}",
