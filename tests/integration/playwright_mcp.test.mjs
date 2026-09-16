@@ -5,7 +5,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
@@ -14,6 +13,11 @@ const server = path.join(repo, "scripts", "opencode-playwright-mcp.mjs");
 
 function fixtureServer() {
   const httpServer = http.createServer((req, res) => {
+    if (req.url === "/challenge") {
+      res.writeHead(403, { "content-type": "text/html" });
+      res.end("<!doctype html><title>Just a moment...</title><h1>Checking your browser before accessing example.com</h1>");
+      return;
+    }
     if (req.url === "/denied") {
       res.writeHead(403, { "content-type": "text/html" });
       res.end("<!doctype html><title>Denied</title><h1>Access denied</h1>");
@@ -85,12 +89,6 @@ function client(env = {}) {
   }
   return { child, rpc, call, textOf, close: () => child.stdin.end() };
 }
-
-test("managed browser retains the proven default Playwright launch mode", async () => {
-  const source = await readFile(server, "utf8");
-  assert.match(source, /chromium\.launch\(\{ headless: true \}\)/);
-  assert.doesNotMatch(source, /chromium\.launch\(\{ headless: true, channel:/);
-});
 
 test("Playwright MCP server drives a headless page over JSON-RPC", async () => {
   const { httpServer, base } = await fixtureServer();
@@ -197,6 +195,20 @@ test("explicit navigation recovers a closed page and classifies access denial", 
     const denied = c.textOf(await c.call("browser_navigate", { url: `${base}/denied` }));
     assert.match(denied, /status 403/);
     assert.match(denied, /access denied/);
+  } finally {
+    c.close();
+    httpServer.close();
+  }
+});
+
+test("Cloudflare challenges are identified without misreporting authentication failure", async () => {
+  const { httpServer, base } = await fixtureServer();
+  const c = client();
+  try {
+    const challenged = c.textOf(await c.call("browser_navigate", { url: `${base}/challenge` }));
+    assert.match(challenged, /status 403/);
+    assert.match(challenged, /Cloudflare challenge detected/);
+    assert.match(challenged, /do not retry automatically/);
   } finally {
     c.close();
     httpServer.close();

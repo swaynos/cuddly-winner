@@ -90,3 +90,5 @@ retry is safe. Never repeat an unknown non-idempotent action automatically.
 Use short bounded polls rather than one transport-length wait. A wait timeout
 must leave the browser usable. Explicit navigation may recreate a closed page.
 Treat HTTP 401 or 403 as access denial and do not attempt to evade it.
+Treat a Cloudflare challenge as access denial: inspect it, but do not use repeated
+navigation, login capture, or browser restarts to bypass it.

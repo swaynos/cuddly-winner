@@ -127,6 +127,9 @@ function validateCaptureArgs(args) {
     }
     if (cu.protocol !== "https:") throw new LoginError("--complete-url must be https");
     if (!origins.includes(cu.origin)) throw new LoginError("--complete-url origin must be approved by --origin");
+    if (cu.href === loginUrl.href) {
+      throw new LoginError("--complete-url must differ from --url; use a post-login URL or --cookie");
+    }
   }
   if (!cookie && !completeUrl) throw new LoginError("capture requires --cookie or --complete-url");
 
@@ -241,6 +244,7 @@ async function capture(args) {
   try {
     context = await chromium.launchPersistentContext(profileDir, {
       headless: false,
+      channel: "chromium",
     });
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(opts.url);

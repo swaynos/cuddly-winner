@@ -62,6 +62,10 @@ test("capture rejects incomplete arguments before opening a browser", async () =
     invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com", "--complete-url", "https://identity.example/complete"]),
     (e) => e.code === 1 && /complete-url origin must be approved/.test(e.stderr),
   );
+  await assert.rejects(
+    invoke([...base, "--url", "https://example.com/", "--origin", "https://example.com", "--complete-url", "https://example.com/"]),
+    (e) => e.code === 1 && /complete-url must differ from --url/.test(e.stderr),
+  );
 }));
 
 test("a headed browser launch failure removes its temporary profile", async () => fixture(async (root) => {

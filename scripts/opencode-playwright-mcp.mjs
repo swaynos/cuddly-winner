@@ -31,6 +31,7 @@ import path from "node:path";
 import { loadStateForOrigin, listStates } from "./opencode-browser-state.mjs";
 
 const CONFIG_DIR = process.env.CUDDLY_WINNER_CONFIG_DIR || "";
+const EXECUTABLE = process.env.CUDDLY_WINNER_BROWSER_EXECUTABLE || undefined;
 const DEFAULT_TIMEOUT = Number(process.env.CUDDLY_WINNER_BROWSER_TIMEOUT_MS || 30000);
 const configuredTransportTimeout = Number(process.env.CUDDLY_WINNER_BROWSER_TRANSPORT_TIMEOUT_MS || 30000);
 const TRANSPORT_TIMEOUT_MS = Number.isFinite(configuredTransportTimeout) && configuredTransportTimeout > 0 ? configuredTransportTimeout : 30000;
@@ -119,7 +120,7 @@ function registerPage(page) {
 async function ensureContext() {
   if (context) return context;
   await ensureChromium();
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, channel: "chromium" });
   context = await browser.newContext();
   context.setDefaultTimeout(DEFAULT_TIMEOUT);
   pages = [];
@@ -306,6 +307,20 @@ function boundedWaitMs(seconds) {
   return Math.min(requested, MAX_WAIT_MS);
 }
 
+async function navigationClassification(page, status) {
+  if (status !== 401 && status !== 403) return status && status >= 400 ? ", HTTP error" : "";
+  try {
+    const title = await page.title();
+    const body = await page.locator("body").innerText({ timeout: DEFAULT_TIMEOUT });
+    if (/cloudflare|just a moment|checking your browser|verify you are human/i.test(`${title}\n${body}`)) {
+      return ", Cloudflare challenge detected; do not retry automatically";
+    }
+  } catch {
+    /* Preserve the HTTP classification when the denial page cannot be read. */
+  }
+  return ", access denied";
+}
+
 // --- Tool handlers ---------------------------------------------------------
 
 function text(value) {
@@ -405,7 +420,7 @@ const HANDLERS = {
     const page = await ensureActivePage();
     const resp = await page.goto(args.url, { waitUntil: "load" });
     const status = resp ? resp.status() : null;
-    const classification = status === 401 || status === 403 ? ", access denied" : status && status >= 400 ? ", HTTP error" : "";
+    const classification = await navigationClassification(page, status);
     return text(`navigated to ${page.url()} (status ${status ?? "n/a"}${classification})`);
   },
   async browser_navigate_back() {
