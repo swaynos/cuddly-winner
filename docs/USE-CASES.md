@@ -101,10 +101,11 @@ task-specific project-local agent for each planning-ready task.
 
 - **Given:** direct or delegated managed sessions.
 - **When:** a descendant requests a tool.
-- **Then:** apply the topmost managed ancestor's defined boundary and fail closed
-  when an ancestry cycle prevents safe resolution.
-- **Never:** widen permissions through delegation, switching, spoofing, or an
-  ancestry cycle.
+- **Then:** apply a current managed parent's defined boundary to its descendants.
+  A root follows its current selected agent and fails closed when parent ancestry
+  cannot resolve safely.
+- **Never:** widen permissions through delegation, spoofing, or an ancestry
+  cycle. An explicit root-agent switch may change the root policy.
 - **Evidence:** U ancestry and cycle matrix.
 
 ### UC-ID-02: Prometheus is publication-scoped

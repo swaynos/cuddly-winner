@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { isRegisteredGeneratedAgent, validateTaskPackage } from "../tools/validate_scaffold.ts";
+import { validateTaskPackage } from "../tools/validate_scaffold.ts";
 
 export type RunKpiPolicy = {
   unattendedRuntimeSeconds: number;
@@ -83,41 +83,6 @@ function resolvedSession(result: unknown, sessionID: string): Record<string, any
   return session;
 }
 
-type AgentSelection = { agent: string; created?: number; index: number };
-type HistoryResolution = { valid: true; selections: AgentSelection[] } | { valid: false };
-
-function userAgentSelections(result: unknown): HistoryResolution {
-  const messages = Array.isArray(result)
-    ? result
-    : result && typeof result === "object" && !Array.isArray(result) && Array.isArray((result as Record<string, unknown>).data)
-      ? (result as Record<string, unknown>).data as unknown[]
-      : undefined;
-  if (!messages) return { valid: false };
-  const selections: AgentSelection[] = [];
-  for (let index = 0; index < messages.length; index += 1) {
-    const message = messages[index];
-    if (!message || typeof message !== "object" || Array.isArray(message)) return { valid: false };
-    const info = (message as Record<string, unknown>).info;
-    if (!info || typeof info !== "object" || Array.isArray(info) || typeof (info as Record<string, unknown>).role !== "string") {
-      return { valid: false };
-    }
-    const messageInfo = info as Record<string, unknown>;
-    if (messageInfo.role !== "user") continue;
-    const agent = messageInfo.agent;
-    if (typeof agent !== "string" || !agent) return { valid: false };
-    const time = messageInfo.time;
-    const rawCreated = time && typeof time === "object" && !Array.isArray(time) ? (time as Record<string, unknown>).created : undefined;
-    const created = typeof rawCreated === "number" && Number.isFinite(rawCreated)
-      ? rawCreated
-      : undefined;
-    selections.push({ agent, created, index });
-  }
-  if (selections.every((selection) => selection.created !== undefined)) {
-    selections.sort((left, right) => left.created! - right.created! || left.index - right.index);
-  }
-  return { valid: true, selections };
-}
-
 export function summarizeUsage(messages: Iterable<Usage>): any {
   if (!messages || typeof messages !== "object" || (!Array.isArray(messages) && typeof (messages as any)[Symbol.iterator] !== "function")) {
     return {};
@@ -159,48 +124,18 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
   const roots = new Map<string, string>();
   const invalidAncestry = new Set<string>();
   const rootAgents = new Map<string, string>();
-  const managedAgents = new Map<string, Promise<boolean>>();
   const policies = new Map<string, Promise<RunKpiPolicy | undefined>>();
   const messages = new Map<string, Map<string, Usage>>();
 
-  // Only Prometheus and registered generated agents pin a KPI root. Ask,
-  // Grounder, and Reviewer carry no run_kpis policy and must not claim the root,
-  // or an early read-only turn would block a later generated agent's KPIs from
-  // ever activating. This mirrors isPinning in plugins/immutability.ts.
-  function isPinning(agent: string): Promise<boolean> {
-    if (agent === "prometheus") return Promise.resolve(true);
-    const cached = managedAgents.get(agent);
-    if (cached) return cached;
-    const pending = isRegisteredGeneratedAgent(rootDirectory, agent).catch(() => false);
-    managedAgents.set(agent, pending);
-    return pending;
-  }
-
-  async function stickyManagedAgent(root: string, candidate?: string): Promise<string | undefined> {
-    const cached = rootAgents.get(root);
-    if (cached || !candidate || !await isPinning(candidate)) return cached;
-    const resolved = rootAgents.get(root);
-    if (resolved) return resolved;
-    rootAgents.set(root, candidate);
-    return candidate;
-  }
-
-  async function reconstructRootAgent(root: string): Promise<boolean> {
-    if (rootAgents.has(root)) return true;
+  async function rootAgent(root: string): Promise<string | undefined> {
+    const selected = rootAgents.get(root);
+    if (selected) return selected;
     try {
       const result = await client?.session?.get?.({ path: { id: root } });
       const session = resolvedSession(result, root);
-      if (!session) return false;
-      const history = userAgentSelections(await client?.session?.messages?.({ path: { id: root } }));
-      if (!history.valid) return false;
-      for (const selection of history.selections) {
-        if (await stickyManagedAgent(root, selection.agent)) return true;
-      }
-      const current = typeof session.agent === "string" && session.agent ? session.agent : undefined;
-      await stickyManagedAgent(root, current);
-      return true;
+      return typeof session?.agent === "string" && session.agent ? session.agent : undefined;
     } catch {
-      return false;
+      return;
     }
   }
 
@@ -235,10 +170,9 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
     return { valid: true, root: sessionID };
   }
 
-  async function policyFor(root: string, agent: string | undefined): Promise<RunKpiPolicy | undefined> {
+  async function policyFor(agent: string | undefined): Promise<RunKpiPolicy | undefined> {
     if (!agent) return;
-    const key = `${root}\0${agent}`;
-    const cached = policies.get(key);
+    const cached = policies.get(agent);
     if (cached) return cached;
     const pending = (async () => {
       try {
@@ -250,22 +184,22 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
         return;
       }
     })();
-    policies.set(key, pending);
+    policies.set(agent, pending);
     return pending;
   }
 
-  async function enabledPolicy(sessionID: string, candidate?: string): Promise<{ root: string; policy: RunKpiPolicy } | undefined> {
+  async function enabledPolicy(sessionID: string, candidate?: string): Promise<{ root: string; agent: string; policy: RunKpiPolicy } | undefined> {
     const resolution = await rootFor(sessionID);
     if (!resolution.valid) return;
     const root = resolution.root;
-    if (!await reconstructRootAgent(root)) return;
-    if (candidate && root === sessionID) await stickyManagedAgent(root, candidate);
-    const policy = await policyFor(root, rootAgents.get(root));
-    return policy ? { root, policy } : undefined;
+    if (candidate && root === sessionID) rootAgents.set(root, candidate);
+    const agent = await rootAgent(root);
+    const policy = await policyFor(agent);
+    return policy && agent ? { root, agent, policy } : undefined;
   }
 
-  function summary(root: string) {
-    return summarizeUsage(messages.get(root)?.values() ?? []);
+  function summary(root: string, agent: string) {
+    return summarizeUsage(messages.get(`${root}\0${agent}`)?.values() ?? []);
   }
 
   return {
@@ -276,7 +210,9 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
         const messageID = event.properties?.messageID;
         if (!sessionID || !messageID) return;
         const enabled = await enabledPolicy(sessionID);
-        if (enabled) messages.get(enabled.root)?.delete(messageID);
+        if (enabled) {
+          for (const [key, records] of messages) if (key.startsWith(`${enabled.root}\0`)) records.delete(messageID);
+        }
         return;
       }
       const message = event.properties?.info as AssistantMessage | undefined;
@@ -284,10 +220,11 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
       const enabled = await enabledPolicy(message.sessionID);
       if (!enabled) return;
       const usage = usageFor(message);
-      const records = messages.get(enabled.root) ?? new Map<string, Usage>();
+      const key = `${enabled.root}\0${enabled.agent}`;
+      const records = messages.get(key) ?? new Map<string, Usage>();
       if (usage) records.set(message.id, usage);
       else records.delete(message.id);
-      messages.set(enabled.root, records);
+      messages.set(key, records);
     },
     "chat.params": async (
       input: { sessionID: string; agent: string },
@@ -295,7 +232,7 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
     ) => {
       const enabled = await enabledPolicy(input.sessionID, input.agent);
       if (!enabled) return;
-      const used = summary(enabled.root).tokens;
+      const used = summary(enabled.root, enabled.agent).tokens;
       const remaining = Math.floor(enabled.policy.hardBudgetTokens - used);
       if (remaining <= 0) throw new Error("Generated-agent KPI hard token budget exhausted; stop new work and report the incomplete state.");
       output.maxOutputTokens = output.maxOutputTokens === undefined
@@ -309,7 +246,7 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
       if (!input.sessionID) return;
       const enabled = await enabledPolicy(input.sessionID);
       if (!enabled) return;
-      const usage = summary(enabled.root);
+      const usage = summary(enabled.root, enabled.agent);
       const activeMinutes = usage.activeMilliseconds / 60_000;
       const rate = activeMinutes > 0 ? Math.round(usage.tokensPerActiveMinute) : 0;
       output.system.push(

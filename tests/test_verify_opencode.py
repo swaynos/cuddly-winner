@@ -85,6 +85,12 @@ class BehavioralAssertionTests(unittest.TestCase):
             config = pathlib.Path(temporary)
             for directory in ("agents", "plugins", "tools", "skills", "rules"):
                 shutil.copytree(root / directory, config / directory)
+            for name in (
+                "opencode-playwright-mcp.mjs",
+                "opencode-browser-state.mjs",
+                "opencode-browser-login.mjs",
+            ):
+                shutil.copy2(root / "scripts" / name, config / name)
             write_runtime_integrity_fixture(config)
             rule_paths = [str(config / "rules" / source.name) for source in (root / "rules").glob("*.md")]
             (config / "opencode.json").write_text(

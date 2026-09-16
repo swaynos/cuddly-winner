@@ -96,44 +96,11 @@ function resolvedSession(result: unknown, sessionID: string): Record<string, any
   return session;
 }
 
-type AgentSelection = { agent: string; created?: number; index: number };
-type HistoryResolution = { valid: true; selections: AgentSelection[] } | { valid: false };
-
-function userAgentSelections(result: unknown): HistoryResolution {
-  const messages = Array.isArray(result)
-    ? result
-    : result && typeof result === "object" && !Array.isArray(result) && Array.isArray((result as Record<string, unknown>).data)
-      ? (result as Record<string, unknown>).data as unknown[]
-      : undefined;
-  if (!messages) return { valid: false };
-  const selections: AgentSelection[] = [];
-  for (let index = 0; index < messages.length; index += 1) {
-    const message = messages[index];
-    if (!message || typeof message !== "object" || Array.isArray(message)) return { valid: false };
-    const info = (message as Record<string, unknown>).info;
-    if (!info || typeof info !== "object" || Array.isArray(info) || typeof (info as Record<string, unknown>).role !== "string") {
-      return { valid: false };
-    }
-    const messageInfo = info as Record<string, unknown>;
-    if (messageInfo.role !== "user") continue;
-    const agent = messageInfo.agent;
-    if (typeof agent !== "string" || !agent) return { valid: false };
-    const time = messageInfo.time;
-    const rawCreated = time && typeof time === "object" && !Array.isArray(time) ? (time as Record<string, unknown>).created : undefined;
-    const created = typeof rawCreated === "number" && Number.isFinite(rawCreated)
-      ? rawCreated
-      : undefined;
-    selections.push({ agent, created, index });
-  }
-  if (selections.every((selection) => selection.created !== undefined)) {
-    selections.sort((left, right) => left.created! - right.created! || left.index - right.index);
-  }
-  return { valid: true, selections };
-}
-
 export const ImmutabilityGuard = async ({ directory, worktree, client }: { directory: string; worktree: string; client: any }) => {
   const lexicalRoot = resolve(directory || worktree);
   const root = realpathSync(lexicalRoot);
+  // `chat.params` records the selected agent for the active turn. This is not
+  // durable authorization state: an explicit root-agent switch takes effect.
   const sessionAgents = new Map<string, string>();
   const invalidAncestry = new Set<string>();
   const publicationReminders = new Set<string>();
@@ -162,38 +129,6 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
   }
   async function isManaged(agent: string): Promise<boolean> { return MANAGED_AGENTS.has(agent) || (await generatedPolicy(agent)).registered; }
 
-  // A pinning identity owns a session for its lifetime, so an early selection
-  // survives every later switch. Only Prometheus and registered generated
-  // agents pin: their boundary is a real workflow gate (Prometheus publishes and
-  // hands off to a fresh session; a generated agent must stay inside its
-  // manifest). Ask, Grounder, and Reviewer are read-only consultation modes;
-  // selecting one then returning to Build is ordinary work, not escalation, so
-  // they are enforced per-turn (see isManaged in tool.execute.before) but never
-  // pin the session.
-  async function isPinning(agent: string): Promise<boolean> { return agent === "prometheus" || (await generatedPolicy(agent)).registered; }
-
-  async function stickyManagedAgent(sessionID: string, candidate?: string): Promise<string | undefined> {
-    const cached = sessionAgents.get(sessionID);
-    if (cached || !candidate || !await isPinning(candidate)) return cached;
-    const resolved = sessionAgents.get(sessionID);
-    if (resolved) return resolved;
-    sessionAgents.set(sessionID, candidate);
-    return candidate;
-  }
-
-  async function historicalManagedAgent(sessionID: string): Promise<{ valid: true; agent?: string } | { valid: false }> {
-    try {
-      const history = userAgentSelections(await client?.session?.messages?.({ path: { id: sessionID } }));
-      if (!history.valid) return history;
-      for (const selection of history.selections) {
-        if (await isPinning(selection.agent)) return { valid: true, agent: selection.agent };
-      }
-      return { valid: true };
-    } catch {
-      return { valid: false };
-    }
-  }
-
   type AgentResolution = { valid: true; agent?: string } | { valid: false };
   async function resolveAgent(sessionID: string, visited = new Set<string>()): Promise<AgentResolution> {
     if (invalidAncestry.has(sessionID)) return { valid: false };
@@ -220,12 +155,9 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
           invalidAncestry.add(sessionID);
           return { valid: false };
         }
-        // A pinning parent locks a descendant for its lifetime. A currently
-        // read-only parent (Ask/Grounder/Reviewer) does not pin itself, but it
-        // must still constrain the descendant this turn, or an Ask parent could
-        // delegate a writing child and widen its own boundary.
-        if (await isPinning(parent.agent) || READ_ONLY_AGENTS.has(parent.agent)) {
-          sessionAgents.set(sessionID, parent.agent);
+        // A managed parent controls its child for the current turn. This stops
+        // delegation from widening the parent's active boundary.
+        if (await isManaged(parent.agent)) {
           return { valid: true, agent: parent.agent };
         }
       }
@@ -233,15 +165,8 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       for (const id of visited) invalidAncestry.add(id);
       return { valid: false };
     }
-    const cached = sessionAgents.get(sessionID);
-    if (cached) return { valid: true, agent: cached };
-    const historical = await historicalManagedAgent(sessionID);
-    if (!historical.valid) return historical;
-    const remembered = await stickyManagedAgent(sessionID, historical.agent);
-    if (remembered) return { valid: true, agent: remembered };
-    const current = typeof session?.agent === "string" && session.agent ? session.agent : undefined;
-    const managed = await stickyManagedAgent(sessionID, current);
-    if (managed) return { valid: true, agent: managed };
+    const selected = sessionAgents.get(sessionID);
+    const current = selected ?? (typeof session.agent === "string" && session.agent ? session.agent : undefined);
     if (current) return { valid: true, agent: current };
     if (session.parentID) {
       invalidAncestry.add(sessionID);
@@ -292,8 +217,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
     },
     "chat.params": async (input: { sessionID: string; agent: string }) => {
       if (!input.sessionID || !input.agent) return;
-      const resolution = await resolveAgent(input.sessionID);
-      if (resolution.valid) await stickyManagedAgent(input.sessionID, input.agent);
+      sessionAgents.set(input.sessionID, input.agent);
     },
     "tool.execute.before": async (
       input: { tool: string; sessionID: string; callID: string },

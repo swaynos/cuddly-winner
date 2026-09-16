@@ -89,7 +89,7 @@ test("registered task KPIs cap output and block a later turn", async () => fixtu
   await assert.rejects(guard["chat.params"]({ sessionID: "root", agent: "fix-widget" }, { maxOutputTokens: undefined }), /hard token budget exhausted/);
 }));
 
-test("switching a generated KPI root to Build cannot disable its policy", async () => fixture(async root => {
+test("switching a generated KPI root to Build disables its policy", async () => fixture(async root => {
   await publish(root);
   const guard = await AutonomousKpis({ directory: root, worktree: root, client: { session: {
     get: async ({ path: value }) => ({ data: { id: value.id } }),
@@ -100,10 +100,10 @@ test("switching a generated KPI root to Build cannot disable its policy", async 
   const switched = { maxOutputTokens: 100 };
   await guard["chat.params"]({ sessionID: "root", agent: "build" }, switched);
 
-  assert.equal(switched.maxOutputTokens, 10);
+  assert.equal(switched.maxOutputTokens, 100);
 }));
 
-test("a cold reload reconstructs generated KPIs before a Build switch", async () => fixture(async root => {
+test("a cold Build session ignores generated KPI history", async () => fixture(async root => {
   await publish(root);
   for (const session of [{ id: "root" }, { id: "root", agent: "build" }]) {
     const historyClient = {
@@ -120,11 +120,11 @@ test("a cold reload reconstructs generated KPIs before a Build switch", async ()
 
     await reloaded["chat.params"]({ sessionID: "root", agent: "build" }, params);
 
-    assert.equal(params.maxOutputTokens, 10);
+    assert.equal(params.maxOutputTokens, 100);
   }
 }));
 
-test("KPI reconstruction uses timestamps and ignores initial native selections", async () => fixture(async root => {
+test("KPI selection uses the current agent rather than historical timestamps", async () => fixture(async root => {
   await publish(root);
   await publishSecond(root, "other-widget", 50);
   const historyClient = {
@@ -143,7 +143,7 @@ test("KPI reconstruction uses timestamps and ignores initial native selections",
 
   await reloaded["chat.params"]({ sessionID: "root", agent: "build" }, params);
 
-  assert.equal(params.maxOutputTokens, 10);
+  assert.equal(params.maxOutputTokens, 100);
 }));
 
 test("a cold Ask turn before a generated session activates its KPIs", async () => fixture(async root => {
@@ -169,7 +169,7 @@ test("a cold Ask turn before a generated session activates its KPIs", async () =
   assert.equal(output.system.length, 1);
 }));
 
-test("a cold generated-A to generated-B session keeps generated-A KPIs", async () => fixture(async root => {
+test("a cold generated-B session uses generated-B KPIs", async () => fixture(async root => {
   await publish(root);
   await publishSecond(root, "other-widget", 50);
   const reloaded = await AutonomousKpis({ directory: root, worktree: root, client: { session: {
@@ -183,7 +183,7 @@ test("a cold generated-A to generated-B session keeps generated-A KPIs", async (
 
   await reloaded["chat.params"]({ sessionID: "root", agent: "other-widget" }, params);
 
-  assert.equal(params.maxOutputTokens, 10);
+  assert.equal(params.maxOutputTokens, 50);
 }));
 
 test("failed or malformed history lookup leaves cold-reload KPIs inactive", async () => fixture(async root => {
@@ -206,7 +206,7 @@ test("failed or malformed history lookup leaves cold-reload KPIs inactive", asyn
   }
 }));
 
-test("generated session metadata cannot activate KPIs without history", async () => fixture(async root => {
+test("generated session metadata activates KPIs without history", async () => fixture(async root => {
   await publish(root);
   const reloaded = await AutonomousKpis({ directory: root, worktree: root, client: { session: {
     get: async () => ({ data: { id: "root", agent: "fix-widget" } }),
@@ -214,12 +214,12 @@ test("generated session metadata cannot activate KPIs without history", async ()
   } } });
   const params = { maxOutputTokens: 100 };
 
-  await reloaded["chat.params"]({ sessionID: "root", agent: "build" }, params);
+  await reloaded["chat.params"]({ sessionID: "root", agent: "fix-widget" }, params);
 
-  assert.equal(params.maxOutputTokens, 100);
+  assert.equal(params.maxOutputTokens, 10);
 }));
 
-test("switching a generated KPI root cannot replace its policy", async () => fixture(async root => {
+test("switching generated KPI roots selects the current policy", async () => fixture(async root => {
   await publish(root);
   await publishSecond(root, "other-widget", 50);
   const guard = await AutonomousKpis({ directory: root, worktree: root, client: { session: {
@@ -231,7 +231,22 @@ test("switching a generated KPI root cannot replace its policy", async () => fix
   const switched = { maxOutputTokens: 100 };
   await guard["chat.params"]({ sessionID: "root", agent: "other-widget" }, switched);
 
-  assert.equal(switched.maxOutputTokens, 10);
+  assert.equal(switched.maxOutputTokens, 50);
+}));
+
+test("switching back to a generated KPI root retains its prior usage", async () => fixture(async root => {
+  await publish(root);
+  const guard = await AutonomousKpis({ directory: root, worktree: root, client: { session: {
+    get: async ({ path: value }) => ({ data: { id: value.id } }),
+  } } });
+  await guard["chat.params"]({ sessionID: "root", agent: "fix-widget" }, { maxOutputTokens: 100 });
+  await guard.event({ event: { type: "message.updated", properties: { info: { id: "m", sessionID: "root", role: "assistant", time: { created: 1, completed: 2 }, tokens: { input: 3, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } } } } });
+
+  await guard["chat.params"]({ sessionID: "root", agent: "build" }, { maxOutputTokens: 100 });
+  const resumed = { maxOutputTokens: 100 };
+  await guard["chat.params"]({ sessionID: "root", agent: "fix-widget" }, resumed);
+
+  assert.equal(resumed.maxOutputTokens, 5);
 }));
 
 test("an ancestry cycle cannot select a generated KPI root", async () => fixture(async root => {

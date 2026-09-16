@@ -131,7 +131,7 @@ test("a child adopts a parent that switches from native Build to Ask", async () 
   );
 }));
 
-test("a generated session keeps its boundary after switching to Build", async () => fixture(async root => {
+test("an explicit generated-to-Build switch restores native access", async () => fixture(async root => {
   await publish(root, "fix-widget", ["src/widget.ts"], false);
   const agents = { session: "fix-widget" };
   const instance = await guard(root, agents);
@@ -140,14 +140,11 @@ test("a generated session keeps its boundary after switching to Build", async ()
   agents.session = "build";
   await instance["chat.params"]({ sessionID: "session", agent: "build" });
 
-  await assert.rejects(mutate(instance, "session", path.join(root, "README.md")), /outside its declared edit paths/);
-  await assert.rejects(
-    instance["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } }),
-    /may not execute shell/,
-  );
+  await mutate(instance, "session", path.join(root, "README.md"));
+  await instance["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
 }));
 
-test("a cold reload reconstructs a generated boundary before a Build switch", async () => fixture(async root => {
+test("a cold Build session uses current metadata rather than generated history", async () => fixture(async root => {
   await publish(root, "fix-widget", ["src/widget.ts"], false);
   for (const session of [{ id: "session" }, { id: "session", agent: "build" }]) {
     const historyClient = {
@@ -161,15 +158,12 @@ test("a cold reload reconstructs a generated boundary before a Build switch", as
     };
     const reloaded = await ImmutabilityGuard({ directory: root, worktree: root, client: historyClient });
 
-    await assert.rejects(mutate(reloaded, "session", path.join(root, "README.md")), /outside its declared edit paths/);
-    await assert.rejects(
-      reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } }),
-      /may not execute shell/,
-    );
+    await mutate(reloaded, "session", path.join(root, "README.md"));
+    await reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
   }
 }));
 
-test("cold reconstruction uses timestamps and ignores initial native selections", async () => fixture(async root => {
+test("a cold Build session ignores historical generated selections", async () => fixture(async root => {
   await publish(root, "fix-widget", ["src/widget.ts"], false);
   const historyClient = {
     session: {
@@ -184,31 +178,25 @@ test("cold reconstruction uses timestamps and ignores initial native selections"
   };
   const reloaded = await ImmutabilityGuard({ directory: root, worktree: root, client: historyClient });
 
-  await mutate(reloaded, "session", path.join(root, "src", "widget.ts"));
-  await assert.rejects(mutate(reloaded, "session", path.join(root, "README.md")), /outside its declared edit paths/);
+  await mutate(reloaded, "session", path.join(root, "README.md"));
 }));
 
-test("a cold Ask turn before a generated session applies the generated boundary", async () => fixture(async root => {
+test("a current generated session uses its declared boundary without history", async () => fixture(async root => {
   await publish(root, "fix-widget", ["src/widget.ts"], true);
   const historyClient = {
     session: {
       get: async () => ({ data: { id: "session", agent: "fix-widget" } }),
-      messages: async () => ({ data: [
-        { info: { role: "user", agent: "ask" } },
-        { info: { role: "user", agent: "fix-widget" } },
-      ] }),
+    messages: async () => { throw new Error("history unavailable"); },
     },
   };
   const reloaded = await ImmutabilityGuard({ directory: root, worktree: root, client: historyClient });
 
-  // Ask no longer pins the session, so the generated identity owns it: its
-  // manifest scope applies rather than Ask's read-only lock.
   await mutate(reloaded, "session", path.join(root, "src", "widget.ts"));
   await reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
   await assert.rejects(mutate(reloaded, "session", path.join(root, "README.md")), /outside its declared edit paths/);
 }));
 
-test("a cold generated-A to generated-B session keeps generated-A boundaries", async () => fixture(async root => {
+test("a cold generated-B session uses generated-B boundaries", async () => fixture(async root => {
   await publish(root, "fix-widget", ["src/widget.ts"], false);
   await publishSecond(root, "other-widget", ["README.md"], true);
   const reloaded = await ImmutabilityGuard({ directory: root, worktree: root, client: { session: {
@@ -219,15 +207,12 @@ test("a cold generated-A to generated-B session keeps generated-A boundaries", a
     ] }),
   } } });
 
-  await mutate(reloaded, "session", path.join(root, "src", "widget.ts"));
-  await assert.rejects(mutate(reloaded, "session", path.join(root, "README.md")), /outside its declared edit paths/);
-  await assert.rejects(
-    reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } }),
-    /may not execute shell/,
-  );
+  await mutate(reloaded, "session", path.join(root, "README.md"));
+  await assert.rejects(mutate(reloaded, "session", path.join(root, "src", "widget.ts")), /outside its declared edit paths/);
+  await reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
 }));
 
-test("root mutation and Bash fail closed when required history is unavailable or malformed", async () => fixture(async root => {
+test("root Build mutation and Bash do not depend on history", async () => fixture(async root => {
   const cases = [
     ["lookup failure", async () => { throw new Error("history failed"); }],
     ["non-array response", async () => ({ data: {} })],
@@ -240,16 +225,12 @@ test("root mutation and Bash fail closed when required history is unavailable or
       worktree: root,
       client: { session: { get: async () => ({ data: { id: "session", agent: "build" } }), messages } },
     });
-    await assert.rejects(mutate(reloaded, "session", path.join(root, "README.md")), /invalid or cyclic ancestry/, label);
-    await assert.rejects(
-      reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } }),
-      /invalid or cyclic ancestry/,
-      label,
-    );
+    await mutate(reloaded, "session", path.join(root, "README.md"));
+    await reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
   }
 }));
 
-test("managed session metadata fails closed when history is unavailable", async () => fixture(async root => {
+test("managed session metadata remains enforced when history is unavailable", async () => fixture(async root => {
   await publish(root, "fix-widget", ["src/widget.ts"], false);
   const reloaded = await ImmutabilityGuard({
     directory: root,
@@ -260,10 +241,10 @@ test("managed session metadata fails closed when history is unavailable", async 
     } },
   });
 
-  await assert.rejects(mutate(reloaded, "session", path.join(root, "src", "widget.ts")), /invalid or cyclic ancestry/);
+  await mutate(reloaded, "session", path.join(root, "src", "widget.ts"));
   await assert.rejects(
     reloaded["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } }),
-    /invalid or cyclic ancestry/,
+    /may not execute shell/,
   );
 }));
 
@@ -309,7 +290,7 @@ test("a currently read-only parent still denies a Build child", async () => fixt
   );
 }));
 
-test("a native session adopts its first managed switch and keeps that boundary", async () => fixture(async root => {
+test("a native session releases a generated boundary after switching to Build", async () => fixture(async root => {
   await publish(root, "fix-widget", ["src/widget.ts"], false);
   const agents = { session: "build" };
   const instance = await guard(root, agents);
@@ -321,11 +302,20 @@ test("a native session adopts its first managed switch and keeps that boundary",
 
   agents.session = "build";
   await instance["chat.params"]({ sessionID: "session", agent: "build" });
-  await assert.rejects(mutate(instance, "session", path.join(root, "README.md")), /outside its declared edit paths/);
-  await assert.rejects(
-    instance["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } }),
-    /may not execute shell/,
-  );
+  await mutate(instance, "session", path.join(root, "README.md"));
+  await instance["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
+}));
+
+test("an explicit Prometheus-to-Build switch restores native access", async () => fixture(async root => {
+  const agents = { session: "prometheus" };
+  const instance = await guard(root, agents);
+  await assert.rejects(mutate(instance, "session", path.join(root, "README.md")), /restricted/);
+
+  agents.session = "build";
+  await instance["chat.params"]({ sessionID: "session", agent: "build" });
+
+  await mutate(instance, "session", path.join(root, "README.md"));
+  await instance["tool.execute.before"]({ tool: "bash", sessionID: "session", callID: "shell" }, { args: { command: "true", cwd: root } });
 }));
 
 test("a managed ancestry cycle denies mutation and Bash without widening Ask", async () => fixture(async root => {
@@ -410,11 +400,7 @@ test("an invalid manifest fails closed for its registered identity", async () =>
   await publish(root, "fix-widget", ["src/widget.ts"], false);
   await writeFile(path.join(root, ".opencode", "tasks", "fix-widget.json"), JSON.stringify({ schema_version: 1 }));
   const instance = await ImmutabilityGuard({ directory: root, worktree: root, client: { session: {
-    get: async () => ({ data: { id: "executor", agent: "build" } }),
-    messages: async () => ({ data: [
-      { info: { role: "user", agent: "fix-widget" } },
-      { info: { role: "user", agent: "build" } },
-    ] }),
+    get: async () => ({ data: { id: "executor", agent: "fix-widget" } }),
   } } });
   await assert.rejects(mutate(instance, "executor", path.join(root, "src", "widget.ts")), /invalid generated task package/);
 }));
