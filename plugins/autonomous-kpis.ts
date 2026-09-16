@@ -209,9 +209,9 @@ export const AutonomousKpis = async ({ directory, worktree, client }: { director
         const sessionID = event.properties?.sessionID;
         const messageID = event.properties?.messageID;
         if (!sessionID || !messageID) return;
-        const enabled = await enabledPolicy(sessionID);
-        if (enabled) {
-          for (const [key, records] of messages) if (key.startsWith(`${enabled.root}\0`)) records.delete(messageID);
+        const resolution = await rootFor(sessionID);
+        if (resolution.valid) {
+          for (const [key, records] of messages) if (key.startsWith(`${resolution.root}\0`)) records.delete(messageID);
         }
         return;
       }

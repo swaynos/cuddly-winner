@@ -249,6 +249,22 @@ test("switching back to a generated KPI root retains its prior usage", async () 
   assert.equal(resumed.maxOutputTokens, 5);
 }));
 
+test("removing generated usage while Build is active clears its later budget", async () => fixture(async root => {
+  await publish(root);
+  const guard = await AutonomousKpis({ directory: root, worktree: root, client: { session: {
+    get: async ({ path: value }) => ({ data: { id: value.id } }),
+  } } });
+  await guard["chat.params"]({ sessionID: "root", agent: "fix-widget" }, { maxOutputTokens: 100 });
+  await guard.event({ event: { type: "message.updated", properties: { info: { id: "m", sessionID: "root", role: "assistant", time: { created: 1, completed: 2 }, tokens: { input: 3, output: 2, reasoning: 0, cache: { read: 0, write: 0 } } } } } });
+
+  await guard["chat.params"]({ sessionID: "root", agent: "build" }, { maxOutputTokens: 100 });
+  await guard.event({ event: { type: "message.removed", properties: { sessionID: "root", messageID: "m" } } });
+  const resumed = { maxOutputTokens: 100 };
+  await guard["chat.params"]({ sessionID: "root", agent: "fix-widget" }, resumed);
+
+  assert.equal(resumed.maxOutputTokens, 10);
+}));
+
 test("an ancestry cycle cannot select a generated KPI root", async () => fixture(async root => {
   await publish(root);
   const sessions = {
