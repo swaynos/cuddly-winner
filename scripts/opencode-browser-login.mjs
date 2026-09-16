@@ -241,7 +241,6 @@ async function capture(args) {
   try {
     context = await chromium.launchPersistentContext(profileDir, {
       headless: false,
-      channel: "chromium",
     });
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(opts.url);

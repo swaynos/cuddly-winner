@@ -31,7 +31,6 @@ import path from "node:path";
 import { loadStateForOrigin, listStates } from "./opencode-browser-state.mjs";
 
 const CONFIG_DIR = process.env.CUDDLY_WINNER_CONFIG_DIR || "";
-const EXECUTABLE = process.env.CUDDLY_WINNER_BROWSER_EXECUTABLE || undefined;
 const DEFAULT_TIMEOUT = Number(process.env.CUDDLY_WINNER_BROWSER_TIMEOUT_MS || 30000);
 const configuredTransportTimeout = Number(process.env.CUDDLY_WINNER_BROWSER_TRANSPORT_TIMEOUT_MS || 30000);
 const TRANSPORT_TIMEOUT_MS = Number.isFinite(configuredTransportTimeout) && configuredTransportTimeout > 0 ? configuredTransportTimeout : 30000;
@@ -120,7 +119,7 @@ function registerPage(page) {
 async function ensureContext() {
   if (context) return context;
   await ensureChromium();
-  browser = await chromium.launch({ headless: true, channel: "chromium" });
+  browser = await chromium.launch({ headless: true });
   context = await browser.newContext();
   context.setDefaultTimeout(DEFAULT_TIMEOUT);
   pages = [];
