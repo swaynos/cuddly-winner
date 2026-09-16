@@ -33,13 +33,13 @@ function fixtureServer() {
       res.writeHead(204).end();
       return;
     }
-    if (req.url === "/actual-download") {
+    if (req.url === "/actual-download" || req.url === "/large-download") {
       browserDownloads += 1;
       res.writeHead(200, {
         "content-type": "application/octet-stream",
         "content-disposition": "attachment; filename=fixture.bin",
       });
-      res.end(payload);
+      res.end(req.url === "/large-download" ? Buffer.alloc(payload.length + 1) : payload);
       return;
     }
     if (req.url === "/submit" && req.method === "POST") {
@@ -53,7 +53,8 @@ function fixtureServer() {
     res.setHeader("set-cookie", "fixture-auth=approved; Path=/");
     res.setHeader("content-type", "text/html");
     res.end(`<!doctype html><title>Download fixture</title>
-      <a id="download-link" href="/actual-download">download</a>`);
+      <a id="download-link" href="/actual-download">download</a>
+      <a id="large-download-link" href="/large-download">large download</a>`);
   });
   return new Promise((resolve) => httpServer.listen(0, "127.0.0.1", () => {
     resolve({
@@ -71,8 +72,8 @@ function fixtureServer() {
   }));
 }
 
-function client() {
-  const child = spawn("node", [server], { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env } });
+function client(env = {}) {
+  const child = spawn("node", [server], { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, ...env } });
   const pending = new Map();
   let nextId = 1;
   createInterface({ input: child.stdout }).on("line", (line) => {
@@ -107,11 +108,14 @@ test("Playwright download events create validated collision-safe local files", a
   const { base, browserDownloads, close } = await fixtureServer();
   const destinationDir = await mkdtemp(path.join(os.tmpdir(), "cw-download-"));
   const destination = path.join(destinationDir, "result.bin");
-  const c = client();
+  const c = client({ CUDDLY_WINNER_BROWSER_MAX_DOWNLOAD_BYTES: String(payload.length) });
   try {
     await c.call("browser_navigate", { url: `${base}/` });
     const sha256 = createHash("sha256").update(payload).digest("hex");
-    const result = await c.call("browser_download", { selector: "#download-link", path: destination, min_bytes: payload.length, signature_hex: "43572d46494c45", expected_sha256: sha256 });
+    const result = await c.call("browser_download", {
+      selector: "#download-link", path: destination, min_bytes: payload.length,
+      expected_content_type: "application/octet-stream", signature_hex: "43572d46494c45", expected_sha256: sha256,
+    });
     assert.equal(result.isError, undefined, c.textOf(result));
     assert.deepEqual(await readFile(destination), payload, "validated local bytes were saved");
     assert.equal(browserDownloads(), 1, "the file came from one Playwright download event");
@@ -125,6 +129,12 @@ test("Playwright download events create validated collision-safe local files", a
     const badSignature = await c.call("browser_download", { selector: "#download-link", path: invalid, signature_hex: "0000" });
     assert.equal(badSignature.isError, true);
     await assert.rejects(readFile(invalid), { code: "ENOENT" });
+
+    const oversized = path.join(destinationDir, "oversized.bin");
+    const tooLarge = await c.call("browser_download", { selector: "#large-download-link", path: oversized });
+    assert.equal(tooLarge.isError, true);
+    assert.match(c.textOf(tooLarge), /maximum size/);
+    await assert.rejects(readFile(oversized), { code: "ENOENT" });
 
     const empty = path.join(destinationDir, "empty.bin");
     const emptyResult = await c.call("browser_download", { url: `${base}/empty`, path: empty });

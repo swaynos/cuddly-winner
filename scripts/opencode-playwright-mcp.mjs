@@ -22,8 +22,8 @@
 //   CUDDLY_WINNER_BROWSER_TIMEOUT_MS default per-action timeout (default 30000)
 
 import { createInterface } from "node:readline";
-import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { lstat, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { loadStateForOrigin, listStates } from "./opencode-browser-state.mjs";
 
@@ -245,6 +245,48 @@ function text(value) {
   return { content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }] };
 }
 
+function withDownloadTimeout(promise) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("browser download timed out")), DEFAULT_TIMEOUT);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+async function readDownloadStream(download) {
+  let stream;
+  let timer;
+  let timedOut = false;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      stream?.destroy();
+      reject(new Error("browser download timed out"));
+    }, DEFAULT_TIMEOUT);
+  });
+  const read = (async () => {
+    stream = await download.createReadStream();
+    if (!stream) throw new Error("browser download has no stream");
+    const chunks = [];
+    let total = 0;
+    for await (const chunk of stream) {
+      total += chunk.length;
+      if (total > MAX_DOWNLOAD_BYTES) {
+        stream.destroy();
+        throw new Error("download exceeds maximum size");
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks, total);
+  })();
+  try {
+    return await Promise.race([read, timeout]);
+  } finally {
+    clearTimeout(timer);
+    if (timedOut) read.catch(() => {});
+  }
+}
+
 const HANDLERS = {
   async browser_navigate(args) {
     if (typeof args.url !== "string") throw new Error("url is required");
@@ -450,17 +492,20 @@ const HANDLERS = {
     let bytes;
     let contentType = "";
     if (typeof args.selector === "string") {
+      const responses = [];
+      const recordResponse = (response) => responses.push(response);
+      page.on("response", recordResponse);
       const downloadPromise = page.waitForEvent("download", { timeout: DEFAULT_TIMEOUT });
-      await page.locator(args.selector).first().click({ timeout: DEFAULT_TIMEOUT });
-      const download = await downloadPromise;
-      const failure = await download.failure();
-      if (failure) throw new Error(`browser download failed: ${failure}`);
-      const temporary = path.join(path.dirname(destination), `.cuddly-winner-download-${randomUUID()}`);
       try {
-        await download.saveAs(temporary);
-        bytes = await readFile(temporary);
+        await page.locator(args.selector).first().click({ timeout: DEFAULT_TIMEOUT });
+        const download = await downloadPromise;
+        const failure = await withDownloadTimeout(download.failure());
+        if (failure) throw new Error(`browser download failed: ${failure}`);
+        const response = responses.find((candidate) => candidate.url() === download.url());
+        contentType = response?.headers()["content-type"]?.toLowerCase() || "";
+        bytes = await readDownloadStream(download);
       } finally {
-        await rm(temporary, { force: true });
+        page.off("response", recordResponse);
       }
     } else {
       const fetched = await page.evaluate(async ({ url, timeoutMs, maxBytes }) => {

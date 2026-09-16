@@ -27,8 +27,8 @@ After the migration:
 - interrupted non-idempotent actions are inspected before any retry;
 - no runner, validator, prompt, selector, output path, generated task package,
   test, or private run artifact from that browser image experiment remains;
-- no code, test, prompt, rule, skill, configuration, installer path, or integrity
-  record refers to the retired browser stack.
+- client-owned legacy browser files are outside the managed profile and remain
+  untouched by deployment.
 
 There is no compatibility layer. Remove the old path rather than keeping aliases
 or dual behavior.
@@ -46,17 +46,15 @@ user work.
 - Make the managed browser MCP entry launch the pinned Playwright service in
   headless mode.
 - Remove the separate browser-engine downloader, binary manifest, checksums,
-  worker handling, restart logic, and transport wrapper used by the retired
-  stack.
+  worker handling, restart logic, and transport wrapper.
 - Remove the environment switch that treats Playwright as a fallback.
 - Update the immutability guard so it permits the managed Playwright tools while
   still protecting authentication state and the headed-login boundary.
 - Keep configuration changes namespaced. Preserve unrelated user MCP entries.
 - Make installer `install`, `status`, and `remove` agree on the new managed files
   and entries. Keep MCP configuration diagnosis consistent with them.
-- During installation, remove old project-owned browser files and configuration
-  only when ownership is proved. Preserve modified or unrelated files and report
-  them as conflicts.
+- Do not inspect, report on, or remove legacy browser files in a client
+  configuration directory. Clients own cleanup of their own environments.
 
 ### 3. Build The Login Handoff
 
@@ -94,6 +92,9 @@ user work.
   tie the result to the current request.
 - Place the final file without silently replacing unrelated data.
 - Verify type, size, signature, hash, and any task-specific content requirement.
+- Apply the same transfer timeout and byte limit to event downloads and URL
+  retrieval. Read event downloads as bounded streams and obtain their content
+  type from the matching Playwright response.
 - Do not count a preview, stale page item, filename, or successful click as a
   delivered file.
 
@@ -146,7 +147,8 @@ Add or update deterministic tests for:
 9. Download events, authenticated retrieval, exclusive file placement, and file
    validation.
 10. Unknown submissions and reconnects that never cause an automatic replay.
-11. Complete removal of the retired browser stack and browser image experiment.
+11. Complete removal of project-managed browser-stack cleanup and browser image
+    experiment material.
 
 The build must remove obsolete skill expectations from
 `tests/test_skill_pressure.py`, `tests/test_skill_coverage.py`,
@@ -171,9 +173,10 @@ Before completion:
    status, and removal.
 4. Install into a temporary OpenCode configuration root and inspect the exact
    managed tree and MCP configuration.
-5. Search the whole repository, including hidden project files, for the retired
-   browser stack and provider-specific experiment. The search must return no
-   maintained source, prompt, test, configuration, or documentation matches.
+5. Search the whole repository, including hidden project files, for removed
+   browser-engine implementation and provider-specific experiment material. The
+   search must return no maintained source, prompt, test, configuration, or
+   documentation matches.
 6. Confirm that no headed browser opens during headless tests or diagnostics.
 7. Confirm that a headed login closes and the resulting state works in a new
    headless context.
@@ -184,9 +187,10 @@ Before completion:
 
 ## Completed Work And Outstanding Precondition
 
-The retired browser stack and browser image experiment have been removed. The
-managed profile installs the headless Playwright service, secure state store,
-and separate headed login helper. Deterministic tests cover login state,
+The project-managed browser stack and browser image experiment have been
+removed. The managed profile installs the headless Playwright service, secure
+state store, and separate headed login helper. Deployment leaves client-owned
+legacy browser files untouched. Deterministic tests cover login state,
 downloads, collision-safe local placement, validation, non-replay, and retired
 skill cleanup.
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -9,7 +9,6 @@ import { promisify } from "node:util";
 const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
 const deploy = path.join(repo, "scripts", "deploy-opencode-agents.sh");
-const intermediateWrapperSha256 = "061acc2e31017957bb03fe9e421fc946747e5e09478284904cdd8146c2ceacfb";
 
 async function fixture(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), "retired-browser-"));
@@ -24,10 +23,22 @@ async function deployFixture(root, action) {
   return run("bash", [deploy, action, "--config-dir", config], { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
 }
 
-test("installer recognizes the deployed intermediate retired browser wrapper revision", async () => {
-  const installer = await (await import("node:fs/promises")).readFile(deploy, "utf8");
-  assert.match(installer, new RegExp(`"${intermediateWrapperSha256}"`));
-});
+test("installer leaves client-owned legacy browser files untouched", async () => fixture(async (root) => {
+  const config = path.join(root, "config");
+  const wrapper = path.join(config, "cuddly-winner-browser-mcp.mjs");
+  const session = path.join(config, "cuddly-winner-browser-session.mjs");
+  const engine = path.join(config, "cuddly-winner-browser");
+  await mkdir(engine, { recursive: true });
+  await writeFile(wrapper, "client-owned wrapper\n");
+  await writeFile(session, "client-owned session helper\n");
+  await writeFile(path.join(engine, "browser"), "client-owned engine\n");
+
+  const installed = await deployFixture(root, "install");
+  assert.doesNotMatch(installed.stdout, /Retired browser/);
+  assert.equal(await readFile(wrapper, "utf8"), "client-owned wrapper\n");
+  assert.equal(await readFile(session, "utf8"), "client-owned session helper\n");
+  assert.equal(await readFile(path.join(engine, "browser"), "utf8"), "client-owned engine\n");
+}));
 
 test("installer removes only a proved retired browser-image skill and preserves a conflict", async () => fixture(async (root) => {
   const skill = path.join(root, "config", "skills", "playwright-image-generation");

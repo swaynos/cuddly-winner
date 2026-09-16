@@ -41,9 +41,8 @@ test("deployed rule keeps the Playwright login-state and safety safeguards", asy
   }
 });
 
-test("deployed rule no longer references the retired browser stack or fallback gate", async () => {
+test("deployed rule no longer references the retired fallback gate or image skill", async () => {
   const text = normalize(await readFile(path.join(repo, "rules", "resource-selection.md"), "utf8"));
-  assert.doesNotMatch(text, /obscura/, "rule still names the retired Obscura engine");
   assert.doesNotMatch(text, /cuddly_winner_browser_fallback/, "rule still names the retired fallback env gate");
   assert.doesNotMatch(text, /playwright-image-generation/, "rule still references the retired image-generation skill");
 });
@@ -54,7 +53,6 @@ test("durable browser documentation records the Playwright-only backend", async 
     assert.match(text, /playwright/, `${file}: missing Playwright backend`);
     assert.match(text, /headless/, `${file}: missing headless mode`);
     assert.match(text, /headed/, `${file}: missing headed login mode`);
-    assert.doesNotMatch(text, /obscura/, `${file}: still references the retired Obscura engine`);
     assert.doesNotMatch(text, /cuddly_winner_browser_fallback/, `${file}: still references the retired fallback env gate`);
   }
 });

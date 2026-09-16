@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, mkdir, rm, writeFile, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rm, writeFile, symlink } from "node:fs/promises";
 import { saveState } from "../../scripts/opencode-browser-state.mjs";
 
 const run = promisify(execFile);
@@ -23,8 +23,8 @@ async function fixture(fn) {
     await rm(root, { recursive: true, force: true });
   }
 }
-async function invoke(args) {
-  return run("node", [login, ...args]);
+async function invoke(args, env = {}) {
+  return run("node", [login, ...args], { env: { ...process.env, ...env } });
 }
 function seed(root, name = "A", origins = ["https://example.com"]) {
   return saveState({
@@ -62,6 +62,19 @@ test("capture rejects incomplete arguments before opening a browser", async () =
     invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com", "--complete-url", "https://identity.example/complete"]),
     (e) => e.code === 1 && /complete-url origin must be approved/.test(e.stderr),
   );
+}));
+
+test("a headed browser launch failure removes its temporary profile", async () => fixture(async (root) => {
+  const tmp = path.join(root, "tmp");
+  await mkdir(tmp);
+  await assert.rejects(
+    invoke(
+      ["capture", "--config-dir", root, "--name", "A", "--url", "https://example.com/login", "--origin", "https://example.com", "--cookie", "sid"],
+      { TMPDIR: tmp, PLAYWRIGHT_BROWSERS_PATH: path.join(root, "missing-browsers") },
+    ),
+    (e) => e.code === 1 && /Executable doesn't exist|browserType.launchPersistentContext/.test(e.stderr),
+  );
+  assert.deepEqual((await readdir(tmp)).filter((name) => name.startsWith("cuddly-winner-login-")), []);
 }));
 
 test("a bad action and a missing name or config-dir are rejected", async () => fixture(async (root) => {

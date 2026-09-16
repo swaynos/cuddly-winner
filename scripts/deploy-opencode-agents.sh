@@ -470,39 +470,6 @@ sync_retired_artifacts() {
   done
 }
 
-sync_retired_browser_stack() {
-  local wrapper="${CONFIG_DIR}/cuddly-winner-browser-mcp.mjs"
-  local session="${CONFIG_DIR}/cuddly-winner-browser-session.mjs"
-  local engine="${CONFIG_DIR}/cuddly-winner-browser"
-  [[ -e "$wrapper" || -e "$session" || -e "$engine" || -L "$wrapper" || -L "$session" || -L "$engine" ]] || return 0
-  if node -e '
-    const { createHash } = require("node:crypto");
-    const { readFileSync, lstatSync } = require("node:fs");
-    const [wrapper, session] = process.argv.slice(1);
-    const digest = file => createHash("sha256").update(readFileSync(file)).digest("hex");
-    try {
-      process.exit(lstatSync(wrapper).isFile() && lstatSync(session).isFile()
-        && [
-          "10b0d12cb1f8d1ad47ac6cd4a251d4306cde942a6d3a3c10062e50750cb48403",
-          "061acc2e31017957bb03fe9e421fc946747e5e09478284904cdd8146c2ceacfb",
-        ].includes(digest(wrapper))
-        && digest(session) === "6c9bd50220ab75cb4e6061a22d1387f7c24ebc0c75e5909eef51245b1df3f722" ? 0 : 1);
-    } catch { process.exit(1); }
-  ' "$wrapper" "$session"; then
-    if [[ "$ACTION" == "status" ]]; then
-      printf '  [retired managed browser stack] %s\n' "$CONFIG_DIR"
-      mark_status_drift
-    else
-      rm -f "$wrapper" "$session"
-      rm -rf "$engine"
-      printf 'Removed retired managed browser stack from %s\n' "$CONFIG_DIR"
-    fi
-  else
-    printf 'Retired browser stack conflict: %s (ownership not proven; preserved)\n' "$CONFIG_DIR"
-    [[ "$ACTION" == "status" ]] && mark_status_drift
-  fi
-}
-
 record_agent_state() {
   local state_file="$1"
   local source_args=()
@@ -878,7 +845,6 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_discoverable_skill_backups
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
    sync_retired_artifacts
-   sync_retired_browser_stack
   sync_retired_browser_skill
   if [[ "$ACTION" == "status" ]]; then
     if [[ "$MANAGED_ENTRY_DRIFT" == 0 ]]; then
@@ -919,7 +885,6 @@ fi
 sync_retired_agents "$AGENT_STATE_FILE"
 sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
 sync_retired_artifacts
-sync_retired_browser_stack
 sync_retired_browser_skill
 record_agent_state "$AGENT_STATE_FILE"
 sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
