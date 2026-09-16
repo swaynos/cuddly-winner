@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 
@@ -89,6 +90,12 @@ function client(env = {}) {
   }
   return { child, rpc, call, textOf, close: () => child.stdin.end() };
 }
+
+test("managed browser retains the proven default Playwright launch mode", async () => {
+  const source = await readFile(server, "utf8");
+  assert.match(source, /chromium\.launch\(\{ headless: true \}\)/);
+  assert.doesNotMatch(source, /chromium\.launch\(\{ headless: true, channel:/);
+});
 
 test("Playwright MCP server drives a headless page over JSON-RPC", async () => {
   const { httpServer, base } = await fixtureServer();

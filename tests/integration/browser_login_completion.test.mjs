@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 import { completionSatisfied, storageFingerprint } from "../../scripts/opencode-browser-login.mjs";
 
@@ -7,6 +9,11 @@ const changed = {
   baselineFingerprint: "anonymous-state",
   currentFingerprint: "authenticated-state",
 };
+
+test("login capture retains the proven default Playwright launch mode", async () => {
+  const source = await readFile(path.resolve(import.meta.dirname, "../../scripts/opencode-browser-login.mjs"), "utf8");
+  assert.doesNotMatch(source, /channel:\s*"chromium"/);
+});
 
 test("a completion URL alone cannot finish login without a state change", () => {
   assert.equal(completionSatisfied({

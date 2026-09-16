@@ -554,7 +554,9 @@ The installer writes each rule to `<config_dir>/rules/` and uses
 `scripts/opencode-instructions.mjs` to add or remove its absolute path in the
 `instructions` array of `<config_dir>/opencode.json`. It changes no other config
 key. A separate helper owns one namespaced browser MCP entry, `cuddly-winner-browser`. Its
-service launches Playwright in headless mode and
+service launches Playwright in its default headless mode. It does not force a
+browser channel because the default mode is the proven compatible launch path
+for the managed login handoff. The service
 exposes the supported browser tools. It may read approved login state directly
 from the private state directory, but it never returns that state to the model.
 The service filters interactive discovery to visible controls, supports normal

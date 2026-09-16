@@ -19,6 +19,9 @@ division of responsibility:
 - Headed Playwright opens only for a person to complete a required login. It
   closes after saving the approved login state. It must not complete the task.
 
+Use Playwright's default launch mode for both paths. Do not force a browser
+channel unless a verified site-specific compatibility test requires it.
+
 Do not open a login window merely because a page has a sign-in link. First try
 the requested action in a fresh or saved headless context. If the action needs
 login, explain which site will open and ask for approval before starting headed
