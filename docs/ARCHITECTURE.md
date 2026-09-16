@@ -575,8 +575,11 @@ GUI is available or state reuse fails, the action is blocked. See
 [Browser Actions and Login](RESOURCE-SELECTION.md#browser-actions-and-login) for
 the steps and completion checks.
 The helper fingerprints approved-origin cookies and local storage after the
-login page loads. Completion requires that fingerprint to change and requires
-every configured URL or cookie predicate to match.
+login page loads. Completion requires that fingerprint to change, requires the
+account-specific completion selector to be visible, and requires every configured
+URL or cookie predicate to match. The selector is stored as non-secret
+verification metadata. The headless service reports authentication only after
+the same selector is visible; selector-less or obsolete state requires recapture.
 
 The global `ImmutabilityGuard` does not treat Playwright as a fallback. It may
 still enforce the headed-login boundary and block browser operations that expose
@@ -585,7 +588,8 @@ accept only a new output associated with that submission. No non-idempotent
 action is replayed automatically after a disconnect.
 
 Saved state lives under `<config_dir>/cuddly-winner-sessions/` in mode-`0600`
-files. Each record names its allowed origins and stores Playwright storage state.
+files. Each record names its allowed origins, stores Playwright storage state,
+and records its account verification selector.
 When needed, the login helper also records session storage separately and the
 headless service restores it before navigation. State values never enter model
 context or logs. The service loads state only for matching origins.

@@ -60,13 +60,22 @@ also needs session storage, the login helper must capture and restore it
 explicitly. State values must not appear in model context, logs, command output,
 screenshots, or error messages.
 
-Login completion requires a change from the state recorded after the login page
-loads. When both a completion URL and cookie are supplied, both must match. A
-redirect alone is not proof of login.
+Login capture requires an account-specific `--complete-selector`, such as a
+visible account avatar or profile menu. Completion requires that selector to be
+visible and a change from the state recorded after the login page loads. Optional
+completion URL and cookie predicates are additional checks, and every supplied
+predicate must match. A redirect, composer, or storage change alone is not proof
+of login.
+
+The selector is stored as non-secret verification metadata. After loading saved
+state, the fresh headless browser must see the same selector before reporting the
+state as authenticated. A missing or obsolete selector blocks the handoff and
+requires a new headed login capture. State captured without selector evidence is
+not trusted for headless authentication.
 
 Before loading saved state, check that the requested origin matches the state
-record. Expired or rejected state returns the workflow to the approved headed
-login step. Removing one saved session must not affect another.
+record. Expired, rejected, or unverified state returns the workflow to the
+approved headed login step. Removing one saved session must not affect another.
 
 ## Downloads And Generated Files
 

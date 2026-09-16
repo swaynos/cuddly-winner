@@ -4,10 +4,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
+import os from "node:os";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const server = path.join(repo, "scripts", "opencode-playwright-mcp.mjs");
@@ -40,8 +41,10 @@ function fixtureServer() {
       <div id="editor" contenteditable="true" role="textbox" aria-label="Message"></div>
       <div id="plain-editor" contenteditable="plaintext-only" aria-label="Plain message"></div>
       <button id="blocked" aria-disabled="true" onclick="document.getElementById('out').textContent='should-not-run'">Blocked</button>
+      <button id="account-menu" hidden>Signed in account</button>
       <div id="out"></div>
       <a href="/second">Second</a>
+      <script>if (localStorage.getItem("authenticated") === "yes") document.getElementById("account-menu").hidden = false;</script>
     </body></html>`);
   });
   return new Promise((resolve) => {
@@ -50,6 +53,25 @@ function fixtureServer() {
       resolve({ httpServer, base: `http://127.0.0.1:${port}` });
     });
   });
+}
+
+async function stateConfig(base, selector) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "cuddly-browser-state-"));
+  const sessions = path.join(root, "cuddly-winner-sessions");
+  await mkdir(sessions, { mode: 0o700 });
+  const origin = new URL(base).origin;
+  await writeFile(path.join(sessions, "account.json"), JSON.stringify({
+    schemaVersion: 1,
+    name: "account",
+    origins: [origin],
+    capturedAt: new Date().toISOString(),
+    storageState: {
+      cookies: [],
+      origins: [{ origin, localStorage: [{ name: "authenticated", value: "yes" }] }],
+    },
+    verification: { selector },
+  }), { mode: 0o600 });
+  return root;
 }
 
 // Minimal JSON-RPC-over-stdio client for the spawned server.
@@ -219,6 +241,30 @@ test("Cloudflare challenges are identified without misreporting authentication f
   } finally {
     c.close();
     httpServer.close();
+  }
+});
+
+test("saved state is authenticated only when its account selector is visible", async () => {
+  const { httpServer, base } = await fixtureServer();
+  const validRoot = await stateConfig(base, "#account-menu");
+  const invalidRoot = await stateConfig(base, "#missing-account-menu");
+  const valid = client({ CUDDLY_WINNER_CONFIG_DIR: validRoot });
+  const invalid = client({ CUDDLY_WINNER_CONFIG_DIR: invalidRoot });
+  try {
+    const accepted = await valid.call("browser_navigate", { url: `${base}/` });
+    assert.equal(accepted.isError, undefined, valid.textOf(accepted));
+    const status = JSON.parse(valid.textOf(await valid.call("browser_status", {})));
+    assert.equal(status.hydratedAuthentication, true);
+
+    const rejected = await invalid.call("browser_navigate", { url: `${base}/` });
+    assert.equal(rejected.isError, true);
+    assert.match(invalid.textOf(rejected), /visible account evidence.*new login/i);
+  } finally {
+    valid.close();
+    invalid.close();
+    httpServer.close();
+    await rm(validRoot, { recursive: true, force: true });
+    await rm(invalidRoot, { recursive: true, force: true });
   }
 });
 

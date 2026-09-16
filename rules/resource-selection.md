@@ -51,8 +51,11 @@ browser profile. State values must not appear in model context, logs, command
 output, screenshots, or error messages. Load state only when the requested
 origin matches the record. Removing one saved session must not affect another.
 The login helper records a state baseline after loading the login page. It saves
-only after approved-origin state changes and every supplied completion condition
-matches; a redirect by itself is not proof of login.
+only after approved-origin state changes, the required account-specific
+`--complete-selector` is visible, and every supplied URL or cookie condition
+matches. The headless browser must see the same account selector before it treats
+the loaded state as authenticated. A redirect or composer by itself is not proof
+of login. State captured without selector evidence must be recaptured.
 
 ## Browser controls
 

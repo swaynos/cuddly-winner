@@ -156,13 +156,24 @@ function filterState(origins, storageState, sessionStorage) {
   return { storageState: { cookies, origins: originStores }, sessionStorage: Object.keys(sessions).length ? sessions : undefined };
 }
 
+function normaliseVerification(verification) {
+  if (verification === undefined || verification === null) return undefined;
+  if (!verification || typeof verification !== "object" || Array.isArray(verification)) {
+    throw new BrowserStateError("verification must be an object");
+  }
+  const selector = typeof verification.selector === "string" ? verification.selector.trim() : "";
+  if (!selector) throw new BrowserStateError("verification selector is required");
+  if (selector.length > 1000) throw new BrowserStateError("verification selector is too long");
+  return { selector };
+}
+
 /**
  * Persist a state record (mode 0600). Overwrites any existing record of the
  * same name. `storageState` is the object returned by Playwright's
  * `context.storageState()`. `sessionStorage` is an optional map of
  * origin -> { key: value } captured explicitly for sites that need it.
  */
-export function saveState({ configDir, name, origins, storageState, sessionStorage }) {
+export function saveState({ configDir, name, origins, storageState, sessionStorage, verification }) {
   assertValidName(name);
   const normOrigins = normaliseOrigins(origins);
   if (!storageState || typeof storageState !== "object") {
@@ -181,6 +192,8 @@ export function saveState({ configDir, name, origins, storageState, sessionStora
   if (filtered.sessionStorage) {
     record.sessionStorage = filtered.sessionStorage;
   }
+  const normalizedVerification = normaliseVerification(verification);
+  if (normalizedVerification) record.verification = normalizedVerification;
   const tmp = `${file}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
   try {
@@ -237,6 +250,7 @@ export function loadStateForOrigin({ configDir, name, origin }) {
   return {
     storageState: filtered.storageState,
     sessionStorage: filtered.sessionStorage || null,
+    verification: normaliseVerification(record.verification) || null,
     origins: record.origins.slice(),
   };
 }
@@ -250,6 +264,7 @@ export function statMetadata(configDir, name) {
     origins: record.origins.slice(),
     capturedAt: record.capturedAt,
     hasSessionStorage: Boolean(record.sessionStorage),
+    hasVerificationSelector: Boolean(normaliseVerification(record.verification)),
   };
 }
 

@@ -59,6 +59,7 @@ test("saveState writes a mode-0600 record and readRecord round-trips", () => {
     name: "chatgpt",
     origins: ["https://example.com"],
     storageState: sampleState,
+    verification: { selector: "#account-menu" },
   });
   assert.ok(fs.existsSync(file));
   if (process.platform !== "win32") {
@@ -69,15 +70,23 @@ test("saveState writes a mode-0600 record and readRecord round-trips", () => {
   assert.equal(rec.schemaVersion, 1);
   assert.deepEqual(rec.origins, ["https://example.com"]);
   assert.equal(rec.storageState.cookies[0].value, "SECRET-COOKIE-VALUE");
+  assert.deepEqual(rec.verification, { selector: "#account-menu" });
 });
 
 test("loadStateForOrigin releases state only for an approved origin", () => {
   const configDir = tmpConfig();
-  saveState({ configDir, name: "acct", origins: ["https://example.com"], storageState: sampleState });
+  saveState({
+    configDir,
+    name: "acct",
+    origins: ["https://example.com"],
+    storageState: sampleState,
+    verification: { selector: "#account-menu" },
+  });
 
   const ok = loadStateForOrigin({ configDir, name: "acct", origin: "https://example.com/somewhere" });
   assert.ok(ok, "approved origin should release state");
   assert.equal(ok.storageState.cookies[0].value, "SECRET-COOKIE-VALUE");
+  assert.deepEqual(ok.verification, { selector: "#account-menu" });
 
   const wrong = loadStateForOrigin({ configDir, name: "acct", origin: "https://evil.example" });
   assert.equal(wrong, null, "unapproved origin must not release state");

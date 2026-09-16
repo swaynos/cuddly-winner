@@ -100,8 +100,8 @@ let context = null;
 let pages = []; // ordered list of Page
 let activeIndex = 0;
 const consoleMessages = [];
-const hydratedOrigins = new Set();
-let hasHydratedAuthentication = false;
+const hydratedOrigins = new Map();
+const verifiedOrigins = new Set();
 
 async function ensureChromium() {
   if (!chromium) ({ chromium } = await import("playwright"));
@@ -151,7 +151,7 @@ async function closeBrowser() {
   pages = [];
   activeIndex = 0;
   hydratedOrigins.clear();
-  hasHydratedAuthentication = false;
+  verifiedOrigins.clear();
   consoleMessages.length = 0;
   if (toClose) {
     try {
@@ -186,8 +186,8 @@ async function maybeHydrate(url) {
   } catch {
     return;
   }
-  if (hydratedOrigins.has(origin)) return;
-  hydratedOrigins.add(origin); // mark first so a failed load is not retried in a loop
+  if (hydratedOrigins.has(origin)) return { origin, selector: hydratedOrigins.get(origin) };
+  let stateWithoutVerification = false;
   for (const name of candidateStateNames()) {
     let loaded;
     try {
@@ -196,6 +196,11 @@ async function maybeHydrate(url) {
       continue;
     }
     if (!loaded) continue;
+    const selector = loaded.verification?.selector;
+    if (!selector) {
+      stateWithoutVerification = true;
+      continue;
+    }
     const cookies = Array.isArray(loaded.storageState?.cookies) ? loaded.storageState.cookies : [];
     if (cookies.length) {
       try {
@@ -206,7 +211,6 @@ async function maybeHydrate(url) {
     }
     const originStores = Array.isArray(loaded.storageState?.origins) ? loaded.storageState.origins : [];
     const sessionStores = loaded.sessionStorage && typeof loaded.sessionStorage === "object" ? loaded.sessionStorage : {};
-    hasHydratedAuthentication = Boolean(cookies.length || originStores.length || Object.keys(sessionStores).length);
     if (originStores.length || Object.keys(sessionStores).length) {
       await context.addInitScript(
         ({ localStores, sessionStores: sess }) => {
@@ -228,8 +232,27 @@ async function maybeHydrate(url) {
         { localStores: originStores, sessionStores },
       );
     }
-    return; // one matching record per origin
+    hydratedOrigins.set(origin, selector);
+    return { origin, selector }; // one matching record per origin
   }
+  if (stateWithoutVerification) {
+    throw new Error("saved login state has no account verification selector; complete a new login capture");
+  }
+  return null;
+}
+
+async function verifyHydratedAccount(page, hydration) {
+  if (!hydration || verifiedOrigins.has(hydration.origin)) return;
+  let visible = false;
+  try {
+    visible = await page.locator(hydration.selector).first().isVisible();
+  } catch {
+    /* Invalid or obsolete selectors are handled as failed account evidence. */
+  }
+  if (!visible) {
+    throw new Error("saved login state has no visible account evidence in the headless browser; complete a new login capture");
+  }
+  verifiedOrigins.add(hydration.origin);
 }
 
 // --- Element resolution ----------------------------------------------------
@@ -409,15 +432,22 @@ const HANDLERS = {
       contextOpen: Boolean(context),
       pageOpen,
       url: pageOpen ? page.url() : null,
-      hydratedAuthentication: hasHydratedAuthentication,
+      hydratedAuthentication: pageOpen && (() => {
+        try {
+          return verifiedOrigins.has(new URL(page.url()).origin);
+        } catch {
+          return false;
+        }
+      })(),
     });
   },
   async browser_navigate(args) {
     if (typeof args.url !== "string") throw new Error("url is required");
     await ensureContext();
-    await maybeHydrate(args.url);
+    const hydration = await maybeHydrate(args.url);
     const page = await ensureActivePage();
     const resp = await page.goto(args.url, { waitUntil: "load" });
+    await verifyHydratedAccount(page, hydration);
     const status = resp ? resp.status() : null;
     const classification = await navigationClassification(page, status);
     return text(`navigated to ${page.url()} (status ${status ?? "n/a"}${classification})`);
@@ -578,7 +608,7 @@ const HANDLERS = {
   },
   async browser_evaluate(args) {
     if (typeof args.expression !== "string") throw new Error("expression is required");
-    if (hasHydratedAuthentication) throw new Error("browser_evaluate is unavailable while saved authentication state is loaded");
+    if (hydratedOrigins.size) throw new Error("browser_evaluate is unavailable while saved authentication state is loaded");
     let value;
     try {
       value = await activePage().evaluate(args.expression);
@@ -764,8 +794,9 @@ const HANDLERS = {
     registerPage(page);
     activeIndex = pages.indexOf(page);
     if (typeof args.url === "string") {
-      await maybeHydrate(args.url);
+      const hydration = await maybeHydrate(args.url);
       await page.goto(args.url, { waitUntil: "load" });
+      await verifyHydratedAccount(page, hydration);
     }
     return text(`opened tab ${activeIndex}`);
   },

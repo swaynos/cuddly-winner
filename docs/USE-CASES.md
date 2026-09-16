@@ -389,7 +389,9 @@ Playwright browser stack.
 - **Then:** save only the required Playwright state outside the repository,
   restrict it to approved origins, close the headed browser, and confirm the
   state in headless mode. Completion requires approved-origin state to change
-  from its post-load baseline and every supplied completion predicate to match.
+  from its post-load baseline, a required account-specific selector to be
+  visible, and every supplied URL or cookie predicate to match. The fresh
+  headless context must see the same selector before accepting the handoff.
 - **Never:** use a personal browser profile, preserve credentials by default, or
   return state values to the model or logs.
 - **Evidence:** U credential state tests; F managed deployment fixture.

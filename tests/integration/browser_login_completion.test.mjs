@@ -8,6 +8,7 @@ import { completionSatisfied, storageFingerprint } from "../../scripts/opencode-
 const changed = {
   baselineFingerprint: "anonymous-state",
   currentFingerprint: "authenticated-state",
+  selectorVisible: true,
 };
 
 test("login capture retains the proven default Playwright launch mode", async () => {
@@ -46,6 +47,17 @@ test("all supplied login predicates must be satisfied", () => {
     ...options,
     cookies: [{ name: "session", value: "approved" }],
   }), true);
+});
+
+test("visible account evidence is required to finish login", () => {
+  assert.equal(completionSatisfied({
+    ...changed,
+    selectorVisible: false,
+    currentUrl: "https://example.com/home",
+    completeUrl: null,
+    cookie: null,
+    cookies: [],
+  }), false);
 });
 
 test("state fingerprints ignore unapproved origins and input ordering", () => {

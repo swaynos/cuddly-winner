@@ -12,14 +12,16 @@
 //   1. Validate all arguments before launching anything.
 //   2. On Linux, require a graphical session (DISPLAY or WAYLAND_DISPLAY).
 //   3. Open headed Playwright with a dedicated throwaway profile.
-//   4. Wait, with a bounded deadline, for a completion cookie or completion URL.
+//   4. Wait, with a bounded deadline, for visible account evidence and any
+//      optional completion cookie or completion URL.
 //   5. Save storage state (and optional session storage) for the approved
 //      origins, then close the browser before removing the temporary profile.
 //
 // CLI:
 //   capture --config-dir <dir> --name <name> --url <https-login-url>
 //           --origin <https-origin> [--origin ...]
-//           (--cookie <name> | --complete-url <https-prefix>)
+//           --complete-selector <account-ui-selector>
+//           [--cookie <name>] [--complete-url <https-prefix>]
 //           [--session-storage] [--timeout <seconds>]
 //   status  --config-dir <dir> [--name <name>]   (metadata only)
 //   remove  --config-dir <dir> --name <name>
@@ -116,6 +118,11 @@ function validateCaptureArgs(args) {
   }
 
   const cookie = args.cookie && args.cookie !== true ? args.cookie : null;
+  const completeSelector = args["complete-selector"] && args["complete-selector"] !== true
+    ? String(args["complete-selector"]).trim()
+    : "";
+  if (!completeSelector) throw new LoginError("capture requires --complete-selector for visible account evidence");
+  if (completeSelector.length > 1000) throw new LoginError("--complete-selector is too long");
   let completeUrl = null;
   if (args["complete-url"] && args["complete-url"] !== true) {
     completeUrl = args["complete-url"];
@@ -131,8 +138,6 @@ function validateCaptureArgs(args) {
       throw new LoginError("--complete-url must differ from --url; use a post-login URL or --cookie");
     }
   }
-  if (!cookie && !completeUrl) throw new LoginError("capture requires --cookie or --complete-url");
-
   let timeout = DEFAULT_TIMEOUT_SECONDS;
   if (args.timeout && args.timeout !== true) {
     timeout = Number(args.timeout);
@@ -146,6 +151,7 @@ function validateCaptureArgs(args) {
     origins,
     cookie,
     completeUrl,
+    completeSelector,
     captureSessionStorage: Boolean(args["session-storage"]),
     timeout,
   };
@@ -191,8 +197,9 @@ function storageFingerprint(storageState, origins) {
   return JSON.stringify({ cookies, origins: originState });
 }
 
-function completionSatisfied({ baselineFingerprint, currentFingerprint, currentUrl, cookies, cookie, completeUrl }) {
+function completionSatisfied({ baselineFingerprint, currentFingerprint, currentUrl, cookies, cookie, completeUrl, selectorVisible }) {
   if (currentFingerprint === baselineFingerprint) return false;
+  if (!selectorVisible) return false;
   if (completeUrl && !currentUrl.startsWith(completeUrl)) return false;
   if (cookie && !cookies.some((entry) => entry.name === cookie && entry.value)) return false;
   return true;
@@ -202,6 +209,7 @@ async function waitForCompletion(context, page, opts, baselineFingerprint, deadl
   while (Date.now() < deadline) {
     try {
       const currentState = await context.storageState();
+      const selectorVisible = await page.locator(opts.completeSelector).first().isVisible();
       if (completionSatisfied({
         baselineFingerprint,
         currentFingerprint: storageFingerprint(currentState, opts.origins),
@@ -209,6 +217,7 @@ async function waitForCompletion(context, page, opts, baselineFingerprint, deadl
         cookies: (currentState.cookies || []).filter((entry) => cookieMatchesOrigins(entry, opts.origins)),
         cookie: opts.cookie,
         completeUrl: opts.completeUrl,
+        selectorVisible,
       })) return;
     } catch {
       /* page or context may be mid-navigation */
@@ -253,7 +262,14 @@ async function capture(args) {
 
     const storageState = await context.storageState();
     const sessionStorage = opts.captureSessionStorage ? await captureSessionStorage(page, opts.origins) : undefined;
-    saveState({ configDir: opts.configDir, name: opts.name, origins: opts.origins, storageState, sessionStorage });
+    saveState({
+      configDir: opts.configDir,
+      name: opts.name,
+      origins: opts.origins,
+      storageState,
+      sessionStorage,
+      verification: { selector: opts.completeSelector },
+    });
     // Never print state values; only metadata.
     process.stdout.write(
       `Saved login state "${opts.name}" for ${opts.origins.join(", ")}${sessionStorage ? " (with session storage)" : ""}\n`,

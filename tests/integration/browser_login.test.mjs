@@ -10,6 +10,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, mkdir, readdir, rm, writeFile, symlink } from "node:fs/promises";
 import { saveState } from "../../scripts/opencode-browser-state.mjs";
+import { validateCaptureArgs } from "../../scripts/opencode-browser-login.mjs";
 
 const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
@@ -56,24 +57,38 @@ test("capture rejects incomplete arguments before opening a browser", async () =
   );
   await assert.rejects(
     invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com"]),
-    (e) => e.code === 1 && /capture requires --cookie or --complete-url/.test(e.stderr),
+    (e) => e.code === 1 && /capture requires --complete-selector/.test(e.stderr),
   );
   await assert.rejects(
-    invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com", "--complete-url", "https://identity.example/complete"]),
+    invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com", "--complete-selector", "#account", "--complete-url", "https://identity.example/complete"]),
     (e) => e.code === 1 && /complete-url origin must be approved/.test(e.stderr),
   );
   await assert.rejects(
-    invoke([...base, "--url", "https://example.com/", "--origin", "https://example.com", "--complete-url", "https://example.com/"]),
+    invoke([...base, "--url", "https://example.com/", "--origin", "https://example.com", "--complete-selector", "#account", "--complete-url", "https://example.com/"]),
     (e) => e.code === 1 && /complete-url must differ from --url/.test(e.stderr),
   );
 }));
+
+test("capture requires a selector while URL and cookie predicates remain optional", () => {
+  const options = validateCaptureArgs({
+    _: ["capture"],
+    "config-dir": "/tmp/config",
+    name: "account",
+    url: "https://example.com/login",
+    origin: ["https://example.com"],
+    "complete-selector": "#account-menu",
+  });
+  assert.equal(options.completeSelector, "#account-menu");
+  assert.equal(options.cookie, null);
+  assert.equal(options.completeUrl, null);
+});
 
 test("a headed browser launch failure removes its temporary profile", async () => fixture(async (root) => {
   const tmp = path.join(root, "tmp");
   await mkdir(tmp);
   await assert.rejects(
     invoke(
-      ["capture", "--config-dir", root, "--name", "A", "--url", "https://example.com/login", "--origin", "https://example.com", "--cookie", "sid"],
+      ["capture", "--config-dir", root, "--name", "A", "--url", "https://example.com/login", "--origin", "https://example.com", "--complete-selector", "#account", "--cookie", "sid"],
       { TMPDIR: tmp, PLAYWRIGHT_BROWSERS_PATH: path.join(root, "missing-browsers") },
     ),
     (e) => e.code === 1 && /Executable doesn't exist|browserType.launchPersistentContext/.test(e.stderr),

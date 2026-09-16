@@ -392,6 +392,9 @@ Browser state is separate by site or account. The system must not use a personal
 browser profile, silently share state between sites, or follow a login redirect
 to an unapproved origin. Status may report names, origins, and capture times, but
 not credential values. Removal affects only the selected state record.
+Each captured state records a non-secret account-specific selector used to prove
+the account UI is visible. State without that evidence is not eligible for a
+headless authenticated handoff.
 
 ### Browser Actions and Login
 
@@ -439,10 +442,13 @@ action succeeded merely because login succeeded.
 
 The login helper uses a dedicated temporary or managed Playwright profile. It
 must reject unsafe state paths before launch, record an approved-origin state
-baseline after the login page loads, and require a state change plus every
-supplied completion predicate before saving. It uses a bounded login deadline,
-stops the browser before cleaning temporary files, and reports launch or
-early-exit errors promptly. On Linux, headed login requires `DISPLAY` or
+baseline after the login page loads, require a visible account-specific
+`--complete-selector`, and require a state change plus every supplied URL or
+cookie predicate before saving. A fresh headless browser must see the saved
+selector before it reports the loaded state as authenticated. Missing or obsolete
+selector evidence requires a new login capture. The helper uses a bounded login
+deadline, stops the browser before cleaning temporary files, and reports launch
+or early-exit errors promptly. On Linux, headed login requires `DISPLAY` or
 `WAYLAND_DISPLAY`. Normal headless work does not require a graphical session.
 
 Downloads and generated files are complete only after the expected page action,
