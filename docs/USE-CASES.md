@@ -374,7 +374,8 @@ Playwright browser stack.
 - **Then:** use Playwright as the only browser backend; perform normal work
   headlessly; use headed Playwright only for an approved human login; then
   return to a fresh authenticated headless context to complete and verify the
-  action.
+  action. Visible rich controls are valid targets, disabled controls fail before
+  dispatch, and bounded waits leave the context usable for another poll.
 - **Never:** open a login browser before establishing the need, finish the task
   in the login window, expose saved state, or replay an interrupted action whose
   result is unknown.
@@ -387,7 +388,8 @@ Playwright browser stack.
 - **When:** the user approves headed authentication.
 - **Then:** save only the required Playwright state outside the repository,
   restrict it to approved origins, close the headed browser, and confirm the
-  state in headless mode.
+  state in headless mode. Completion requires approved-origin state to change
+  from its post-load baseline and every supplied completion predicate to match.
 - **Never:** use a personal browser profile, preserve credentials by default, or
   return state values to the model or logs.
 - **Evidence:** U credential state tests; F managed deployment fixture.
@@ -417,7 +419,9 @@ Playwright browser stack.
 - **Given:** a browser task creates or downloads a file.
 - **When:** the page reports completion.
 - **Then:** tie the new page result to the current request, save the file through
-  the authenticated headless context, and verify its local bytes.
+  the authenticated headless context, and verify its local bytes. Visible image
+  or canvas media may be saved without exposing its source URL, and a known
+  source fingerprint can be rejected as stale.
 - **Never:** count a preview, stale page item, successful click, or filename as
   proof that the file was delivered.
 - **Evidence:** U download, path-collision, association, signature, and

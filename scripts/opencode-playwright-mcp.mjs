@@ -20,6 +20,9 @@
 //   CUDDLY_WINNER_BROWSER_STATES     optional comma list of state record names
 //                                    to consider for hydration (default: all)
 //   CUDDLY_WINNER_BROWSER_TIMEOUT_MS default per-action timeout (default 30000)
+//   CUDDLY_WINNER_BROWSER_MAX_WAIT_MS maximum selector/text wait (default 25000)
+//   CUDDLY_WINNER_BROWSER_TRANSPORT_TIMEOUT_MS MCP request budget (default 30000)
+//   CUDDLY_WINNER_BROWSER_MAX_MEDIA_PIXELS maximum image/canvas pixels (default 16M)
 
 import { createInterface } from "node:readline";
 import { createHash } from "node:crypto";
@@ -30,7 +33,17 @@ import { loadStateForOrigin, listStates } from "./opencode-browser-state.mjs";
 const CONFIG_DIR = process.env.CUDDLY_WINNER_CONFIG_DIR || "";
 const EXECUTABLE = process.env.CUDDLY_WINNER_BROWSER_EXECUTABLE || undefined;
 const DEFAULT_TIMEOUT = Number(process.env.CUDDLY_WINNER_BROWSER_TIMEOUT_MS || 30000);
+const configuredTransportTimeout = Number(process.env.CUDDLY_WINNER_BROWSER_TRANSPORT_TIMEOUT_MS || 30000);
+const TRANSPORT_TIMEOUT_MS = Number.isFinite(configuredTransportTimeout) && configuredTransportTimeout > 0 ? configuredTransportTimeout : 30000;
+const TRANSPORT_SAFE_WAIT_MS = Math.max(1, Math.floor(TRANSPORT_TIMEOUT_MS * 0.8));
+const configuredMaxWait = Number(process.env.CUDDLY_WINNER_BROWSER_MAX_WAIT_MS || Math.min(DEFAULT_TIMEOUT, TRANSPORT_SAFE_WAIT_MS));
+const requestedMaxWait = Number.isFinite(configuredMaxWait) && configuredMaxWait > 0 ? configuredMaxWait : Math.min(DEFAULT_TIMEOUT, TRANSPORT_SAFE_WAIT_MS);
+const MAX_WAIT_MS = Math.min(requestedMaxWait, DEFAULT_TIMEOUT, TRANSPORT_SAFE_WAIT_MS);
 const MAX_DOWNLOAD_BYTES = Number(process.env.CUDDLY_WINNER_BROWSER_MAX_DOWNLOAD_BYTES || 50 * 1024 * 1024);
+const configuredMaxMediaPixels = Number(process.env.CUDDLY_WINNER_BROWSER_MAX_MEDIA_PIXELS || 16 * 1024 * 1024);
+const MAX_MEDIA_PIXELS = Number.isFinite(configuredMaxMediaPixels) && configuredMaxMediaPixels > 0
+  ? Math.floor(configuredMaxMediaPixels)
+  : 16 * 1024 * 1024;
 const STATE_NAMES = (process.env.CUDDLY_WINNER_BROWSER_STATES || "")
   .split(",")
   .map((s) => s.trim())
@@ -46,6 +59,7 @@ const PROTOCOL_VERSION = "2024-11-05";
 
 const TOOLS = [
   { name: "browser_navigate", description: "Navigate to a URL and wait for load.", inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } },
+  { name: "browser_status", description: "Return non-secret browser runtime and page health metadata.", inputSchema: { type: "object", properties: {} } },
   { name: "browser_navigate_back", description: "Go back in history.", inputSchema: { type: "object", properties: {} } },
   { name: "browser_forward", description: "Go forward in history.", inputSchema: { type: "object", properties: {} } },
   { name: "browser_reload", description: "Reload the current page.", inputSchema: { type: "object", properties: {} } },
@@ -70,6 +84,7 @@ const TOOLS = [
   { name: "browser_wait_for_text", description: "Wait for text to appear in the page.", inputSchema: { type: "object", properties: { text: { type: "string" }, timeout: { type: "number" } }, required: ["text"] } },
   { name: "browser_screenshot", description: "Capture the viewport as a PNG saved to path.", inputSchema: { type: "object", properties: { path: { type: "string" }, full_page: { type: "boolean" } }, required: ["path"] } },
   { name: "browser_download", description: "Capture a page download event or retrieve a URL through the current authenticated headless page; save only after validation.", inputSchema: { type: "object", properties: { url: { type: "string" }, selector: { type: "string" }, path: { type: "string" }, min_bytes: { type: "number" }, expected_sha256: { type: "string" }, expected_content_type: { type: "string" }, signature_hex: { type: "string" } }, required: ["path"] } },
+  { name: "browser_save_media", description: "Save a visible image or canvas through the authenticated browser context without exposing its source URL.", inputSchema: { type: "object", properties: { ref: { type: "string" }, selector: { type: "string" }, path: { type: "string" }, reject_source_sha256: { type: "string" }, min_bytes: { type: "number" }, expected_sha256: { type: "string" }, expected_content_type: { type: "string" }, signature_hex: { type: "string" } }, required: ["path"] } },
   { name: "browser_tab_new", description: "Open a new tab, optionally navigating to a URL.", inputSchema: { type: "object", properties: { url: { type: "string" } } } },
   { name: "browser_tab_list", description: "List open tabs.", inputSchema: { type: "object", properties: {} } },
   { name: "browser_tab_switch", description: "Switch the active tab by index.", inputSchema: { type: "object", properties: { index: { type: "number" } }, required: ["index"] } },
@@ -94,28 +109,40 @@ async function ensureChromium() {
   return chromium;
 }
 
+function registerPage(page) {
+  if (pages.includes(page)) return;
+  pages.push(page);
+  page.on("console", (msg) => {
+    if (consoleMessages.length < 500) consoleMessages.push(`[${msg.type()}] ${msg.text()}`);
+  });
+}
+
 async function ensureContext() {
   if (context) return context;
   await ensureChromium();
   browser = await chromium.launch({ headless: true, channel: "chromium" });
   context = await browser.newContext();
   context.setDefaultTimeout(DEFAULT_TIMEOUT);
+  pages = [];
+  context.on("page", registerPage);
   const page = await context.newPage();
-  page.on("console", (msg) => {
-    if (consoleMessages.length < 500) consoleMessages.push(`[${msg.type()}] ${msg.text()}`);
-  });
-  context.on("page", (p) => {
-    if (!pages.includes(p)) pages.push(p);
-  });
-  pages = [page];
+  registerPage(page);
   activeIndex = 0;
   return context;
 }
 
 function activePage() {
   const page = pages[activeIndex];
-  if (!page) throw new Error("no active page; call browser_navigate first");
+  if (!page || page.isClosed()) throw new Error("no active page is open; call browser_navigate first");
   return page;
+}
+
+async function ensureActivePage() {
+  await ensureContext();
+  pages = pages.filter((page) => !page.isClosed());
+  if (!pages.length) registerPage(await context.newPage());
+  if (activeIndex >= pages.length) activeIndex = pages.length - 1;
+  return pages[activeIndex];
 }
 
 async function closeBrowser() {
@@ -210,14 +237,27 @@ async function maybeHydrate(url) {
 
 const REF_TAG = "data-cw-ref";
 const INTERACTIVE_SELECTOR =
-  "a[href], button, input, textarea, select, [role=button], [role=link], [role=textbox], [onclick], [tabindex]";
+  "a[href], button, input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=button], [role=link], [role=textbox], [onclick], [tabindex]";
 
 // Assign stable refs (e1, e2, ...) to interactive elements and return a compact
 // list. Refs live in a page attribute so a later click/fill can target them.
 async function tagInteractive(page, limit) {
   return page.evaluate(
     ({ sel, attr, cap }) => {
-      const nodes = Array.from(document.querySelectorAll(sel)).slice(0, cap);
+      const isVisible = (el) => {
+        if (el.matches('input[type="hidden"]')) return false;
+        if (typeof el.checkVisibility === "function" && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+        const style = getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      };
+      const isDisabled = (el) =>
+        el.matches(":disabled") ||
+        el.getAttribute("aria-disabled") === "true" ||
+        el.hasAttribute("data-visually-disabled") ||
+        Boolean(el.closest("[inert]"));
+      const nodes = Array.from(document.querySelectorAll(sel)).filter(isVisible).slice(0, cap);
       const out = [];
       let n = 0;
       for (const el of nodes) {
@@ -225,7 +265,7 @@ async function tagInteractive(page, limit) {
         const ref = `e${n}`;
         el.setAttribute(attr, ref);
         const label = (el.innerText || el.value || el.getAttribute("aria-label") || el.getAttribute("placeholder") || "").trim().slice(0, 80);
-        out.push({ ref, tag: el.tagName.toLowerCase(), type: el.getAttribute("type") || undefined, text: label });
+        out.push({ ref, tag: el.tagName.toLowerCase(), type: el.getAttribute("type") || undefined, text: label, disabled: isDisabled(el) });
       }
       return out;
     },
@@ -237,6 +277,34 @@ function locatorFor(page, args) {
   if (args.ref) return page.locator(`[${REF_TAG}="${String(args.ref).replace(/"/g, '\\"')}"]`);
   if (args.selector) return page.locator(args.selector);
   throw new Error("a ref or selector is required");
+}
+
+async function assertActionable(locator, action) {
+  await locator.waitFor({ state: "visible", timeout: DEFAULT_TIMEOUT });
+  const disabled = await locator.evaluate((el) =>
+    el.matches(":disabled") ||
+    el.getAttribute("aria-disabled") === "true" ||
+    el.hasAttribute("data-visually-disabled") ||
+    Boolean(el.closest("[inert]")),
+  );
+  if (disabled) throw new Error(`${action} target is disabled`);
+}
+
+async function fillAndVerify(locator, value) {
+  await assertActionable(locator, "fill");
+  await locator.fill(value, { timeout: DEFAULT_TIMEOUT });
+  const observed = await locator.evaluate((el) => {
+    if ("value" in el) return String(el.value);
+    if (el.isContentEditable) return el.innerText;
+    return el.textContent || "";
+  });
+  if (observed !== value) throw new Error("fill verification failed: visible control value did not match");
+}
+
+function boundedWaitMs(seconds) {
+  if (seconds !== undefined && (!Number.isFinite(seconds) || seconds <= 0)) throw new Error("timeout must be a positive number of seconds");
+  const requested = Number.isFinite(seconds) ? seconds * 1000 : DEFAULT_TIMEOUT;
+  return Math.min(requested, MAX_WAIT_MS);
 }
 
 // --- Tool handlers ---------------------------------------------------------
@@ -287,14 +355,59 @@ async function readDownloadStream(download) {
   }
 }
 
+async function assertDestinationAvailable(destination) {
+  try {
+    await lstat(destination);
+    throw new Error(`destination already exists: ${destination}`);
+  } catch (err) {
+    if (err?.code !== "ENOENT") throw err;
+  }
+}
+
+async function validateAndWrite({ args, destination, bytes, contentType }) {
+  contentType = String(contentType || "");
+  if (!bytes.length) throw new Error("download is empty");
+  if (bytes.length > MAX_DOWNLOAD_BYTES) throw new Error("download exceeds maximum size");
+  if (typeof args.expected_content_type === "string" && !contentType.toLowerCase().includes(args.expected_content_type.toLowerCase())) {
+    throw new Error(`download content type mismatch: ${contentType || "(missing)"}`);
+  }
+  if (Number.isFinite(args.min_bytes) && bytes.length < args.min_bytes) throw new Error(`download is smaller than ${args.min_bytes} bytes`);
+  if (typeof args.signature_hex === "string") {
+    const expected = args.signature_hex.replace(/\s+/g, "").toLowerCase();
+    if (!/^[0-9a-f]*$/.test(expected) || !bytes.subarray(0, expected.length / 2).toString("hex").startsWith(expected)) {
+      throw new Error("download signature mismatch");
+    }
+  }
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  if (typeof args.expected_sha256 === "string" && sha256 !== args.expected_sha256.toLowerCase()) throw new Error("download SHA-256 mismatch");
+  await mkdir(path.dirname(destination), { recursive: true });
+  await writeFile(destination, bytes, { flag: "wx" });
+  return { sha256, bytes: bytes.length };
+}
+
 const HANDLERS = {
+  async browser_status() {
+    const page = pages[activeIndex];
+    const pageOpen = Boolean(page && !page.isClosed());
+    return text({
+      runtime: SERVER_INFO.name,
+      version: SERVER_INFO.version,
+      mode: "headless",
+      contextOpen: Boolean(context),
+      pageOpen,
+      url: pageOpen ? page.url() : null,
+      hydratedAuthentication: hasHydratedAuthentication,
+    });
+  },
   async browser_navigate(args) {
     if (typeof args.url !== "string") throw new Error("url is required");
     await ensureContext();
     await maybeHydrate(args.url);
-    const page = activePage();
+    const page = await ensureActivePage();
     const resp = await page.goto(args.url, { waitUntil: "load" });
-    return text(`navigated to ${page.url()} (status ${resp ? resp.status() : "n/a"})`);
+    const status = resp ? resp.status() : null;
+    const classification = status === 401 || status === 403 ? ", access denied" : status && status >= 400 ? ", HTTP error" : "";
+    return text(`navigated to ${page.url()} (status ${status ?? "n/a"}${classification})`);
   },
   async browser_navigate_back() {
     await activePage().goBack();
@@ -336,7 +449,7 @@ const HANDLERS = {
   },
   async browser_interactive_elements(args) {
     const list = await tagInteractive(activePage(), args.limit);
-    return text(list.map((e) => `${e.ref} <${e.tag}${e.type ? ` type=${e.type}` : ""}> ${e.text}`).join("\n") || "(none)");
+    return text(list.map((e) => `${e.ref} <${e.tag}${e.type ? ` type=${e.type}` : ""}> ${e.text}${e.disabled ? " [disabled]" : ""}`).join("\n") || "(none)");
   },
   async browser_links(args) {
     const page = activePage();
@@ -345,18 +458,25 @@ const HANDLERS = {
     return text(links.map((l) => `${l.text} -> ${l.href}`).join("\n") || "(no links)");
   },
   async browser_click(args) {
-    await locatorFor(activePage(), args).first().click({ timeout: DEFAULT_TIMEOUT });
-    return text("clicked");
+    const page = activePage();
+    const locator = locatorFor(page, args).first();
+    await assertActionable(locator, "click");
+    await locator.click({ timeout: DEFAULT_TIMEOUT });
+    return text(`clicked at ${page.url()}`);
   },
   async browser_fill(args) {
     if (typeof args.value !== "string") throw new Error("value is required");
-    await locatorFor(activePage(), args).first().fill(args.value, { timeout: DEFAULT_TIMEOUT });
-    return text("filled");
+    const page = activePage();
+    await fillAndVerify(locatorFor(page, args).first(), args.value);
+    return text(`filled and verified at ${page.url()}`);
   },
   async browser_type(args) {
     if (typeof args.text !== "string") throw new Error("text is required");
-    await locatorFor(activePage(), args).first().pressSequentially(args.text, { timeout: DEFAULT_TIMEOUT });
-    return text("typed");
+    const page = activePage();
+    const locator = locatorFor(page, args).first();
+    await assertActionable(locator, "type");
+    await locator.pressSequentially(args.text, { timeout: DEFAULT_TIMEOUT });
+    return text(`typed at ${page.url()}`);
   },
   async browser_fill_form(args) {
     if (!Array.isArray(args.fields)) throw new Error("fields array is required");
@@ -364,19 +484,31 @@ const HANDLERS = {
     for (const field of args.fields) {
       const loc = locatorFor(page, field).first();
       const type = field.type || "text";
-      if (type === "check") await loc.check({ timeout: DEFAULT_TIMEOUT });
-      else if (type === "uncheck") await loc.uncheck({ timeout: DEFAULT_TIMEOUT });
-      else if (type === "select") await loc.selectOption(field.value, { timeout: DEFAULT_TIMEOUT });
-      else await loc.fill(String(field.value ?? ""), { timeout: DEFAULT_TIMEOUT });
+      if (type === "check") {
+        await assertActionable(loc, "fill");
+        await loc.check({ timeout: DEFAULT_TIMEOUT });
+      } else if (type === "uncheck") {
+        await assertActionable(loc, "fill");
+        await loc.uncheck({ timeout: DEFAULT_TIMEOUT });
+      } else if (type === "select") {
+        await assertActionable(loc, "fill");
+        await loc.selectOption(field.value, { timeout: DEFAULT_TIMEOUT });
+      }
+      else await fillAndVerify(loc, String(field.value ?? ""));
     }
     if (args.submit_ref || args.submit_selector) {
-      await locatorFor(page, { ref: args.submit_ref, selector: args.submit_selector }).first().click({ timeout: DEFAULT_TIMEOUT });
+      const submit = locatorFor(page, { ref: args.submit_ref, selector: args.submit_selector }).first();
+      await assertActionable(submit, "submit");
+      await submit.click({ timeout: DEFAULT_TIMEOUT });
     }
-    return text(`filled ${args.fields.length} field(s)${args.submit_ref || args.submit_selector ? " and submitted" : ""}`);
+    return text(`filled ${args.fields.length} field(s)${args.submit_ref || args.submit_selector ? " and clicked submit control" : ""} at ${page.url()}`);
   },
   async browser_select_option(args) {
-    await activePage().locator(args.selector).first().selectOption(args.value, { timeout: DEFAULT_TIMEOUT });
-    return text("selected");
+    const page = activePage();
+    const locator = page.locator(args.selector).first();
+    await assertActionable(locator, "select");
+    await locator.selectOption(args.value, { timeout: DEFAULT_TIMEOUT });
+    return text(`selected at ${page.url()}`);
   },
   async browser_press_key(args) {
     const page = activePage();
@@ -463,14 +595,26 @@ const HANDLERS = {
     return text(`scrolled ${dir}`);
   },
   async browser_wait_for(args) {
-    const timeout = Number.isFinite(args.timeout) ? args.timeout * 1000 : DEFAULT_TIMEOUT;
-    await activePage().locator(args.selector).first().waitFor({ state: "attached", timeout });
-    return text(`found ${args.selector}`);
+    const page = activePage();
+    const timeout = boundedWaitMs(args.timeout);
+    try {
+      await page.locator(args.selector).first().waitFor({ state: "attached", timeout });
+    } catch (error) {
+      if (error?.name === "TimeoutError") throw new Error(`bounded wait expired after ${timeout}ms at ${page.url()}`);
+      throw error;
+    }
+    return text(`found ${args.selector} at ${page.url()}`);
   },
   async browser_wait_for_text(args) {
-    const timeout = Number.isFinite(args.timeout) ? args.timeout * 1000 : DEFAULT_TIMEOUT;
-    await activePage().getByText(args.text, { exact: false }).first().waitFor({ state: "visible", timeout });
-    return text(`text appeared: ${args.text}`);
+    const page = activePage();
+    const timeout = boundedWaitMs(args.timeout);
+    try {
+      await page.getByText(args.text, { exact: false }).first().waitFor({ state: "visible", timeout });
+    } catch (error) {
+      if (error?.name === "TimeoutError") throw new Error(`bounded wait expired after ${timeout}ms at ${page.url()}`);
+      throw error;
+    }
+    return text(`text appeared: ${args.text} at ${page.url()}`);
   },
   async browser_screenshot(args) {
     if (typeof args.path !== "string") throw new Error("path is required");
@@ -482,12 +626,7 @@ const HANDLERS = {
       throw new Error("path and either url or selector are required");
     }
     const destination = path.resolve(args.path);
-    try {
-      await lstat(destination);
-      throw new Error(`destination already exists: ${destination}`);
-    } catch (err) {
-      if (err?.code !== "ENOENT") throw err;
-    }
+    await assertDestinationAvailable(destination);
     const page = activePage();
     let bytes;
     let contentType = "";
@@ -547,27 +686,69 @@ const HANDLERS = {
       bytes = Buffer.from(fetched.data, "base64");
       contentType = fetched.contentType.toLowerCase();
     }
-    if (!bytes.length) throw new Error("download is empty");
-    if (typeof args.expected_content_type === "string" && !contentType.includes(args.expected_content_type.toLowerCase())) {
-      throw new Error(`download content type mismatch: ${contentType || "(missing)"}`);
-    }
-    if (Number.isFinite(args.min_bytes) && bytes.length < args.min_bytes) throw new Error(`download is smaller than ${args.min_bytes} bytes`);
-    if (typeof args.signature_hex === "string") {
-      const expected = args.signature_hex.replace(/\s+/g, "").toLowerCase();
-      if (!/^[0-9a-f]*$/.test(expected) || !bytes.subarray(0, expected.length / 2).toString("hex").startsWith(expected)) {
-        throw new Error("download signature mismatch");
+    const saved = await validateAndWrite({ args, destination, bytes, contentType });
+    return text(`download saved to ${destination} (${saved.bytes} bytes, sha256 ${saved.sha256})`);
+  },
+  async browser_save_media(args) {
+    if (typeof args.path !== "string") throw new Error("path is required");
+    const destination = path.resolve(args.path);
+    await assertDestinationAvailable(destination);
+    const page = activePage();
+    const locator = locatorFor(page, args).first();
+    await locator.waitFor({ state: "visible", timeout: DEFAULT_TIMEOUT });
+    const media = await locator.evaluate(async (element, maxPixels) => {
+      const assertPixelLimit = (width, height) => {
+        if (height > 0 && width > Math.floor(maxPixels / height)) throw new Error(`media exceeds pixel limit of ${maxPixels}`);
+      };
+      if (element instanceof HTMLImageElement) {
+        if (!element.complete || !element.naturalWidth) await element.decode();
+        if (!element.naturalWidth || !element.naturalHeight) throw new Error("image has no decoded pixels");
+        assertPixelLimit(element.naturalWidth, element.naturalHeight);
+        const canvas = document.createElement("canvas");
+        canvas.width = element.naturalWidth;
+        canvas.height = element.naturalHeight;
+        try {
+          canvas.getContext("2d").drawImage(element, 0, 0);
+          return { kind: "pixels", data: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
+        } catch {
+          const rect = element.getBoundingClientRect();
+          return { kind: "screenshot", width: Math.round(rect.width), height: Math.round(rect.height) };
+        }
       }
+      if (element instanceof HTMLCanvasElement) {
+        if (!element.width || !element.height) throw new Error("canvas has no pixels");
+        assertPixelLimit(element.width, element.height);
+        try {
+          return { kind: "pixels", data: element.toDataURL("image/png"), width: element.width, height: element.height };
+        } catch {
+          const rect = element.getBoundingClientRect();
+          return { kind: "screenshot", width: Math.round(rect.width), height: Math.round(rect.height) };
+        }
+      }
+      throw new Error("media target must be an image or canvas");
+    }, MAX_MEDIA_PIXELS);
+
+    let bytes;
+    const contentType = "image/png";
+    if (media.kind === "pixels") {
+      const match = /^data:([^;,]+);base64,(.*)$/.exec(media.data);
+      if (!match) throw new Error("media did not produce base64 image data");
+      bytes = Buffer.from(match[2], "base64");
+    } else {
+      bytes = await locator.screenshot({ type: "png", timeout: DEFAULT_TIMEOUT });
     }
-    const sha256 = createHash("sha256").update(bytes).digest("hex");
-    if (typeof args.expected_sha256 === "string" && sha256 !== args.expected_sha256.toLowerCase()) throw new Error("download SHA-256 mismatch");
-    await mkdir(path.dirname(destination), { recursive: true });
-    await writeFile(destination, bytes, { flag: "wx" });
-    return text(`download saved to ${destination} (${bytes.length} bytes, sha256 ${sha256})`);
+
+    const sourceSha256 = createHash("sha256").update(bytes).digest("hex");
+    if (typeof args.reject_source_sha256 === "string" && sourceSha256 === args.reject_source_sha256.toLowerCase()) {
+      throw new Error("media source matches the rejected fingerprint");
+    }
+    const saved = await validateAndWrite({ args, destination, bytes, contentType });
+    return text(`media saved to ${destination} (${media.width}x${media.height}, ${saved.bytes} bytes, sha256 ${saved.sha256}, source sha256 ${sourceSha256})`);
   },
   async browser_tab_new(args) {
     await ensureContext();
     const page = await context.newPage();
-    if (!pages.includes(page)) pages.push(page);
+    registerPage(page);
     activeIndex = pages.indexOf(page);
     if (typeof args.url === "string") {
       await maybeHydrate(args.url);

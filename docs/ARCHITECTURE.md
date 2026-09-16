@@ -557,6 +557,12 @@ key. A separate helper owns one namespaced browser MCP entry, `cuddly-winner-bro
 service launches Playwright in headless mode and
 exposes the supported browser tools. It may read approved login state directly
 from the private state directory, but it never returns that state to the model.
+The service filters interactive discovery to visible controls, supports normal
+inputs and contenteditable controls, rejects semantic disabled state, verifies
+filled values, and exposes metadata-only runtime and page health. Waits are
+capped below the transport deadline; a timed-out wait preserves the context, and
+explicit navigation recreates a missing page. Navigation reports access denial
+without adding a bypass path.
 
 Browser actions begin in the headless service. When a page proves that login is
 required, the agent may invoke the separate login helper after user approval.
@@ -566,6 +572,9 @@ a headless context and confirms that the state works before continuing. If no
 GUI is available or state reuse fails, the action is blocked. See
 [Browser Actions and Login](RESOURCE-SELECTION.md#browser-actions-and-login) for
 the steps and completion checks.
+The helper fingerprints approved-origin cookies and local storage after the
+login page loads. Completion requires that fingerprint to change and requires
+every configured URL or cookie predicate to match.
 
 The global `ImmutabilityGuard` does not treat Playwright as a fallback. It may
 still enforce the headed-login boundary and block browser operations that expose
@@ -578,6 +587,13 @@ files. Each record names its allowed origins and stores Playwright storage state
 When needed, the login helper also records session storage separately and the
 headless service restores it before navigation. State values never enter model
 context or logs. The service loads state only for matching origins.
+
+For displayed images and canvases that do not emit a download event, the service
+can materialize bytes internally through the active context. It reports only
+dimensions, byte count, hashes, and destination, not the media source URL. A
+caller can reject a known source hash before the service writes a file. Normal
+download collision, pixel, byte-size, type, signature, and hash checks still
+apply. The pixel ceiling runs before canvas allocation or screenshot capture.
 
 The login helper checks `DISPLAY` or `WAYLAND_DISPLAY` on Linux, rejects unsafe
 or symlinked state paths, and uses a bounded deadline. Spawn errors and browser

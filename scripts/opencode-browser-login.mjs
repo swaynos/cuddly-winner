@@ -158,25 +158,57 @@ function assertGraphicalSession() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitForCompletion(context, page, opts, deadline) {
+function cookieMatchesOrigins(cookie, origins) {
+  const domain = String(cookie.domain || "").replace(/^\./, "");
+  return origins.some((origin) => {
+    const host = new URL(origin).hostname;
+    return host === domain || host.endsWith(`.${domain}`);
+  });
+}
+
+function storageFingerprint(storageState, origins) {
+  const cookies = (storageState?.cookies || [])
+    .filter((cookie) => cookieMatchesOrigins(cookie, origins))
+    .map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      expires: cookie.expires,
+    }))
+    .sort((a, b) => `${a.domain}\0${a.path}\0${a.name}`.localeCompare(`${b.domain}\0${b.path}\0${b.name}`));
+  const approved = new Set(origins);
+  const originState = (storageState?.origins || [])
+    .filter((entry) => approved.has(entry.origin))
+    .map((entry) => ({
+      origin: entry.origin,
+      localStorage: [...(entry.localStorage || [])].sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .sort((a, b) => a.origin.localeCompare(b.origin));
+  return JSON.stringify({ cookies, origins: originState });
+}
+
+function completionSatisfied({ baselineFingerprint, currentFingerprint, currentUrl, cookies, cookie, completeUrl }) {
+  if (currentFingerprint === baselineFingerprint) return false;
+  if (completeUrl && !currentUrl.startsWith(completeUrl)) return false;
+  if (cookie && !cookies.some((entry) => entry.name === cookie && entry.value)) return false;
+  return true;
+}
+
+async function waitForCompletion(context, page, opts, baselineFingerprint, deadline) {
   while (Date.now() < deadline) {
-    if (opts.completeUrl) {
-      let current = "";
-      try {
-        current = page.url();
-      } catch {
-        /* page may be mid-navigation */
-      }
-      if (current && current.startsWith(opts.completeUrl)) return;
-    }
-    if (opts.cookie) {
-      let cookies = [];
-      try {
-        cookies = await context.cookies(opts.origins);
-      } catch {
-        /* transient */
-      }
-      if (cookies.some((c) => c.name === opts.cookie && c.value)) return;
+    try {
+      const currentState = await context.storageState();
+      if (completionSatisfied({
+        baselineFingerprint,
+        currentFingerprint: storageFingerprint(currentState, opts.origins),
+        currentUrl: page.url(),
+        cookies: (currentState.cookies || []).filter((entry) => cookieMatchesOrigins(entry, opts.origins)),
+        cookie: opts.cookie,
+        completeUrl: opts.completeUrl,
+      })) return;
+    } catch {
+      /* page or context may be mid-navigation */
     }
     await sleep(POLL_MS);
   }
@@ -213,8 +245,9 @@ async function capture(args) {
     });
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(opts.url);
+    const baselineFingerprint = storageFingerprint(await context.storageState(), opts.origins);
     process.stderr.write(`Waiting for login to complete (up to ${opts.timeout}s)...\n`);
-    await waitForCompletion(context, page, opts, Date.now() + opts.timeout * 1000);
+    await waitForCompletion(context, page, opts, baselineFingerprint, Date.now() + opts.timeout * 1000);
 
     const storageState = await context.storageState();
     const sessionStorage = opts.captureSessionStorage ? await captureSessionStorage(page, opts.origins) : undefined;
@@ -306,4 +339,4 @@ if (invokedDirectly) {
     });
 }
 
-export { validateCaptureArgs, parseArgs, LoginError };
+export { validateCaptureArgs, parseArgs, LoginError, completionSatisfied, storageFingerprint };

@@ -57,6 +57,10 @@ also needs session storage, the login helper must capture and restore it
 explicitly. State values must not appear in model context, logs, command output,
 screenshots, or error messages.
 
+Login completion requires a change from the state recorded after the login page
+loads. When both a completion URL and cookie are supplied, both must match. A
+redirect alone is not proof of login.
+
 Before loading saved state, check that the requested origin matches the state
 record. Expired or rejected state returns the workflow to the approved headed
 login step. Removing one saved session must not affect another.
@@ -77,6 +81,11 @@ For a download or generated file:
    content requirement.
 5. Report success only after both the page action and local file checks pass.
 
+When a site shows media without a download control, save the visible image or
+canvas through the managed media tool. Do not expose its source URL. Compare its
+source fingerprint with any pre-submission fingerprint, then apply the same
+local-byte checks as a normal download.
+
 For image generation, confirm the final prompt before submission, preserve the
 page or conversation address, and associate the new image with that submission.
 An existing image is not success.
@@ -93,7 +102,10 @@ before deciding whether to retry. Never repeat an unknown action automatically.
 
 ## Failure Handling
 
-Use a bounded wait for page readiness, login, downloads, and generated results.
+Use short bounded polls for page readiness, login, downloads, and generated
+results. A wait must return before the MCP transport deadline and leave the
+browser usable. Explicit navigation may recreate a closed page. Treat HTTP 401
+or 403 as access denial, not as proof of successful access, and do not evade it.
 On failure, record the stage, page address when safe, browser mode, and whether
 an action may have occurred. Do not include credentials or page secrets.
 

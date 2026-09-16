@@ -409,6 +409,19 @@ Headed Playwright is allowed only for a person to complete a required login.
 5. Open a new headless context with the saved state and confirm access.
 6. Complete and verify the task headlessly.
 
+Interactive-element discovery must omit hidden fallback controls, include visible
+rich-text controls, and report semantic disabled state. Fill operations must
+read back the visible value. Click and form-submit operations must reject native,
+ARIA, visually disabled, or inert targets instead of reporting a successful
+dispatch. Browser status may report runtime version, headless mode, page health,
+the current page address, and whether approved state was hydrated, but never the
+state values or record names.
+
+Each page wait must end before the MCP transport deadline. A wait timeout leaves
+the browser context usable for inspection or another bounded poll. Explicit
+navigation recreates a page when the prior page was closed and distinguishes
+HTTP access denial from successful access without attempting to bypass it.
+
 For image generation, the agent must verify the intended prompt after image mode
 is selected and verify the submitted prompt in the original conversation. It
 must detect a new output image associated with that submission, not an image
@@ -425,14 +438,20 @@ Do not complete the task in the login window, and do not claim the requested
 action succeeded merely because login succeeded.
 
 The login helper uses a dedicated temporary or managed Playwright profile. It
-must reject unsafe state paths before launch, use a bounded login deadline, stop
-the browser before cleaning temporary files, and report launch or early-exit
-errors promptly. On Linux, headed login requires `DISPLAY` or
+must reject unsafe state paths before launch, record an approved-origin state
+baseline after the login page loads, and require a state change plus every
+supplied completion predicate before saving. It uses a bounded login deadline,
+stops the browser before cleaning temporary files, and reports launch or
+early-exit errors promptly. On Linux, headed login requires `DISPLAY` or
 `WAYLAND_DISPLAY`. Normal headless work does not require a graphical session.
 
 Downloads and generated files are complete only after the expected page action,
 local file placement, and file validation all pass. A page preview alone is not
-a delivered file.
+a delivered file. The headless service can save a visible image or canvas
+without returning its source URL to the model. It retrieves image bytes through
+the active browser context, can reject a prior source fingerprint as stale, and
+applies the same collision, size, content-type, signature, and hash checks used
+for downloads. It rejects excessive pixel dimensions before rasterizing media.
 
 ## Deployment
 

@@ -50,6 +50,16 @@ or account, scoped to its approved HTTPS origins. Never use a personal everyday
 browser profile. State values must not appear in model context, logs, command
 output, screenshots, or error messages. Load state only when the requested
 origin matches the record. Removing one saved session must not affect another.
+The login helper records a state baseline after loading the login page. It saves
+only after approved-origin state changes and every supplied completion condition
+matches; a redirect by itself is not proof of login.
+
+## Browser controls
+
+Use visible, actionable controls. Hidden fallback fields are not valid targets.
+Treat native, ARIA, visually disabled, and inert controls as disabled. Verify
+text entry by reading the visible value back, and do not describe a click as a
+completed submission without page evidence.
 
 ## Downloads and generated files
 
@@ -59,6 +69,11 @@ file, wait for Playwright's download event or retrieve the file through the same
 authenticated headless context, save it without replacing an unrelated file, and
 verify its type, nonzero size, and any task-specific signature, hash, or content
 requirement before reporting success. A page preview is not a delivered file.
+
+If visible media has no download control, use the managed media-save action for
+the image or canvas. Keep its source URL private, reject a prior source
+fingerprint when proving that an output is new, and validate the saved bytes like
+any other download.
 
 For image generation, confirm the final prompt before submission, preserve the
 page or conversation address, and associate the new output image with that
@@ -71,3 +86,7 @@ publishing, purchasing, or starting a generation. If Playwright disconnects or
 times out after an action may have run, mark the outcome unknown. Reopen the
 saved page in a new headless context and inspect it before deciding whether a
 retry is safe. Never repeat an unknown non-idempotent action automatically.
+
+Use short bounded polls rather than one transport-length wait. A wait timeout
+must leave the browser usable. Explicit navigation may recreate a closed page.
+Treat HTTP 401 or 403 as access denial and do not attempt to evade it.

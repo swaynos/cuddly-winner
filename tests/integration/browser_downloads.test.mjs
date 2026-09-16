@@ -12,9 +12,14 @@ import { createInterface } from "node:readline";
 const repo = path.resolve(import.meta.dirname, "../..");
 const server = path.join(repo, "scripts", "opencode-playwright-mcp.mjs");
 const payload = Buffer.from("CW-FILE\nAuthenticated download\n");
+const imagePayload = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+  "base64",
+);
 
 function fixtureServer() {
   let retrievals = 0;
+  let imageRetrievals = 0;
   let browserDownloads = 0;
   let submissions = 0;
   const pendingResponses = new Set();
@@ -31,6 +36,20 @@ function fixtureServer() {
     }
     if (req.url === "/empty") {
       res.writeHead(204).end();
+      return;
+    }
+    if (req.url === "/preview.png") {
+      imageRetrievals += 1;
+      if (!req.headers.cookie?.includes("fixture-auth=approved")) {
+        res.writeHead(403).end("missing authentication");
+        return;
+      }
+      if (imageRetrievals === 1) {
+        res.writeHead(200, { "content-type": "image/png", "content-length": imagePayload.length });
+        res.end(imagePayload);
+      } else {
+        res.writeHead(410).end("single-use media was already consumed");
+      }
       return;
     }
     if (req.url === "/actual-download" || req.url === "/large-download") {
@@ -54,13 +73,18 @@ function fixtureServer() {
     res.setHeader("content-type", "text/html");
     res.end(`<!doctype html><title>Download fixture</title>
       <a id="download-link" href="/actual-download">download</a>
-      <a id="large-download-link" href="/large-download">large download</a>`);
+      <a id="large-download-link" href="/large-download">large download</a>
+      <img id="preview" src="/preview.png" alt="Generated preview">
+      <canvas id="canvas" width="2" height="1"></canvas>
+      <canvas id="large-canvas" width="11" height="10"></canvas>
+      <script>document.getElementById("canvas").getContext("2d").fillRect(0, 0, 2, 1)</script>`);
   });
   return new Promise((resolve) => httpServer.listen(0, "127.0.0.1", () => {
     resolve({
       httpServer,
       base: `http://127.0.0.1:${httpServer.address().port}`,
       retrievals: () => retrievals,
+      imageRetrievals: () => imageRetrievals,
       browserDownloads: () => browserDownloads,
       submissions: () => submissions,
       close: () => {
@@ -163,6 +187,59 @@ test("authenticated retrieval uses the active headless context and validates byt
     assert.equal(result.isError, undefined, c.textOf(result));
     assert.deepEqual(await readFile(destination), payload);
     assert.equal(retrievals(), 1, "retrieval sent the current headless context cookie once");
+  } finally {
+    c.close();
+    close();
+    await rm(destinationDir, { recursive: true, force: true });
+  }
+});
+
+test("visible media is saved without exposing its authenticated source URL", async () => {
+  const { base, imageRetrievals, close } = await fixtureServer();
+  const destinationDir = await mkdtemp(path.join(os.tmpdir(), "cw-media-"));
+  const destination = path.join(destinationDir, "preview.png");
+  const c = client({ CUDDLY_WINNER_BROWSER_MAX_MEDIA_PIXELS: "100" });
+  try {
+    await c.call("browser_navigate", { url: `${base}/` });
+    const result = await c.call("browser_save_media", {
+      selector: "#preview",
+      path: destination,
+      expected_content_type: "image/png",
+      signature_hex: "89504e470d0a1a0a",
+    });
+    assert.equal(result.isError, undefined, c.textOf(result));
+    assert.equal((await readFile(destination)).subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.equal(imageRetrievals(), 1, "saving uses displayed pixels without refetching a single-use source");
+    assert.doesNotMatch(c.textOf(result), new RegExp(base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "source URL was not returned");
+
+    const sourceMatch = c.textOf(result).match(/source sha256 ([0-9a-f]{64})/);
+    assert.ok(sourceMatch, "result includes a non-secret source fingerprint");
+    const stale = await c.call("browser_save_media", {
+      selector: "#preview",
+      path: path.join(destinationDir, "stale.png"),
+      reject_source_sha256: sourceMatch[1],
+    });
+    assert.equal(stale.isError, true);
+    assert.match(c.textOf(stale), /source matches the rejected fingerprint/);
+
+    const canvasDestination = path.join(destinationDir, "canvas.png");
+    const canvas = await c.call("browser_save_media", {
+      selector: "#canvas",
+      path: canvasDestination,
+      expected_content_type: "image/png",
+      signature_hex: "89504e470d0a1a0a",
+    });
+    assert.equal(canvas.isError, undefined, c.textOf(canvas));
+    assert.equal((await readFile(canvasDestination)).subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+
+    const oversizedDestination = path.join(destinationDir, "oversized.png");
+    const oversized = await c.call("browser_save_media", {
+      selector: "#large-canvas",
+      path: oversizedDestination,
+    });
+    assert.equal(oversized.isError, true);
+    assert.match(c.textOf(oversized), /pixel limit/);
+    await assert.rejects(readFile(oversizedDestination), { code: "ENOENT" });
   } finally {
     c.close();
     close();

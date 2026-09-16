@@ -13,6 +13,11 @@ const server = path.join(repo, "scripts", "opencode-playwright-mcp.mjs");
 
 function fixtureServer() {
   const httpServer = http.createServer((req, res) => {
+    if (req.url === "/denied") {
+      res.writeHead(403, { "content-type": "text/html" });
+      res.end("<!doctype html><title>Denied</title><h1>Access denied</h1>");
+      return;
+    }
     if (req.url === "/second") {
       res.setHeader("content-type", "text/html");
       res.end(`<!doctype html><html><body><h1>Second Page</h1><p id="msg">pending</p>
@@ -25,6 +30,10 @@ function fixtureServer() {
       <h1>Fixture Home</h1>
       <input id="name" type="text">
       <button id="go" onclick="document.getElementById('out').textContent='clicked!'">Go</button>
+      <textarea id="fallback" aria-label="Message" style="display:none"></textarea>
+      <div id="editor" contenteditable="true" role="textbox" aria-label="Message"></div>
+      <div id="plain-editor" contenteditable="plaintext-only" aria-label="Plain message"></div>
+      <button id="blocked" aria-disabled="true" onclick="document.getElementById('out').textContent='should-not-run'">Blocked</button>
       <div id="out"></div>
       <a href="/second">Second</a>
     </body></html>`);
@@ -38,8 +47,8 @@ function fixtureServer() {
 }
 
 // Minimal JSON-RPC-over-stdio client for the spawned server.
-function client() {
-  const child = spawn("node", [server], { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env } });
+function client(env = {}) {
+  const child = spawn("node", [server], { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, ...env } });
   const pending = new Map();
   let nextId = 1;
   createInterface({ input: child.stdout }).on("line", (line) => {
@@ -87,6 +96,7 @@ test("Playwright MCP server drives a headless page over JSON-RPC", async () => {
     const names = new Set(list.result.tools.map((t) => t.name));
     assert.ok(names.has("browser_navigate"), "exposes browser_navigate");
     assert.ok(names.has("browser_fill"), "exposes browser_fill");
+    assert.ok(names.has("browser_status"), "exposes browser_status");
     // Security: no cookie/storage export tools are exposed.
     for (const leaky of ["browser_get_cookies", "browser_storage_state", "browser_network_requests", "browser_set_cookie", "browser_set_storage_state"]) {
       assert.ok(!names.has(leaky), `must not expose ${leaky}`);
@@ -108,6 +118,26 @@ test("Playwright MCP server drives a headless page over JSON-RPC", async () => {
 
     const els = c.textOf(await c.call("browser_interactive_elements", {}));
     assert.match(els, /<button>/);
+    assert.match(els, /<div> Message/, "visible contenteditable editor is discoverable");
+    assert.match(els, /<div> Plain message/, "plaintext-only contenteditable editor is discoverable");
+    assert.doesNotMatch(els, /<textarea> Message/, "hidden fallback control is omitted");
+    assert.match(els, /Blocked \[disabled\]/, "semantic disabled state is visible");
+
+    const richFill = await c.call("browser_fill", { selector: "#editor", value: "rich text" });
+    assert.equal(richFill.isError, undefined, c.textOf(richFill));
+    const richValue = c.textOf(await c.call("browser_evaluate", { expression: "document.querySelector('#editor').textContent" }));
+    assert.equal(richValue, "rich text");
+
+    const blocked = await c.call("browser_click", { selector: "#blocked" });
+    assert.equal(blocked.isError, true);
+    assert.match(c.textOf(blocked), /disabled/);
+    const blockedOutput = c.textOf(await c.call("browser_evaluate", { expression: "document.querySelector('#out').textContent" }));
+    assert.equal(blockedOutput, "clicked!", "disabled action was not dispatched");
+
+    const status = JSON.parse(c.textOf(await c.call("browser_status", {})));
+    assert.equal(status.mode, "headless");
+    assert.equal(status.pageOpen, true);
+    assert.equal(status.url, `${base}/`);
 
     // Navigate to the second page and wait for delayed text.
     await c.call("browser_navigate", { url: `${base}/second` });
@@ -116,6 +146,50 @@ test("Playwright MCP server drives a headless page over JSON-RPC", async () => {
 
     const closed = c.textOf(await c.call("browser_close", {}));
     assert.match(closed, /browser closed/);
+  } finally {
+    c.close();
+    httpServer.close();
+  }
+});
+
+test("an oversized wait is bounded and leaves the page usable", async () => {
+  const { httpServer, base } = await fixtureServer();
+  const c = client({ CUDDLY_WINNER_BROWSER_MAX_WAIT_MS: "5000", CUDDLY_WINNER_BROWSER_TRANSPORT_TIMEOUT_MS: "100" });
+  try {
+    await c.call("browser_navigate", { url: `${base}/second` });
+    const waited = await c.call("browser_wait_for_text", { text: "ready-now", timeout: 5 });
+    assert.equal(waited.isError, true);
+    assert.match(c.textOf(waited), /bounded wait expired after 80ms/);
+
+    const snap = c.textOf(await c.call("browser_snapshot", {}));
+    assert.match(snap, /Second Page/);
+    assert.match(snap, /pending/);
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const recovered = c.textOf(await c.call("browser_snapshot", {}));
+    assert.match(recovered, /ready-now/, "the browser context survived the wait timeout");
+  } finally {
+    c.close();
+    httpServer.close();
+  }
+});
+
+test("explicit navigation recovers a closed page and classifies access denial", async () => {
+  const { httpServer, base } = await fixtureServer();
+  const c = client();
+  try {
+    await c.call("browser_navigate", { url: `${base}/` });
+    await c.call("browser_tab_close", { index: 0 });
+    const closed = JSON.parse(c.textOf(await c.call("browser_status", {})));
+    assert.equal(closed.pageOpen, false);
+
+    const recovered = await c.call("browser_navigate", { url: `${base}/` });
+    assert.equal(recovered.isError, undefined, c.textOf(recovered));
+    assert.match(c.textOf(recovered), /status 200/);
+
+    const denied = c.textOf(await c.call("browser_navigate", { url: `${base}/denied` }));
+    assert.match(denied, /status 403/);
+    assert.match(denied, /access denied/);
   } finally {
     c.close();
     httpServer.close();
