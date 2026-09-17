@@ -10,7 +10,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, mkdir, readdir, rm, writeFile, symlink } from "node:fs/promises";
 import { saveState } from "../../scripts/opencode-browser-state.mjs";
-import { validateCaptureArgs } from "../../scripts/opencode-browser-login.mjs";
+import { validateStartArgs } from "../../scripts/opencode-browser-login.mjs";
 
 const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
@@ -36,9 +36,9 @@ function seed(root, name = "A", origins = ["https://example.com"]) {
   });
 }
 
-test("capture rejects incomplete arguments before opening a browser", async () => fixture(async (root) => {
-  const base = ["capture", "--config-dir", root, "--name", "A"];
-  await assert.rejects(invoke(base), (e) => e.code === 1 && /capture requires --url/.test(e.stderr));
+test("start rejects incomplete arguments before opening a browser", async () => fixture(async (root) => {
+  const base = ["start", "--config-dir", root, "--name", "A"];
+  await assert.rejects(invoke(base), (e) => e.code === 1 && /start requires --url/.test(e.stderr));
   await assert.rejects(
     invoke([...base, "--url", "https://example.com/login"]),
     (e) => e.code === 1 && /requires at least one --origin/.test(e.stderr),
@@ -56,31 +56,40 @@ test("capture rejects incomplete arguments before opening a browser", async () =
     (e) => e.code === 1 && /--url host must be one of the configured --origin hosts/.test(e.stderr),
   );
   await assert.rejects(
-    invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com"]),
-    (e) => e.code === 1 && /capture requires --complete-selector/.test(e.stderr),
+    invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com", "--timeout", "180"]),
+    (e) => e.code === 1 && /not used by user-confirmed login/.test(e.stderr),
   );
   await assert.rejects(
     invoke([...base, "--url", "https://example.com/login", "--origin", "https://example.com", "--complete-selector", "#account", "--complete-url", "https://identity.example/complete"]),
-    (e) => e.code === 1 && /complete-url origin must be approved/.test(e.stderr),
-  );
-  await assert.rejects(
-    invoke([...base, "--url", "https://example.com/", "--origin", "https://example.com", "--complete-selector", "#account", "--complete-url", "https://example.com/"]),
-    (e) => e.code === 1 && /complete-url must differ from --url/.test(e.stderr),
+    (e) => e.code === 1 && /not used by user-confirmed login/.test(e.stderr),
   );
 }));
 
-test("capture requires a selector while URL and cookie predicates remain optional", () => {
-  const options = validateCaptureArgs({
-    _: ["capture"],
+test("start needs no site-specific completion predicates", () => {
+  const options = validateStartArgs({
+    _: ["start"],
     "config-dir": "/tmp/config",
     name: "account",
     url: "https://example.com/login",
     origin: ["https://example.com"],
-    "complete-selector": "#account-menu",
   });
-  assert.equal(options.completeSelector, "#account-menu");
-  assert.equal(options.cookie, null);
-  assert.equal(options.completeUrl, null);
+  assert.equal(options.completeSelector, undefined);
+  assert.equal(options.timeout, undefined);
+});
+
+test("login may start on the public page", () => {
+  const options = validateStartArgs({
+    "config-dir": "/tmp/config", name: "account", url: "https://example.com/",
+    origin: ["https://example.com"],
+  });
+  assert.equal(options.url, "https://example.com/");
+});
+
+test("login rejects a per-command channel override", () => {
+  assert.throws(() => validateStartArgs({
+    "config-dir": "/tmp/config", name: "account", url: "https://example.com/",
+    origin: ["https://example.com"], "browser-channel": "chrome",
+  }), /shared browser settings/);
 });
 
 test("a headed browser launch failure removes its temporary profile", async () => fixture(async (root) => {
@@ -88,10 +97,10 @@ test("a headed browser launch failure removes its temporary profile", async () =
   await mkdir(tmp);
   await assert.rejects(
     invoke(
-      ["capture", "--config-dir", root, "--name", "A", "--url", "https://example.com/login", "--origin", "https://example.com", "--complete-selector", "#account", "--cookie", "sid"],
+      ["start", "--config-dir", root, "--name", "A", "--url", "https://example.com/login", "--origin", "https://example.com"],
       { TMPDIR: tmp, PLAYWRIGHT_BROWSERS_PATH: path.join(root, "missing-browsers") },
     ),
-    (e) => e.code === 1 && /Executable doesn't exist|browserType.launchPersistentContext/.test(e.stderr),
+    (e) => e.code === 1 && /login window could not open|graphical session/.test(e.stderr),
   );
   assert.deepEqual((await readdir(tmp)).filter((name) => name.startsWith("cuddly-winner-login-")), []);
 }));
@@ -100,7 +109,7 @@ test("a bad action and a missing name or config-dir are rejected", async () => f
   await assert.rejects(invoke(["frobnicate", "--config-dir", root]), (e) => e.code === 1 && /unknown action/.test(e.stderr));
   await assert.rejects(invoke(["status"]), (e) => e.code === 1 && /--config-dir is required/.test(e.stderr));
   await assert.rejects(
-    invoke(["capture", "--config-dir", root, "--name", "has space", "--url", "https://example.com/login", "--origin", "https://example.com", "--cookie", "sid"]),
+    invoke(["start", "--config-dir", root, "--name", "has space", "--url", "https://example.com/login", "--origin", "https://example.com"]),
     (e) => e.code === 1 && /invalid session name/.test(e.stderr),
   );
 }));

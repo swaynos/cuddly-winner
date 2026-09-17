@@ -525,7 +525,7 @@ Agent files, the three governance tools, skills, and rules use the selected copy
 or symlink mode. All three plugins and `session_fetch.ts` always install as
 copies. The installer deploys SDK version `1.17.15` and Playwright version
 `1.58.2` together with its pinned browser build. Playwright is the only browser
-backend. The installer also copies a headless browser service and a headed login
+backend. The installer also copies a task browser service and a visible login
 helper into the configuration root. Both remain copies because they handle
 authentication state; `status` reports each one and `remove` deletes only an
 unmodified copy. The installer populates a clean sibling staging tree, compares
@@ -554,9 +554,12 @@ The installer writes each rule to `<config_dir>/rules/` and uses
 `scripts/opencode-instructions.mjs` to add or remove its absolute path in the
 `instructions` array of `<config_dir>/opencode.json`. It changes no other config
 key. A separate helper owns one namespaced browser MCP entry, `cuddly-winner-browser`. Its
-service launches Playwright in its default headless mode. It does not force a
-browser channel because the default mode is the proven compatible launch path
-for the managed login handoff. The service
+service launches Playwright using `opencode-browser-runtime.mjs`.
+An optional `cuddly-winner-browser.json` in the config root selects `default`,
+`chromium`, or installed `chrome` for normal use. The shared profile takes
+precedence over inherited environment settings; without it the channel
+environment variable applies, then the Playwright default. The helper uses the
+same validated channel in a visible window during approved login. The service
 exposes the supported browser tools. It may read approved login state directly
 from the private state directory, but it never returns that state to the model.
 The service filters interactive discovery to visible controls, supports normal
@@ -566,33 +569,51 @@ capped below the transport deadline; a timed-out wait preserves the context, and
 explicit navigation recreates a missing page. Navigation reports access denial
 without adding a bypass path.
 
-Browser actions begin in the headless service. When a page proves that login is
+Browser actions begin in the configured task service. When a page proves that login is
 required, the agent may invoke the separate login helper after user approval.
-The helper launches headed Playwright with a dedicated profile, lets the user
-log in, saves the approved state, and closes. The agent then starts or refreshes
-a headless context and confirms that the state works before continuing. If no
+The helper's `start` action launches headed Playwright in a detached worker with
+a dedicated profile and returns. The agent asks the user to log in and reply when
+done, then ends its turn. Only after that reply does `complete` save the approved
+state and close the browser. The agent then starts or refreshes
+a task context and confirms that the state works before continuing. If no
 GUI is available or state reuse fails, the action is blocked. See
 [Browser Actions and Login](RESOURCE-SELECTION.md#browser-actions-and-login) for
 the steps and completion checks.
-The helper fingerprints approved-origin cookies and local storage after the
-login page loads. Completion requires that fingerprint to change, requires the
-account-specific completion selector to be visible, and requires every configured
-URL or cookie predicate to match. The selector is stored as non-secret
-verification metadata. The headless service reports authentication only after
-the same selector is visible; selector-less or obsolete state requires recapture.
+The worker keeps its context alive between commands using a private Unix socket
+under `<config_dir>/cuddly-winner-logins/`. `pending` returns metadata for recovery;
+`cancel` closes without saving. No login selector, cookie predicate, baseline
+change, or automatic polling controls completion. The user's reply authorizes
+capture. Fresh task-browser inspection establishes account or requested task access.
 
 The global `ImmutabilityGuard` does not treat Playwright as a fallback. It may
-still enforce the headed-login boundary and block browser operations that expose
+still enforce the human-login boundary and block browser operations that expose
 saved authentication state. Image generation must verify the final prompt and
 accept only a new output associated with that submission. No non-idempotent
 action is replayed automatically after a disconnect.
 
 Saved state lives under `<config_dir>/cuddly-winner-sessions/` in mode-`0600`
 files. Each record names its allowed origins, stores Playwright storage state,
-and records its account verification selector.
+and records user-confirmed capture metadata. The runtime restores these records
+with verification pending, never treating capture as proof of authentication.
+Selector-based records retain their task-browser account-evidence checks.
 When needed, the login helper also records session storage separately and the
-headless service restores it before navigation. State values never enter model
+task service restores it before navigation. State values never enter model
 context or logs. The service loads state only for matching origins.
+
+The MCP exposes `browser_upload_image` for one local raster image. It validates
+the absolute path, private-root exclusion, regular-file status, byte limit, and
+PNG/JPEG/WebP/GIF signature before clicking. A bounded read snapshots the bytes
+into a Playwright file payload. An observed visible file input can receive it
+directly; other visible controls must emit a file-chooser event. The chooser's
+hidden input is not a general hidden-element fallback. Selected-file metadata
+is checked before returning a basename, MIME type, byte count, and hash.
+No source bytes or absolute path reach tool output. Prompt submission remains
+a separate action after the agent checks the page's attachment state.
+
+Upload and download clicks share a bounded event helper that observes both
+promises and removes listeners on success, timeout, closure, or click failure.
+Download controls use the same visible/enabled check as other actions and accept
+refs as well as selectors. Direct URL downloads use the authenticated page.
 
 For displayed images and canvases that do not emit a download event, the service
 can materialize bytes internally through the active context. It reports only
@@ -602,10 +623,33 @@ download collision, pixel, byte-size, type, signature, and hash checks still
 apply. The pixel ceiling runs before canvas allocation or screenshot capture.
 
 The login helper checks `DISPLAY` or `WAYLAND_DISPLAY` on Linux, rejects unsafe
-or symlinked state paths, and uses a bounded deadline. Spawn errors and browser
+or symlinked state and control paths, and bounds startup and capture operations.
+It does not impose a deadline on the person logging in. Spawn errors and browser
 exit fail promptly. Cleanup closes the browser before removing temporary profile
-data. The helper uses the pinned Playwright browser rather than a personal or
-system browser profile.
+data. The helper uses the shared browser channel setting and never opens a
+personal browser profile.
+
+The shared `executionMode` setting is `headless` by default or `virtual-display`.
+Before opening the MCP transport, `opencode-browser-service.mjs` re-executes the
+actual service under `xvfb-run --auto-servernum` for virtual-display mode. The
+child inherits stdin/stdout and stderr and launches headed Chrome with a
+1280x1024 viewport. Xvfb owns a 1280x1024x24 screen with TCP disabled. A child
+marker prevents recursive wrapping. The launcher forwards termination to its
+process group with a bounded force-kill fallback and propagates exit status.
+The service closes its browser on EOF or termination; xvfb-run releases its
+display. Missing dependencies fail without using the physical display.
+The login helper never enters this launcher and keeps its desktop display.
+MCP configuration reports `configured` rather than a hardcoded headless marker;
+runtime status reports the actual selected mode and virtual display. Settings
+are fixed at process startup. The managed-profile installer owns five browser
+control files: MCP, state store, login helper, shared runtime, and Xvfb launcher.
+
+The shared browser runtime also owns the optional `automationCompatibility`
+boolean. It changes launch arguments in both headed and headless contexts while
+leaving state scope, account verification, and browser channel selection intact.
+The installer preserves the user-selected settings file. Compatibility options
+do not establish successful live authentication; the agent verifies account or
+task access through ordinary managed browser tools after restoring approved state.
 
 The installer and configuration helper remove project-owned files, binaries,
 configuration entries, environment gates, and integrity records from the retired

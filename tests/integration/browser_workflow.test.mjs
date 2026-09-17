@@ -9,14 +9,14 @@ function normalize(text) {
   return text.toLowerCase().replace(/\s+/g, " ");
 }
 
-test("deployed rule defines the Playwright-only headless/headed decision flow", async () => {
+test("deployed rule separates explicit task modes from visible human login", async () => {
   const text = normalize(await readFile(path.join(repo, "rules", "resource-selection.md"), "utf8"));
   const orderedSteps = [
     "playwright is the project's only browser backend",
-    "headless playwright performs all normal work",
-    "headed playwright opens only for a person to complete a required login",
+    "task execution uses the configured `headless` or `virtual-display` mode",
+    "a visible login window opens only for a person to complete a required login",
     "ask for approval",
-    "new headless context",
+    "new task context",
     "report the blocker",
   ];
 
@@ -26,6 +26,7 @@ test("deployed rule defines the Playwright-only headless/headed decision flow", 
     assert.ok(current > previous, `missing or out-of-order browser rule: ${step}`);
     previous = current;
   }
+  assert.match(text, /never switch modes or repeat a denied request automatically/);
 });
 
 test("deployed rule keeps the Playwright login-state and safety safeguards", async () => {
@@ -36,6 +37,8 @@ test("deployed rule keeps the Playwright login-state and safety safeguards", asy
     "a page preview is not a delivered file",
     "mark the outcome unknown",
     "never repeat an unknown non-idempotent action automatically",
+    "a wait timeout must leave the browser usable",
+    "treat http 401 or 403 and cloudflare challenges as access denial",
   ]) {
     assert.ok(text.includes(clause), `rule missing safeguard: ${clause}`);
   }
@@ -52,6 +55,7 @@ test("durable browser documentation records the Playwright-only backend", async 
     const text = normalize(await readFile(path.join(repo, file), "utf8"));
     assert.match(text, /playwright/, `${file}: missing Playwright backend`);
     assert.match(text, /headless/, `${file}: missing headless mode`);
+    assert.match(text, /virtual-display/, `${file}: missing virtual-display mode`);
     assert.match(text, /headed/, `${file}: missing headed login mode`);
     assert.doesNotMatch(text, /cuddly_winner_browser_fallback/, `${file}: still references the retired fallback env gate`);
   }

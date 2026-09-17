@@ -5,24 +5,17 @@
 // window opens in the Playwright-only browser stack. A person completes a
 // required login here; the approved Playwright storage state is saved through
 // opencode-browser-state.mjs (owner-only, origin-scoped) and later loaded
-// privately by the headless MCP server. This helper never performs task work
+// privately by the task MCP server. This helper never performs task work
 // and never prints state values.
 //
-// Flow (see docs/RESOURCE-SELECTION.md "Browser actions and login"):
-//   1. Validate all arguments before launching anything.
-//   2. On Linux, require a graphical session (DISPLAY or WAYLAND_DISPLAY).
-//   3. Open headed Playwright with a dedicated throwaway profile.
-//   4. Wait, with a bounded deadline, for visible account evidence and any
-//      optional completion cookie or completion URL.
-//   5. Save storage state (and optional session storage) for the approved
-//      origins, then close the browser before removing the temporary profile.
+// start opens a detached login worker and returns. The person replies when
+// ready; only a later complete command captures state. No login polling or
+// human deadline. Task access must be checked after capture.
 //
 // CLI:
-//   capture --config-dir <dir> --name <name> --url <https-login-url>
-//           --origin <https-origin> [--origin ...]
-//           --complete-selector <account-ui-selector>
-//           [--cookie <name>] [--complete-url <https-prefix>]
-//           [--session-storage] [--timeout <seconds>]
+//   start --config-dir <dir> --name <name> --url <https-login-url>
+//         --origin <https-origin> [--origin ...] [--session-storage]
+//   complete|cancel|pending --config-dir <dir> --name <name>
 //   status  --config-dir <dir> [--name <name>]   (metadata only)
 //   remove  --config-dir <dir> --name <name>
 
@@ -30,6 +23,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { fork } from "node:child_process";
+import net from "node:net";
 import {
   assertValidName,
   assertSafeSessionsDir,
@@ -39,8 +34,9 @@ import {
   removeState,
 } from "./opencode-browser-state.mjs";
 
-const DEFAULT_TIMEOUT_SECONDS = 180;
-const POLL_MS = 500;
+import { browserLaunchOptions, browserConfigFromEnv } from "./opencode-browser-runtime.mjs";
+
+const OPERATION_TIMEOUT_MS = 30_000;
 
 class LoginError extends Error {}
 
@@ -73,9 +69,9 @@ function requireConfigDir(args) {
   return dir;
 }
 
-// Validate capture arguments fully, BEFORE any browser launch. Returns a
+// Validate start arguments fully, BEFORE any browser launch. Returns a
 // normalised option object.
-function validateCaptureArgs(args) {
+export function validateStartArgs(args) {
   const configDir = requireConfigDir(args);
   if (!args.name || args.name === true) throw new LoginError("--name is required");
   try {
@@ -83,8 +79,8 @@ function validateCaptureArgs(args) {
   } catch (err) {
     throw new LoginError(err instanceof Error ? err.message : String(err));
   }
-  if (!args.url || args.url === true) throw new LoginError("capture requires --url");
-  if (!args.origin.length) throw new LoginError("capture requires at least one --origin");
+  if (!args.url || args.url === true) throw new LoginError("start requires --url");
+  if (!args.origin?.length) throw new LoginError("start requires at least one --origin");
 
   let loginUrl;
   try {
@@ -117,43 +113,18 @@ function validateCaptureArgs(args) {
     throw new LoginError("--url host must be one of the configured --origin hosts");
   }
 
-  const cookie = args.cookie && args.cookie !== true ? args.cookie : null;
-  const completeSelector = args["complete-selector"] && args["complete-selector"] !== true
-    ? String(args["complete-selector"]).trim()
-    : "";
-  if (!completeSelector) throw new LoginError("capture requires --complete-selector for visible account evidence");
-  if (completeSelector.length > 1000) throw new LoginError("--complete-selector is too long");
-  let completeUrl = null;
-  if (args["complete-url"] && args["complete-url"] !== true) {
-    completeUrl = args["complete-url"];
-    let cu;
-    try {
-      cu = new URL(completeUrl);
-    } catch {
-      throw new LoginError("--complete-url must be an https URL");
-    }
-    if (cu.protocol !== "https:") throw new LoginError("--complete-url must be https");
-    if (!origins.includes(cu.origin)) throw new LoginError("--complete-url origin must be approved by --origin");
-    if (cu.href === loginUrl.href) {
-      throw new LoginError("--complete-url must differ from --url; use a post-login URL or --cookie");
-    }
+  for (const key of ["complete-selector", "complete-url", "cookie", "timeout"]) {
+    if (args[key] !== undefined) throw new LoginError(`--${key} is not used by user-confirmed login; use start, then complete after the user's reply`);
   }
-  let timeout = DEFAULT_TIMEOUT_SECONDS;
-  if (args.timeout && args.timeout !== true) {
-    timeout = Number(args.timeout);
-    if (!Number.isFinite(timeout) || timeout <= 0) throw new LoginError("--timeout must be a positive number of seconds");
-  }
+  if (args["browser-channel"] !== undefined) throw new LoginError("use shared browser settings instead of --browser-channel");
 
   return {
     configDir,
     name: args.name,
     url: args.url,
     origins,
-    cookie,
-    completeUrl,
-    completeSelector,
     captureSessionStorage: Boolean(args["session-storage"]),
-    timeout,
+    browser: browserConfigFromEnv({ ...process.env, CUDDLY_WINNER_CONFIG_DIR: configDir }),
   };
 }
 
@@ -165,8 +136,6 @@ function assertGraphicalSession() {
   }
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 function cookieMatchesOrigins(cookie, origins) {
   const domain = String(cookie.domain || "").replace(/^\./, "");
   return origins.some((origin) => {
@@ -175,56 +144,37 @@ function cookieMatchesOrigins(cookie, origins) {
   });
 }
 
-function storageFingerprint(storageState, origins) {
-  const cookies = (storageState?.cookies || [])
-    .filter((cookie) => cookieMatchesOrigins(cookie, origins))
-    .map((cookie) => ({
-      name: cookie.name,
-      value: cookie.value,
-      domain: cookie.domain,
-      path: cookie.path,
-      expires: cookie.expires,
-    }))
-    .sort((a, b) => `${a.domain}\0${a.path}\0${a.name}`.localeCompare(`${b.domain}\0${b.path}\0${b.name}`));
+// storageState() can open temporary pages and intercept their requests. Never
+// call it in the login context, including final capture.
+export async function readApprovedState(context, origins) {
   const approved = new Set(origins);
-  const originState = (storageState?.origins || [])
-    .filter((entry) => approved.has(entry.origin))
-    .map((entry) => ({
-      origin: entry.origin,
-      localStorage: [...(entry.localStorage || [])].sort((a, b) => a.name.localeCompare(b.name)),
-    }))
-    .sort((a, b) => a.origin.localeCompare(b.origin));
-  return JSON.stringify({ cookies, origins: originState });
-}
-
-function completionSatisfied({ baselineFingerprint, currentFingerprint, currentUrl, cookies, cookie, completeUrl, selectorVisible }) {
-  if (currentFingerprint === baselineFingerprint) return false;
-  if (!selectorVisible) return false;
-  if (completeUrl && !currentUrl.startsWith(completeUrl)) return false;
-  if (cookie && !cookies.some((entry) => entry.name === cookie && entry.value)) return false;
-  return true;
-}
-
-async function waitForCompletion(context, page, opts, baselineFingerprint, deadline) {
-  while (Date.now() < deadline) {
-    try {
-      const currentState = await context.storageState();
-      const selectorVisible = await page.locator(opts.completeSelector).first().isVisible();
-      if (completionSatisfied({
-        baselineFingerprint,
-        currentFingerprint: storageFingerprint(currentState, opts.origins),
-        currentUrl: page.url(),
-        cookies: (currentState.cookies || []).filter((entry) => cookieMatchesOrigins(entry, opts.origins)),
-        cookie: opts.cookie,
-        completeUrl: opts.completeUrl,
-        selectorVisible,
-      })) return;
-    } catch {
-      /* page or context may be mid-navigation */
-    }
-    await sleep(POLL_MS);
+  const states = new Map();
+  for (const page of context.pages()) {
+    const origin = new URL(page.url()).origin;
+    if (!approved.has(origin)) continue;
+    const entry = await page.evaluate(() => ({
+      origin: location.origin,
+      localStorage: Object.keys(localStorage).map((name) => ({ name, value: localStorage.getItem(name) })),
+    }));
+    if (entry.origin !== origin) throw new Error("login page moved during state capture");
+    states.set(origin, entry);
   }
-  throw new LoginError(`login did not complete within ${opts.timeout}s`);
+  return {
+    cookies: (await context.cookies()).filter((cookie) => cookieMatchesOrigins(cookie, origins)),
+    origins: [...states.values()],
+  };
+}
+
+async function beforeDeadline(action, deadline) {
+  let timer;
+  try {
+    return await Promise.race([
+      action(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new LoginError("login state read timed out; window remains open")), Math.max(0, deadline - Date.now()));
+      }),
+    ]);
+  } finally { clearTimeout(timer); }
 }
 
 // Capture session storage per approved origin, only when explicitly requested.
@@ -237,54 +187,159 @@ async function captureSessionStorage(page, origins) {
     return undefined;
   }
   if (!origins.includes(origin)) return undefined;
-  const entries = await page.evaluate(() => Object.fromEntries(Object.keys(window.sessionStorage).map((key) => [key, window.sessionStorage.getItem(key)])));
+  const snapshot = await page.evaluate(() => ({ origin: location.origin, entries: Object.fromEntries(Object.keys(window.sessionStorage).map((key) => [key, window.sessionStorage.getItem(key)])) }));
+  if (snapshot.origin !== origin) throw new LoginError("login page moved during state capture; confirm again when ready");
+  const entries = snapshot.entries;
   if (entries && Object.keys(entries).length) result[origin] = entries;
   return Object.keys(result).length ? result : undefined;
 }
 
-async function capture(args) {
-  const opts = validateCaptureArgs(args);
-  assertGraphicalSession();
-  assertSafeSessionsDir(opts.configDir);
+// A private Unix socket carries commands and metadata only, never browser state.
+function loginSocket(configDir, name) {
+  assertValidName(name);
+  assertSafeSessionsDir(configDir);
+  const dir = path.join(path.resolve(configDir), "cuddly-winner-logins");
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const info = fs.lstatSync(dir);
+  if (!info.isDirectory() || info.isSymbolicLink() || (process.getuid && info.uid !== process.getuid())) throw new LoginError("unsafe login directory");
+  fs.chmodSync(dir, 0o700);
+  const socket = path.join(dir, `${name}.sock`);
+  if (Buffer.byteLength(socket) > 103) throw new LoginError("login socket path is too long; use a shorter configuration directory");
+  const socketInfo = fs.lstatSync(socket, { throwIfNoEntry: false });
+  if (socketInfo && !socketInfo.isSocket()) throw new LoginError("unsafe login socket");
+  return socket;
+}
 
-  const { chromium } = await import("playwright");
-  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuddly-winner-login-"));
-  let context;
-  try {
-    context = await chromium.launchPersistentContext(profileDir, {
-      headless: false,
+export async function loginCommand(configDir, name, action) {
+  const socketPath = loginSocket(configDir, name);
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(socketPath);
+    let data = "";
+    socket.setTimeout(OPERATION_TIMEOUT_MS + 5000, () => socket.destroy(new Error("login command timed out")));
+    socket.once("connect", () => socket.write(`${JSON.stringify({ action })}\n`));
+    socket.on("data", chunk => {
+      data += chunk;
+      if (data.length > 32768) socket.destroy(new Error("invalid login worker response"));
     });
-    const page = context.pages()[0] ?? (await context.newPage());
-    await page.goto(opts.url);
-    const baselineFingerprint = storageFingerprint(await context.storageState(), opts.origins);
-    process.stderr.write(`Waiting for login to complete (up to ${opts.timeout}s)...\n`);
-    await waitForCompletion(context, page, opts, baselineFingerprint, Date.now() + opts.timeout * 1000);
-
-    const storageState = await context.storageState();
-    const sessionStorage = opts.captureSessionStorage ? await captureSessionStorage(page, opts.origins) : undefined;
-    saveState({
-      configDir: opts.configDir,
-      name: opts.name,
-      origins: opts.origins,
-      storageState,
-      sessionStorage,
-      verification: { selector: opts.completeSelector },
+    socket.once("error", error => {
+      if (["ENOENT", "ECONNREFUSED"].includes(error.code) && action === "pending") resolve({ status: "not-running", name });
+      else reject(new LoginError(["ENOENT", "ECONNREFUSED"].includes(error.code) ? "no pending login; start a new login window" : "login worker unavailable; inspect pending status before retrying"));
     });
-    // Never print state values; only metadata.
-    process.stdout.write(
-      `Saved login state "${opts.name}" for ${opts.origins.join(", ")}${sessionStorage ? " (with session storage)" : ""}\n`,
-    );
-  } finally {
-    if (context) {
+    socket.once("end", () => {
       try {
-        await context.close();
-      } catch {
-        /* already gone */
-      }
-    }
-    fs.rmSync(profileDir, { recursive: true, force: true });
+        const result = JSON.parse(data);
+        if (result.error) reject(new LoginError(result.error));
+        else resolve(result);
+      } catch { reject(new LoginError("login worker closed without a result; inspect saved state before retrying")); }
+    });
+  });
+}
+
+export async function startLogin(opts, dependencies = {}) {
+  const socketPath = loginSocket(opts.configDir, opts.name);
+  const existing = fs.lstatSync(socketPath, { throwIfNoEntry: false });
+  if ((await loginCommand(opts.configDir, opts.name, "pending")).status !== "not-running") throw new LoginError("login window already open; ask the user to finish, then complete it");
+  // Never unlink another concurrent starter's newly bound socket.
+  if (existing && fs.lstatSync(socketPath, { throwIfNoEntry: false })?.ino === existing.ino) fs.unlinkSync(socketPath);
+  const child = (dependencies.fork || fork)(fileURLToPath(import.meta.url), ["worker"], {
+    detached: true, stdio: ["ignore", "ignore", "ignore", "ipc"],
+  });
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => { child.kill("SIGTERM"); finish(new LoginError("login window failed to open within 30 seconds")); }, OPERATION_TIMEOUT_MS);
+    const finish = (error, result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.removeAllListeners("message"); child.removeAllListeners("exit");
+      if (child.connected) child.disconnect();
+      child.unref();
+      error ? reject(error) : resolve(result);
+    };
+    child.once("error", () => finish(new LoginError("login worker could not start")));
+    child.once("exit", () => finish(new LoginError("login worker exited before opening a window")));
+    child.once("message", result => finish(result.error ? new LoginError(result.error) : null, result));
+    child.send(opts);
+  });
+}
+
+export async function captureConfirmedState(context, opts) {
+  const pages = context.pages();
+  if (!pages.length) throw new LoginError("login window closed before capture");
+  const approved = pages.filter(page => opts.origins.includes(new URL(page.url()).origin));
+  if (!approved.length) throw new LoginError("return to an approved site in the login window, then confirm again");
+  const storageState = await readApprovedState(context, opts.origins);
+  const sessionStorage = {};
+  if (opts.captureSessionStorage) {
+    for (const page of approved) Object.assign(sessionStorage, await captureSessionStorage(page, opts.origins));
   }
-  return 0;
+  return { storageState, sessionStorage: opts.captureSessionStorage ? sessionStorage : undefined };
+}
+
+export async function serveLogin(opts, dependencies = {}) {
+  const socketPath = loginSocket(opts.configDir, opts.name);
+  let context, profileDir, closing, busy = false, listening = false, ready = false;
+  const server = net.createServer();
+  const cleanup = () => closing ||= (async () => {
+    if (listening) server.close();
+    await context?.close().catch(() => {});
+    if (profileDir) fs.rmSync(profileDir, { recursive: true, force: true });
+    process.removeListener("SIGINT", interrupt); process.removeListener("SIGTERM", interrupt);
+    process.removeListener("disconnect", disconnected);
+  })();
+  const interrupt = () => { void cleanup(); };
+  const disconnected = () => { if (!ready) void cleanup(); };
+  process.once("SIGINT", interrupt); process.once("SIGTERM", interrupt);
+  process.once("disconnect", disconnected);
+  try {
+    await new Promise((resolve, reject) => { server.once("error", reject); server.listen(socketPath, resolve); });
+    listening = true;
+    fs.chmodSync(socketPath, 0o600);
+    server.on("connection", socket => {
+      let data = "";
+      socket.setTimeout(OPERATION_TIMEOUT_MS + 5000, () => socket.destroy());
+      socket.on("error", () => {});
+      socket.on("data", async chunk => {
+        data += chunk;
+        if (data.length > 1024) { socket.destroy(); return; }
+        if (!data.includes("\n")) return;
+        socket.removeAllListeners("data");
+        let action;
+        try { ({ action } = JSON.parse(data)); } catch { socket.end(JSON.stringify({ error: "invalid login command" })); return; }
+        if (action === "pending") { socket.end(JSON.stringify({ status: !ready ? "opening" : busy ? "completing" : "awaiting-user", name: opts.name })); return; }
+        if (!ready) { socket.end(JSON.stringify({ error: "login window is still opening" })); return; }
+        if (busy || closing) { socket.end(JSON.stringify({ error: "login worker is busy" })); return; }
+        if (!["complete", "cancel"].includes(action)) { socket.end(JSON.stringify({ error: "unknown login command" })); return; }
+        busy = true;
+        try {
+          if (action === "complete") {
+            const captured = await beforeDeadline(() => captureConfirmedState(context, opts), Date.now() + OPERATION_TIMEOUT_MS);
+            // Save only after the bounded read succeeded, never after a timeout.
+            saveState({ configDir: opts.configDir, name: opts.name, origins: opts.origins,
+              ...captured, verification: { method: "user-confirmed" } });
+          }
+          await cleanup();
+          socket.end(JSON.stringify({ status: action === "complete" ? "saved" : "cancelled", name: opts.name,
+            ...(action === "complete" ? { authentication: "unverified" } : {}) }));
+        } catch (error) {
+          socket.end(JSON.stringify({ error: error instanceof LoginError ? error.message : "login operation failed; inspect pending status and saved-state metadata before retrying" }));
+          busy = false;
+        }
+      });
+    });
+    const { chromium } = dependencies.chromium ? dependencies : await import("playwright");
+    profileDir = fs.mkdtempSync(path.join(os.tmpdir(), "cuddly-winner-login-"));
+    context = await chromium.launchPersistentContext(profileDir, browserLaunchOptions(opts.browser, false));
+    if (closing) { await context.close(); fs.rmSync(profileDir, { recursive: true, force: true }); return; }
+    context.once("close", () => { void cleanup(); });
+    const page = context.pages()[0] ?? await context.newPage();
+    await page.goto(opts.url, { waitUntil: "domcontentloaded", timeout: OPERATION_TIMEOUT_MS });
+    ready = true;
+    if (process.connected) process.send({ status: "awaiting-user", name: opts.name });
+  } catch {
+    await cleanup();
+    if (process.connected) process.send({ error: "login window could not open; check graphical session and browser installation" }, () => { if (process.connected) process.disconnect(); });
+  }
 }
 
 // --- metadata-only status / remove -----------------------------------------
@@ -327,15 +382,30 @@ async function main(argv) {
   const args = parseArgs(argv);
   const action = args._[0];
   switch (action) {
+    case "start": {
+      const opts = validateStartArgs(args);
+      assertGraphicalSession();
+      process.stdout.write(`${JSON.stringify(await startLogin(opts))}\n`);
+      return 0;
+    }
+    case "complete":
+    case "cancel":
+    case "pending":
+      process.stdout.write(`${JSON.stringify(await loginCommand(requireConfigDir(args), args.name, action))}\n`);
+      return 0;
+    case "worker":
+      if (!process.send) throw new LoginError("login worker requires its private parent channel");
+      process.once("message", opts => { void serveLogin(opts); });
+      return null;
     case "capture":
-      return capture(args);
+      throw new LoginError("blocking capture was removed; use start, ask the user to log in and reply, then complete");
     case "status":
       return status(args);
     case "remove":
       return remove(args);
     default:
       process.stderr.write(
-        "usage: opencode-browser-login.mjs <capture|status|remove> --config-dir <dir> [--name <name>] ...\n",
+        "usage: opencode-browser-login.mjs <start|complete|cancel|pending|status|remove> --config-dir <dir> [--name <name>] ...\n",
       );
       throw new LoginError(action ? `unknown action: ${action}` : "no action given");
   }
@@ -350,11 +420,11 @@ const invokedDirectly =
 
 if (invokedDirectly) {
   main(process.argv.slice(2))
-    .then((code) => process.exit(code ?? 0))
+    .then((code) => { if (code !== null) process.exit(code ?? 0); })
     .catch((err) => {
       process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
       process.exit(1);
     });
 }
 
-export { validateCaptureArgs, parseArgs, LoginError, completionSatisfied, storageFingerprint };
+export { parseArgs, LoginError };

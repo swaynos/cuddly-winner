@@ -52,9 +52,9 @@ directories:
 - two shared rule files from `rules/`.
 
 The target browser design installs the pinned OpenCode plugin SDK and Playwright
-runtime with one Playwright-backed browser service. It runs headlessly for normal
-work and uses a separate headed Playwright login helper only when a person must
-sign in. The current implementation has not completed this migration; see
+runtime with one Playwright-backed browser service. Task work uses headless mode
+by default or explicit virtual-display mode (headed Chrome/Chromium under Xvfb).
+A separate visible Playwright login helper lets a person sign in. See
 [PLAYWRIGHT-MIGRATION.md](docs/PLAYWRIGHT-MIGRATION.md). The installer also
 registers the shared rule files in OpenCode's instructions and installs the local
 feedback locator.

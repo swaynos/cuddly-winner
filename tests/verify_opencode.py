@@ -210,7 +210,7 @@ def _managed_profile_file_mismatches(config: pathlib.Path) -> list[str]:
             "node",
             str(config / "opencode-playwright-mcp.mjs"),
         ],
-        "environment": {"HEADLESS": "true", "CUDDLY_WINNER_CONFIG_DIR": str(config)},
+        "environment": {"CUDDLY_WINNER_CONFIG_DIR": str(config)},
         "enabled": True,
     }
     mcp = configured.get("mcp", {}) if isinstance(configured, dict) else {}
@@ -924,9 +924,9 @@ def main() -> int:
         "resource-selection rule missing",
     )
     require(
-        'HEADLESS: "true"'
+        'environment: { CUDDLY_WINNER_CONFIG_DIR: configRoot }'
         in (ROOT / "scripts/opencode-mcp-config.mjs").read_text(encoding="utf-8"),
-        "managed browser is not marked headless",
+        "managed browser does not use shared execution settings",
     )
     login_helper = (ROOT / "scripts/opencode-browser-login.mjs").read_text(
         encoding="utf-8"
@@ -936,7 +936,8 @@ def main() -> int:
         "headed login helper is missing its graphical-session gate",
     )
     require(
-        "headless: false" in login_helper,
+        "launchPersistentContext(profileDir, browserLaunchOptions(opts.browser, false))"
+        in login_helper,
         "headed login helper does not open a headed context",
     )
 

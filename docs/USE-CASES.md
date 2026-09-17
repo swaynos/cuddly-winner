@@ -362,36 +362,35 @@ Playwright browser stack.
   can answer a question.
 - **When:** a managed agent gathers evidence.
 - **Then:** use those sources before browser automation.
-- **Never:** open headed Playwright except for a required human login, or before
+- **Never:** open a visible login window except for a required human login, or before
   stating the target and receiving user approval.
 - **Evidence:** S agent and rule contract; B resource-order scenario.
 
-### UC-RESOURCE-02: Browser work stays headless
+### UC-RESOURCE-02: Browser work uses the configured task mode
 
 - **Given:** a user requests an action that requires a browser.
 - **When:** the agent chooses a browser and determines whether the action needs
   login.
 - **Then:** use Playwright as the only browser backend; perform normal work
-  headlessly; use headed Playwright only for an approved human login; then
-  return to a fresh authenticated headless context to complete and verify the
+  in explicit headless or virtual-display mode; use a separate visible window
+  for approved human login; then return to a fresh task context to complete and verify the
   action. Visible rich controls are valid targets, disabled controls fail before
   dispatch, and bounded waits leave the context usable for another poll.
 - **Never:** open a login browser before establishing the need, finish the task
   in the login window, expose saved state, or replay an interrupted action whose
-  result is unknown.
+  result is unknown. Never switch execution modes automatically after a challenge.
 - **Evidence:** S deployed rule and durable resource contract; U mode, state,
-  and launch-failure tests; F managed deployment fixture.
+  and launch-failure tests; F managed deployment and Xvfb lifecycle fixtures.
 
 ### UC-RESOURCE-03: Browser login state is private and scoped
 
 - **Given:** a browser task needs saved login state.
 - **When:** the user approves headed authentication.
 - **Then:** save only the required Playwright state outside the repository,
-  restrict it to approved origins, close the headed browser, and confirm the
-  state in headless mode. Completion requires approved-origin state to change
-  from its post-load baseline, a required account-specific selector to be
-  visible, and every supplied URL or cookie predicate to match. The fresh
-  headless context must see the same selector before accepting the handoff.
+  restrict it to approved origins, capture only after the user's reply, close the
+  login window, and confirm account or task access in a fresh task context.
+  Capture does not require a guessed selector, cookie predicate, state change,
+  or login deadline, and capture alone does not establish authentication.
 - **Never:** use a personal browser profile, preserve credentials by default, or
   return state values to the model or logs.
 - **Evidence:** U credential state tests; F managed deployment fixture.
@@ -421,13 +420,24 @@ Playwright browser stack.
 - **Given:** a browser task creates or downloads a file.
 - **When:** the page reports completion.
 - **Then:** tie the new page result to the current request, save the file through
-  the authenticated headless context, and verify its local bytes. Visible image
+   the authenticated task context, and verify its local bytes. Visible image
   or canvas media may be saved without exposing its source URL, and a known
   source fingerprint can be rejected as stale.
 - **Never:** count a preview, stale page item, successful click, or filename as
   proof that the file was delivered.
 - **Evidence:** U download, path-collision, association, signature, and
   interrupted-transfer tests.
+
+### UC-RESOURCE-07: Image attachments use the user's file and a visible control
+
+- **Given:** the user requests an image edit using a local image.
+- **When:** the agent attaches it through managed Playwright.
+- **Then:** validate the absolute image path, size, signature, and private-root
+  exclusion before opening a chooser. Verify the selected file's metadata and
+  inspect the site's attachment state before submitting the prompt.
+- **Never:** select a hidden input directly, upload browser configuration files,
+  equate selection with server acceptance, or retry an unknown upload automatically.
+- **Evidence:** U/F image upload and download round trips in both task modes.
 
 ## Skills Ecosystem
 

@@ -727,6 +727,8 @@ runtime_status() {
   browser_control_file_status "$BROWSER_MCP_SERVER_SOURCE" "$BROWSER_MCP_SERVER_DEST"
   browser_control_file_status "$BROWSER_STATE_SOURCE" "$BROWSER_STATE_DEST"
   browser_control_file_status "$BROWSER_LOGIN_SOURCE" "$BROWSER_LOGIN_DEST"
+  browser_control_file_status "$BROWSER_RUNTIME_SOURCE" "$BROWSER_RUNTIME_DEST"
+  browser_control_file_status "$BROWSER_SERVICE_SOURCE" "$BROWSER_SERVICE_DEST"
   assert_managed_destination "$RUNTIME_INTEGRITY_STATE"
   if ! node "$RUNTIME_INTEGRITY_HELPER" status --root "${CONFIG_DIR}/node_modules" --state "$RUNTIME_INTEGRITY_STATE"; then
     mark_status_drift
@@ -794,9 +796,9 @@ FEEDBACK_ROOT="$(cd "$REPO_ROOT" && pwd -P)/feedback"
 INSTRUCTIONS_HELPER="${SCRIPT_DIR}/opencode-instructions.mjs"
 RULE_INSTRUCTIONS_STATUS_HELPER="${SCRIPT_DIR}/opencode-rule-instructions.mjs"
 MCP_HELPER="${SCRIPT_DIR}/opencode-mcp-config.mjs"
-# The single Playwright browser backend installs as three copies at the config
-# root: the headless MCP server, the shared secure state store it imports, and
-# the headed login helper. All handle or resolve authentication state, so they
+# The single Playwright browser backend installs as five copies at the config
+# root: the task MCP server, secure state store, shared runtime, Xvfb launcher,
+# and visible login helper. All handle or resolve authentication state, so they
 # are always copies and never source-tree symlinks.
 BROWSER_MCP_SERVER_SOURCE="${SCRIPT_DIR}/opencode-playwright-mcp.mjs"
 BROWSER_MCP_SERVER_DEST="${CONFIG_DIR}/opencode-playwright-mcp.mjs"
@@ -804,6 +806,10 @@ BROWSER_STATE_SOURCE="${SCRIPT_DIR}/opencode-browser-state.mjs"
 BROWSER_STATE_DEST="${CONFIG_DIR}/opencode-browser-state.mjs"
 BROWSER_LOGIN_SOURCE="${SCRIPT_DIR}/opencode-browser-login.mjs"
 BROWSER_LOGIN_DEST="${CONFIG_DIR}/opencode-browser-login.mjs"
+BROWSER_RUNTIME_SOURCE="${SCRIPT_DIR}/opencode-browser-runtime.mjs"
+BROWSER_RUNTIME_DEST="${CONFIG_DIR}/opencode-browser-runtime.mjs"
+BROWSER_SERVICE_SOURCE="${SCRIPT_DIR}/opencode-browser-service.mjs"
+BROWSER_SERVICE_DEST="${CONFIG_DIR}/opencode-browser-service.mjs"
 AGENT_STATE_HELPER="${SCRIPT_DIR}/opencode-agent-state.mjs"
 RUNTIME_INTEGRITY_HELPER="${SCRIPT_DIR}/opencode-runtime-integrity.mjs"
 
@@ -879,6 +885,8 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   remove_browser_control_file "$BROWSER_MCP_SERVER_SOURCE" "$BROWSER_MCP_SERVER_DEST"
   remove_browser_control_file "$BROWSER_STATE_SOURCE" "$BROWSER_STATE_DEST"
   remove_browser_control_file "$BROWSER_LOGIN_SOURCE" "$BROWSER_LOGIN_DEST"
+  remove_browser_control_file "$BROWSER_RUNTIME_SOURCE" "$BROWSER_RUNTIME_DEST"
+  remove_browser_control_file "$BROWSER_SERVICE_SOURCE" "$BROWSER_SERVICE_DEST"
   exit 0
 fi
 
@@ -894,6 +902,8 @@ install_tool_sdk "$CONFIG_DIR"
 install_browser_control_file "$BROWSER_MCP_SERVER_SOURCE" "$BROWSER_MCP_SERVER_DEST"
 install_browser_control_file "$BROWSER_STATE_SOURCE" "$BROWSER_STATE_DEST"
 install_browser_control_file "$BROWSER_LOGIN_SOURCE" "$BROWSER_LOGIN_DEST"
+install_browser_control_file "$BROWSER_RUNTIME_SOURCE" "$BROWSER_RUNTIME_DEST"
+install_browser_control_file "$BROWSER_SERVICE_SOURCE" "$BROWSER_SERVICE_DEST"
 sync_discoverable_skill_backups
 sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"

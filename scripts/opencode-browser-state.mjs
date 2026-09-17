@@ -161,6 +161,7 @@ function normaliseVerification(verification) {
   if (!verification || typeof verification !== "object" || Array.isArray(verification)) {
     throw new BrowserStateError("verification must be an object");
   }
+  if (verification.method === "user-confirmed") return { method: "user-confirmed" };
   const selector = typeof verification.selector === "string" ? verification.selector.trim() : "";
   if (!selector) throw new BrowserStateError("verification selector is required");
   if (selector.length > 1000) throw new BrowserStateError("verification selector is too long");
@@ -264,7 +265,8 @@ export function statMetadata(configDir, name) {
     origins: record.origins.slice(),
     capturedAt: record.capturedAt,
     hasSessionStorage: Boolean(record.sessionStorage),
-    hasVerificationSelector: Boolean(normaliseVerification(record.verification)),
+    hasVerificationSelector: Boolean(normaliseVerification(record.verification)?.selector),
+    userConfirmed: normaliseVerification(record.verification)?.method === "user-confirmed",
   };
 }
 

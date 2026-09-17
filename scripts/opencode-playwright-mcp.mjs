@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // opencode-playwright-mcp.mjs
 //
-// Headless Playwright MCP stdio server. This is the project's single browser
+// Managed Playwright MCP stdio server. This is the project's single browser
 // backend. It exposes the browser_* tool surface over newline-delimited
-// JSON-RPC on stdin/stdout and drives one headless Chromium via Playwright.
+// JSON-RPC on stdin/stdout and drives one task browser via Playwright.
 //
 // Design (see docs/RESOURCE-SELECTION.md "Browser policy"):
-//   - Headless only. A required human login is handled out of band by
+//   - Task mode is headless or virtual-display. Human login is handled by
 //     opencode-browser-login.mjs, which writes approved state that this server
-//     loads privately. There is no headed mode and no secret-typing path here.
+//     loads privately. The visible login window never performs task work.
 //   - Saved login state is loaded only for a matching approved origin, straight
 //     into the browser context. State values (cookies, storage) never appear in
 //     tool output, logs, or anything returned toward model context. The server
@@ -17,18 +17,28 @@
 //
 // Environment:
 //   CUDDLY_WINNER_CONFIG_DIR         config root holding cuddly-winner-sessions/
+//   CUDDLY_WINNER_BROWSER_CHANNEL    default, chromium, or chrome
+//   CUDDLY_WINNER_BROWSER_EXECUTION_MODE headless or virtual-display
 //   CUDDLY_WINNER_BROWSER_STATES     optional comma list of state record names
 //                                    to consider for hydration (default: all)
 //   CUDDLY_WINNER_BROWSER_TIMEOUT_MS default per-action timeout (default 30000)
 //   CUDDLY_WINNER_BROWSER_MAX_WAIT_MS maximum selector/text wait (default 25000)
 //   CUDDLY_WINNER_BROWSER_TRANSPORT_TIMEOUT_MS MCP request budget (default 30000)
 //   CUDDLY_WINNER_BROWSER_MAX_MEDIA_PIXELS maximum image/canvas pixels (default 16M)
+//   CUDDLY_WINNER_BROWSER_MAX_UPLOAD_BYTES maximum image upload bytes (default 20 MiB)
 
 import { createInterface } from "node:readline";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, writeFile } from "node:fs/promises";
+import { lstat, mkdir, writeFile, open, realpath } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { loadStateForOrigin, listStates } from "./opencode-browser-state.mjs";
+import { browserConfigFromEnv, browserLaunchOptions, createTaskContext, hydrateBrowserState } from "./opencode-browser-runtime.mjs";
+import { enterTaskDisplay } from "./opencode-browser-service.mjs";
+
+// Re-exec the actual MCP service, not its caller, inside an isolated display.
+const TASK_CONFIG = browserConfigFromEnv();
+await enterTaskDisplay(TASK_CONFIG);
 
 const CONFIG_DIR = process.env.CUDDLY_WINNER_CONFIG_DIR || "";
 const DEFAULT_TIMEOUT = Number(process.env.CUDDLY_WINNER_BROWSER_TIMEOUT_MS || 30000);
@@ -39,6 +49,8 @@ const configuredMaxWait = Number(process.env.CUDDLY_WINNER_BROWSER_MAX_WAIT_MS |
 const requestedMaxWait = Number.isFinite(configuredMaxWait) && configuredMaxWait > 0 ? configuredMaxWait : Math.min(DEFAULT_TIMEOUT, TRANSPORT_SAFE_WAIT_MS);
 const MAX_WAIT_MS = Math.min(requestedMaxWait, DEFAULT_TIMEOUT, TRANSPORT_SAFE_WAIT_MS);
 const MAX_DOWNLOAD_BYTES = Number(process.env.CUDDLY_WINNER_BROWSER_MAX_DOWNLOAD_BYTES || 50 * 1024 * 1024);
+const configuredMaxUpload = Number(process.env.CUDDLY_WINNER_BROWSER_MAX_UPLOAD_BYTES || 20 * 1024 * 1024);
+const MAX_UPLOAD_BYTES = Number.isSafeInteger(configuredMaxUpload) && configuredMaxUpload > 0 ? configuredMaxUpload : 20 * 1024 * 1024;
 const configuredMaxMediaPixels = Number(process.env.CUDDLY_WINNER_BROWSER_MAX_MEDIA_PIXELS || 16 * 1024 * 1024);
 const MAX_MEDIA_PIXELS = Number.isFinite(configuredMaxMediaPixels) && configuredMaxMediaPixels > 0
   ? Math.floor(configuredMaxMediaPixels)
@@ -82,7 +94,8 @@ const TOOLS = [
   { name: "browser_wait_for", description: "Wait for a selector to appear.", inputSchema: { type: "object", properties: { selector: { type: "string" }, timeout: { type: "number" } }, required: ["selector"] } },
   { name: "browser_wait_for_text", description: "Wait for text to appear in the page.", inputSchema: { type: "object", properties: { text: { type: "string" }, timeout: { type: "number" } }, required: ["text"] } },
   { name: "browser_screenshot", description: "Capture the viewport as a PNG saved to path.", inputSchema: { type: "object", properties: { path: { type: "string" }, full_page: { type: "boolean" } }, required: ["path"] } },
-  { name: "browser_download", description: "Capture a page download event or retrieve a URL through the current authenticated headless page; save only after validation.", inputSchema: { type: "object", properties: { url: { type: "string" }, selector: { type: "string" }, path: { type: "string" }, min_bytes: { type: "number" }, expected_sha256: { type: "string" }, expected_content_type: { type: "string" }, signature_hex: { type: "string" } }, required: ["path"] } },
+  { name: "browser_upload_image", description: "Attach a user-requested local PNG, JPEG, WebP, or GIF through a visible file input or upload button. Returns verified attachment metadata, not server acceptance. Inspect the page before submitting or retrying.", inputSchema: { type: "object", properties: { ref: { type: "string" }, selector: { type: "string" }, path: { type: "string" } }, required: ["path"] } },
+  { name: "browser_download", description: "Capture a download through a visible ref or selector, or retrieve a URL through the authenticated task page; save only after validation.", inputSchema: { type: "object", properties: { url: { type: "string" }, ref: { type: "string" }, selector: { type: "string" }, path: { type: "string" }, min_bytes: { type: "number" }, expected_sha256: { type: "string" }, expected_content_type: { type: "string" }, signature_hex: { type: "string" } }, required: ["path"] } },
   { name: "browser_save_media", description: "Save a visible image or canvas through the authenticated browser context without exposing its source URL.", inputSchema: { type: "object", properties: { ref: { type: "string" }, selector: { type: "string" }, path: { type: "string" }, reject_source_sha256: { type: "string" }, min_bytes: { type: "number" }, expected_sha256: { type: "string" }, expected_content_type: { type: "string" }, signature_hex: { type: "string" } }, required: ["path"] } },
   { name: "browser_tab_new", description: "Open a new tab, optionally navigating to a URL.", inputSchema: { type: "object", properties: { url: { type: "string" } } } },
   { name: "browser_tab_list", description: "List open tabs.", inputSchema: { type: "object", properties: {} } },
@@ -119,8 +132,7 @@ function registerPage(page) {
 async function ensureContext() {
   if (context) return context;
   await ensureChromium();
-  browser = await chromium.launch({ headless: true });
-  context = await browser.newContext();
+  ({ browser, context } = await createTaskContext(chromium, TASK_CONFIG));
   context.setDefaultTimeout(DEFAULT_TIMEOUT);
   pages = [];
   context.on("page", registerPage);
@@ -186,7 +198,7 @@ async function maybeHydrate(url) {
   } catch {
     return;
   }
-  if (hydratedOrigins.has(origin)) return { origin, selector: hydratedOrigins.get(origin) };
+  if (hydratedOrigins.has(origin)) return { origin, ...hydratedOrigins.get(origin) };
   let stateWithoutVerification = false;
   for (const name of candidateStateNames()) {
     let loaded;
@@ -197,43 +209,13 @@ async function maybeHydrate(url) {
     }
     if (!loaded) continue;
     const selector = loaded.verification?.selector;
-    if (!selector) {
+    if (!selector && loaded.verification?.method !== "user-confirmed") {
       stateWithoutVerification = true;
       continue;
     }
-    const cookies = Array.isArray(loaded.storageState?.cookies) ? loaded.storageState.cookies : [];
-    if (cookies.length) {
-      try {
-        await context.addCookies(cookies);
-      } catch {
-        /* malformed cookie set: skip rather than abort navigation */
-      }
-    }
-    const originStores = Array.isArray(loaded.storageState?.origins) ? loaded.storageState.origins : [];
-    const sessionStores = loaded.sessionStorage && typeof loaded.sessionStorage === "object" ? loaded.sessionStorage : {};
-    if (originStores.length || Object.keys(sessionStores).length) {
-      await context.addInitScript(
-        ({ localStores, sessionStores: sess }) => {
-          try {
-            const here = location.origin;
-            const marker = `__cuddly_winner_hydrated__:${here}`;
-            if (window.name.includes(marker)) return;
-            for (const entry of localStores) {
-              if (entry.origin !== here) continue;
-              for (const item of entry.localStorage || []) window.localStorage.setItem(item.name, item.value);
-            }
-            const s = sess[here];
-            if (s) for (const [k, v] of Object.entries(s)) window.sessionStorage.setItem(k, v);
-            window.name = `${window.name}${marker}`;
-          } catch {
-            /* storage may be unavailable on some origins */
-          }
-        },
-        { localStores: originStores, sessionStores },
-      );
-    }
-    hydratedOrigins.set(origin, selector);
-    return { origin, selector }; // one matching record per origin
+    await hydrateBrowserState(context, loaded);
+    hydratedOrigins.set(origin, loaded.verification);
+    return { origin, ...loaded.verification }; // one matching record per origin
   }
   if (stateWithoutVerification) {
     throw new Error("saved login state has no account verification selector; complete a new login capture");
@@ -243,6 +225,9 @@ async function maybeHydrate(url) {
 
 async function verifyHydratedAccount(page, hydration) {
   if (!hydration || verifiedOrigins.has(hydration.origin)) return;
+  // Capture on the person's reply is not account evidence. Allow inspection
+  // and task access in a fresh context; never label the restored state authenticated.
+  if (hydration.method === "user-confirmed") return;
   let visible = false;
   try {
     visible = await page.locator(hydration.selector).first().isVisible();
@@ -250,7 +235,7 @@ async function verifyHydratedAccount(page, hydration) {
     /* Invalid or obsolete selectors are handled as failed account evidence. */
   }
   if (!visible) {
-    throw new Error("saved login state has no visible account evidence in the headless browser; complete a new login capture");
+    throw new Error("saved login state has no visible account evidence in the task browser; complete a new login capture");
   }
   verifiedOrigins.add(hydration.origin);
 }
@@ -301,8 +286,8 @@ function locatorFor(page, args) {
   throw new Error("a ref or selector is required");
 }
 
-async function assertActionable(locator, action) {
-  await locator.waitFor({ state: "visible", timeout: DEFAULT_TIMEOUT });
+async function assertActionable(locator, action, timeout = DEFAULT_TIMEOUT) {
+  await locator.waitFor({ state: "visible", timeout });
   const disabled = await locator.evaluate((el) =>
     el.matches(":disabled") ||
     el.getAttribute("aria-disabled") === "true" ||
@@ -310,6 +295,54 @@ async function assertActionable(locator, action) {
     Boolean(el.closest("[inert]")),
   );
   if (disabled) throw new Error(`${action} target is disabled`);
+}
+
+// Both event and click promises are observed, including when a click fails.
+async function clickForEvent(page, locator, event, timeout) {
+  let timer, received, closed;
+  const pending = new Promise((resolve, reject) => {
+    received = resolve;
+    closed = () => reject(new Error(`${event} interrupted; inspect the page before retrying`));
+    page.once(event, received);
+    page.once("close", closed);
+    timer = setTimeout(() => reject(new Error(`${event} timed out; inspect the page before retrying`)), timeout);
+  });
+  try { return (await Promise.all([pending, locator.click({ timeout })]))[0]; }
+  finally { clearTimeout(timer); page.off(event, received); page.off("close", closed); }
+}
+
+async function readUploadImage(file) {
+  if (typeof file !== "string" || !path.isAbsolute(file)) throw new Error("upload path must be absolute");
+  const resolved = await realpath(file);
+  if (CONFIG_DIR) {
+    const root = await realpath(CONFIG_DIR);
+    const relative = path.relative(root, resolved);
+    if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
+      throw new Error("uploads from the private browser configuration directory are not allowed");
+    }
+  }
+  if (!(await lstat(file)).isFile()) throw new Error("upload must be a regular file, not a directory or symlink");
+  const handle = await open(file, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_UPLOAD_BYTES) throw new Error("upload must be a nonempty regular image within the upload byte limit");
+    const buffer = Buffer.alloc(stat.size + 1);
+    let size = 0;
+    while (size < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, size, buffer.length - size, null);
+      if (!bytesRead) break;
+      size += bytesRead;
+    }
+    if (size !== stat.size) throw new Error("upload file changed while reading; select it again");
+    const bytes = buffer.subarray(0, size);
+    let mimeType;
+    if (size >= 24 && bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") mimeType = "image/png";
+    else if (size >= 4 && bytes.subarray(0, 3).toString("hex") === "ffd8ff") mimeType = "image/jpeg";
+    else if (size >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP") mimeType = "image/webp";
+    else if (size >= 10 && ["GIF87a", "GIF89a"].includes(bytes.toString("ascii", 0, 6))) mimeType = "image/gif";
+    else throw new Error("upload must have a PNG, JPEG, WebP, or GIF signature");
+    return { name: path.basename(file), mimeType, buffer: bytes };
+  } finally { await handle.close(); }
 }
 
 async function fillAndVerify(locator, value) {
@@ -428,7 +461,10 @@ const HANDLERS = {
     return text({
       runtime: SERVER_INFO.name,
       version: SERVER_INFO.version,
-      mode: "headless",
+      mode: TASK_CONFIG.executionMode || "headless",
+      virtualDisplay: TASK_CONFIG.executionMode === "virtual-display" ? process.env.DISPLAY : null,
+      launchOptions: browserLaunchOptions(TASK_CONFIG),
+      browserVersion: browser?.version() ?? null,
       contextOpen: Boolean(context),
       pageOpen,
       url: pageOpen ? page.url() : null,
@@ -439,6 +475,8 @@ const HANDLERS = {
           return false;
         }
       })(),
+      authenticationVerification: pageOpen && hydratedOrigins.has(new URL(page.url()).origin)
+        ? (verifiedOrigins.has(new URL(page.url()).origin) ? "verified" : "pending") : "none",
     });
   },
   async browser_navigate(args) {
@@ -450,7 +488,7 @@ const HANDLERS = {
     await verifyHydratedAccount(page, hydration);
     const status = resp ? resp.status() : null;
     const classification = await navigationClassification(page, status);
-    return text(`navigated to ${page.url()} (status ${status ?? "n/a"}${classification})`);
+    return text(`navigated to ${page.url()} (status ${status ?? "n/a"}${classification})${hydration?.method === "user-confirmed" ? "; user-confirmed state loaded: verify account or requested task access in this context before claiming login success" : ""}`);
   },
   async browser_navigate_back() {
     await activePage().goBack();
@@ -664,23 +702,53 @@ const HANDLERS = {
     await activePage().screenshot({ path: args.path, fullPage: Boolean(args.full_page) });
     return text(`screenshot saved to ${path.resolve(args.path)}`);
   },
+  async browser_upload_image(args) {
+    const deadline = Date.now() + MAX_WAIT_MS;
+    const remaining = () => {
+      const ms = deadline - Date.now();
+      if (ms <= 0) throw new Error("upload timed out; inspect the page before retrying");
+      return ms;
+    };
+    const page = activePage();
+    const payload = await readUploadImage(args.path);
+    const locator = locatorFor(page, args).first();
+    await assertActionable(locator, "upload", remaining());
+    const direct = await locator.evaluate(el => el instanceof HTMLInputElement && el.type === "file");
+    let input;
+    if (direct) input = await locator.elementHandle({ timeout: remaining() });
+    else input = (await clickForEvent(page, locator, "filechooser", remaining())).element();
+    try {
+      // A hidden input is allowed only when the visible control opened its chooser.
+      const allowed = await input.evaluate(el => el instanceof HTMLInputElement && el.type === "file" &&
+        !el.matches(":disabled") && el.getAttribute("aria-disabled") !== "true" &&
+        !el.hasAttribute("data-visually-disabled") && !el.closest("[inert]"));
+      if (!allowed) throw new Error("upload chooser target is disabled or not a file input");
+      await input.setInputFiles(payload, { timeout: remaining() });
+      const selected = await input.evaluate(el => Array.from(el.files || [], file => ({ name: file.name, size: file.size, type: file.type })));
+      if (selected.length !== 1 || selected[0].name !== payload.name || selected[0].size !== payload.buffer.length || selected[0].type !== payload.mimeType) {
+        throw new Error("attachment selection could not be verified; inspect the page before retrying");
+      }
+      return text({ status: "attached", name: payload.name, bytes: payload.buffer.length, contentType: payload.mimeType,
+        sha256: createHash("sha256").update(payload.buffer).digest("hex") });
+    } finally { await input?.dispose(); }
+  },
   async browser_download(args) {
-    if (typeof args.path !== "string" || (typeof args.url !== "string" && typeof args.selector !== "string")) {
-      throw new Error("path and either url or selector are required");
+    if (typeof args.path !== "string" || (typeof args.url !== "string" && typeof args.selector !== "string" && typeof args.ref !== "string")) {
+      throw new Error("path and either url, ref, or selector are required");
     }
     const destination = path.resolve(args.path);
     await assertDestinationAvailable(destination);
     const page = activePage();
     let bytes;
     let contentType = "";
-    if (typeof args.selector === "string") {
+    if (typeof args.selector === "string" || typeof args.ref === "string") {
+      const locator = locatorFor(page, args).first();
+      await assertActionable(locator, "download", MAX_WAIT_MS);
       const responses = [];
       const recordResponse = (response) => responses.push(response);
       page.on("response", recordResponse);
-      const downloadPromise = page.waitForEvent("download", { timeout: DEFAULT_TIMEOUT });
       try {
-        await page.locator(args.selector).first().click({ timeout: DEFAULT_TIMEOUT });
-        const download = await downloadPromise;
+        const download = await clickForEvent(page, locator, "download", MAX_WAIT_MS);
         const failure = await withDownloadTimeout(download.failure());
         if (failure) throw new Error(`browser download failed: ${failure}`);
         const response = responses.find((candidate) => candidate.url() === download.url());
@@ -891,3 +959,6 @@ reader.on("line", (line) => {
 reader.on("close", () => {
   queue = queue.then(() => closeBrowser()).finally(() => process.exit(0));
 });
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => { void closeBrowser().finally(() => process.exit(signal === "SIGINT" ? 130 : 143)); });
+}

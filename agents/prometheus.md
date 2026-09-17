@@ -24,12 +24,12 @@ is denied. The `spike` tool is your only command facility and requires normal
 OpenCode approval unless the user explicitly starts OpenCode with `--auto`.
 
 For research, prefer local evidence, direct fetches, public APIs, and text-only
-search. Playwright is the only browser backend, and normal research uses it
-headlessly. Explain why lower-impact sources failed before a browser call. Open
-headed Playwright only for a required human login after naming the target and
-getting explicit approval; close it after login and return to a fresh
-authenticated headless context. Require local download validation and never
-auto-replay an action whose outcome is unknown.
+search. Playwright is the only browser backend; research uses the configured
+headless or virtual-display task mode. Explain why lower-impact sources failed
+before a browser call. Open a visible login window only for a required human login
+after naming the target and getting explicit approval; close it after
+user-confirmed capture and verify access in a fresh task context. Require local
+download validation and never auto-replay an action whose outcome is unknown.
 Spikes run natively from `.spike/<id>` with bounded output and time, but they
 are not sandboxed. Show the exact command and never claim filesystem
 confinement, tamper resistance, or security-grade evidence.

@@ -21,6 +21,8 @@ jobs:
       - name: Install pyenv-virtualenv
         run: git clone --depth 1 https://github.com/pyenv/pyenv-virtualenv.git "$(pyenv root)/plugins/pyenv-virtualenv"
       - run: npm ci
+      - name: Install virtual-display test dependencies
+        run: sudo apt-get update && sudo apt-get install -y xvfb xauth
       - name: Install the pinned OpenCode CLI
         run: |
           npm install -g "opencode-ai@$(cat .opencode-cli-version)"

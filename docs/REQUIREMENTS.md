@@ -72,7 +72,7 @@ Deployment uses the active `node` and `npm` on the user's `PATH` and currently
 installs `@opencode-ai/plugin` version `1.17.15` and Playwright version `1.58.2`.
 The managed profile includes a pinned Playwright browser service and matching
 browser build. Playwright is the only supported browser backend, suitable for
-headless work and approved headed login.
+headless or virtual-display task work and approved visible human login.
 Installation records owner-only integrity state for the full runtime dependency
 content trees. Status and live repository-profile preflight use that recorded
 state and fail on missing or invalid state or modified, missing, or unsafe
@@ -130,8 +130,8 @@ their URL. Private repository content and secrets must not be sent to third-part
 services.
 
 After the browser migration, Grounder follows `docs/RESOURCE-SELECTION.md` by
-using headless Playwright for rendered research. Headed Playwright is allowed
-only for a required human login after naming the target and receiving explicit
+using the configured headless or virtual-display task mode for rendered research.
+A visible login window is allowed only for a required human login after naming the target and receiving explicit
 user approval.
 
 ### Reviewer
@@ -392,31 +392,44 @@ Browser state is separate by site or account. The system must not use a personal
 browser profile, silently share state between sites, or follow a login redirect
 to an unapproved origin. Status may report names, origins, and capture times, but
 not credential values. Removal affects only the selected state record.
-Each captured state records a non-secret account-specific selector used to prove
-the account UI is visible. State without that evidence is not eligible for a
-headless authenticated handoff.
+User-confirmed captures record that the person authorized capture. This metadata
+permits task-browser restoration and inspection, but does not prove authentication.
+The agent must verify actual account UI or requested task access in the task browser.
 
 ### Browser Actions and Login
 
-Playwright is the only browser backend. Headless Playwright performs access
-checks, browsing, form entry, uploads, generation, downloads, and verification.
-Headed Playwright is allowed only for a person to complete a required login.
+Playwright is the only browser backend. Task execution supports explicit
+`headless` (default) and `virtual-display` modes for access checks, browsing,
+form entry, uploads, generation, downloads, and verification. Virtual-display
+mode runs headed Chrome/Chromium in a private Xvfb display on Linux. Human login
+uses a separate visible window and the existing user-confirmed handoff.
+
+Shared browser settings select `executionMode`. The managed service owns Xvfb
+startup and cleanup, preserves MCP transport and exit status, and uses a
+1280x1024x24 screen with a 1280x1024 browser viewport. Missing Xvfb or xauth fails
+without fallback to another mode or a physical display. Each service has its own
+display. EOF and termination must release browser and display processes. Mode
+changes take effect on restart and never follow a challenge automatically.
+Xvfb is a rendering option, not proof of site access. Native user-agent and GPU
+settings remain intact; this mode adds no JavaScript webdriver override.
 
 1. Prefer local evidence, direct retrieval, or a public API when it can complete
    the task.
-2. Open the target in headless Playwright and establish whether the requested
+2. Open the target in the configured task browser and establish whether the requested
    action needs login. A login link alone is not proof.
 3. If login is required, explain which site will open and obtain approval.
-4. Open a dedicated headed Playwright context. Let the user log in, save the
-   approved state privately, and close the headed browser.
-5. Open a new headless context with the saved state and confirm access.
-6. Complete and verify the task headlessly.
+4. Start a dedicated headed Playwright context and return control immediately.
+   Ask the user to log in, leave the window open, and reply when done. End the
+   turn. After that reply, complete capture, save approved state privately, and
+   close the headed browser. Do not poll for login or impose a human deadline.
+5. Open a new task context with the saved state and confirm access.
+6. Complete and verify the task in that context.
 
 Interactive-element discovery must omit hidden fallback controls, include visible
 rich-text controls, and report semantic disabled state. Fill operations must
 read back the visible value. Click and form-submit operations must reject native,
 ARIA, visually disabled, or inert targets instead of reporting a successful
-dispatch. Browser status may report runtime version, headless mode, page health,
+dispatch. Browser status may report runtime version, execution mode, virtual display, page health,
 the current page address, and whether approved state was hydrated, but never the
 state values or record names.
 
@@ -433,31 +446,47 @@ already present on the page.
 The agent must never automatically replay a generation or other non-idempotent
 action after a disconnect. It must persist intent before submission, preserve
 the page address, mark an interrupted result unknown, and inspect the original
-page in a new headless context before deciding whether a retry is safe.
+page in a new task context before deciding whether a retry is safe.
 
 If login is required but no GUI is available, report that login is blocked. Do
-the same when the headed login fails or its state cannot be reused headlessly.
+the same when the visible login fails or its state cannot be reused in the task browser.
 Do not complete the task in the login window, and do not claim the requested
 action succeeded merely because login succeeded.
 
-The login helper uses a dedicated temporary or managed Playwright profile. It
-must reject unsafe state paths before launch, record an approved-origin state
-baseline after the login page loads, require a visible account-specific
-`--complete-selector`, and require a state change plus every supplied URL or
-cookie predicate before saving. A fresh headless browser must see the saved
-selector before it reports the loaded state as authenticated. Missing or obsolete
-selector evidence requires a new login capture. The helper uses a bounded login
-deadline, stops the browser before cleaning temporary files, and reports launch
-or early-exit errors promptly. On Linux, headed login requires `DISPLAY` or
-`WAYLAND_DISPLAY`. Normal headless work does not require a graphical session.
+The login helper uses a dedicated temporary Playwright profile and a detached
+worker that survives across conversation turns. It rejects unsafe state and
+control paths before launch. `start` opens the window and returns; `complete`
+captures only after the user's reply; `cancel` closes without saving; `pending`
+reports metadata for recovery. No selector, URL, cookie predicate, state change,
+or timer substitutes for the reply. The helper reads only existing approved-origin
+tabs and cookies, without synthetic storage tabs. It bounds startup and capture
+operations, not the person's login time. Failed capture leaves the window open
+when possible; closing the window before capture must preserve the old record.
+Cleanup closes the browser before removing temporary profile data. On Linux,
+headed login requires `DISPLAY` or
+`WAYLAND_DISPLAY`. Task work does not require a physical graphical session.
+
+Image upload must use a user-requested absolute path and a visible input or a
+visible control's file-chooser event. Hidden inputs are not direct targets.
+Before clicking, require a nonempty regular PNG, JPEG, WebP, or GIF file within
+the upload byte limit and outside the private browser configuration root.
+Reject symlink leaves. Transfer a bounded byte snapshot and verify the selected
+name, size, and MIME type. Report metadata only. Attachment selection does not
+prove server acceptance and must not submit the prompt. Inspect the page after
+attachment, failure, or interruption before deciding whether to submit or retry.
 
 Downloads and generated files are complete only after the expected page action,
 local file placement, and file validation all pass. A page preview alone is not
-a delivered file. The headless service can save a visible image or canvas
+a delivered file. The task service can save a visible image or canvas
 without returning its source URL to the model. It retrieves image bytes through
 the active browser context, can reject a prior source fingerprint as stale, and
 applies the same collision, size, content-type, signature, and hash checks used
 for downloads. It rejects excessive pixel dimensions before rasterizing media.
+Download controls support observed refs and selectors, must be visible and
+enabled, and register their download listener before clicking. Failed clicks
+and timed-out events remove their listeners without leaving rejected promises
+unobserved. Authenticated image downloads preserve original file bytes; the
+visible-media tool saves PNG pixels when there is no download control.
 
 ## Deployment
 
@@ -484,7 +513,9 @@ dependency tree in a checksummed mode-`0600` state file beneath
 `<config_dir>/node_modules/`.
 
 The installer includes pinned Playwright packages, a browser build, and control
-files for headed login and headless work. It removes project-owned retired
+files for visible login and configured task execution. Xvfb and xauth are host
+dependencies installed separately when virtual-display mode is selected.
+It removes project-owned retired
 browser files and configuration while preserving modified or unrelated user
 files.
 

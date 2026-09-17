@@ -17,7 +17,7 @@ async function fixture(fn) {
 async function invoke(script, args) { return run("node", [script, ...args]); }
 async function config(file) { return JSON.parse(await readFile(file, "utf8")); }
 
-test("managed MCP install preserves user entries and installs the headless Playwright entry", async () => fixture(async (root, file) => {
+test("managed MCP install preserves user entries and installs the configured Playwright entry", async () => fixture(async (root, file) => {
   await writeFile(file, JSON.stringify({ mcp: { "user-browser": { type: "local", command: ["example"] } }, keep: true }));
   await invoke(mcp, ["install", "--config", file]);
   const result = await config(file);
@@ -28,11 +28,11 @@ test("managed MCP install preserves user entries and installs the headless Playw
     "node",
     path.join(root, "opencode-playwright-mcp.mjs"),
   ]);
-  assert.deepEqual(entry.environment, { HEADLESS: "true", CUDDLY_WINNER_CONFIG_DIR: root });
+  assert.deepEqual(entry.environment, { CUDDLY_WINNER_CONFIG_DIR: root });
   const second = await invoke(mcp, ["install", "--config", file]);
   assert.match(second.stdout, /Unchanged/);
   const diagnosis = await invoke(mcp, ["diagnose", "--config", file]);
-  assert.match(diagnosis.stdout, /managed cuddly-winner-browser mode=headless/);
+  assert.match(diagnosis.stdout, /managed cuddly-winner-browser mode=configured/);
   assert.match(diagnosis.stdout, /unmanaged user-browser mode=unknown/);
   await stat(root);
 }));

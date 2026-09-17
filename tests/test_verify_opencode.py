@@ -105,7 +105,6 @@ class BehavioralAssertionTests(unittest.TestCase):
                                     str(config / "opencode-playwright-mcp.mjs"),
                                 ],
                                 "environment": {
-                                    "HEADLESS": "true",
                                     "CUDDLY_WINNER_CONFIG_DIR": str(config),
                                 },
                                 "enabled": True,

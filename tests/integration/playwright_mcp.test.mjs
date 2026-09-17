@@ -69,7 +69,7 @@ async function stateConfig(base, selector) {
       cookies: [],
       origins: [{ origin, localStorage: [{ name: "authenticated", value: "yes" }] }],
     },
-    verification: { selector },
+    verification: typeof selector === "string" ? { selector } : selector,
   }), { mode: 0o600 });
   return root;
 }
@@ -113,10 +113,31 @@ function client(env = {}) {
   return { child, rpc, call, textOf, close: () => child.stdin.end() };
 }
 
-test("managed browser retains the proven default Playwright launch mode", async () => {
-  const source = await readFile(server, "utf8");
-  assert.match(source, /chromium\.launch\(\{ headless: true \}\)/);
-  assert.doesNotMatch(source, /chromium\.launch\(\{ headless: true, channel:/);
+for (const channel of ["default", "chromium"]) {
+  test(`managed ${channel} browser reports its applied launch options`, async () => {
+    const { httpServer, base } = await fixtureServer();
+    const c = client({ CUDDLY_WINNER_BROWSER_CHANNEL: channel, CUDDLY_WINNER_CONFIG_DIR: "" });
+    try {
+      const result = await c.call("browser_navigate", { url: base });
+      assert.equal(result.isError, undefined);
+      const evidence = JSON.parse(c.textOf(await c.call("browser_status")));
+      assert.equal(evidence.mode, "headless");
+      assert.deepEqual(evidence.launchOptions, { headless: true, ...(channel === "chromium" ? { channel } : {}) });
+      assert.ok(evidence.browserVersion);
+    } finally { await c.call("browser_close"); c.close(); await new Promise((resolve) => httpServer.close(resolve)); }
+  });
+}
+
+test("missing and foreign-origin saved records do not crash hydration", async () => {
+  const { httpServer, base } = await fixtureServer();
+  const root = await stateConfig("https://unrelated.example", "#account-menu");
+  const c = client({ CUDDLY_WINNER_CONFIG_DIR: root, CUDDLY_WINNER_BROWSER_STATES: "missing,account" });
+  try {
+    const result = await c.call("browser_navigate", { url: base });
+    assert.equal(result.isError, undefined, c.textOf(result));
+    const status = JSON.parse(c.textOf(await c.call("browser_status")));
+    assert.equal(status.hydratedAuthentication, false);
+  } finally { await c.call("browser_close"); c.close(); await new Promise((resolve) => httpServer.close(resolve)); await rm(root, { recursive: true, force: true }); }
 });
 
 test("Playwright MCP server drives a headless page over JSON-RPC", async () => {
@@ -293,4 +314,21 @@ test("unknown tool and bad args return isError, not a crash", async () => {
     c.close();
     httpServer.close();
   }
+});
+
+test("user-confirmed capture loads for inspection without claiming task-browser authentication", async () => {
+  const { httpServer, base } = await fixtureServer();
+  const root = await stateConfig(base, { method: "user-confirmed" });
+  const c = client({ CUDDLY_WINNER_CONFIG_DIR: root });
+  try {
+    const navigated = await c.call("browser_navigate", { url: base });
+    assert.equal(navigated.isError, undefined, c.textOf(navigated));
+    assert.match(c.textOf(navigated), /verify account or requested task access in this context/i);
+    const status = JSON.parse(c.textOf(await c.call("browser_status", {})));
+    assert.equal(status.hydratedAuthentication, false);
+    assert.equal(status.authenticationVerification, "pending");
+    assert.match(c.textOf(await c.call("browser_snapshot", {})), /Signed in account/);
+    assert.equal((await c.call("browser_evaluate", { expression: "document.cookie" })).isError, true);
+    await c.call("browser_close", {});
+  } finally { c.close(); httpServer.close(); await rm(root, { recursive: true, force: true }); }
 });

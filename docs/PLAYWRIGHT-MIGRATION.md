@@ -5,9 +5,9 @@
 This migration is complete in source, tests, runtime prompts, and the managed
 profile. The durable requirements describe the resulting behavior.
 
-The finished system has one browser backend: Playwright. Headless Playwright
-does all normal work. Headed Playwright opens only while a person completes a
-required login.
+The system has one browser backend: Playwright. Task execution uses the configured
+headless or virtual-display mode. Virtual-display mode runs headed Chrome/Chromium
+under Xvfb. A separate visible window lets a person complete a required login.
 
 This migration also removes the provider-specific browser image experiment.
 Replacement browser features and tests must use generic sites, fixtures, names,
@@ -18,11 +18,11 @@ prompts, paths, and evidence.
 After the migration:
 
 - the project installs and configures only Playwright for browser work;
-- normal browser tools always launch headlessly;
-- a headed window opens only after login is proved necessary and the user
+- normal browser tools use headless or isolated virtual-display execution;
+- a visible login window opens only after login is proved necessary and the user
   approves it;
-- the headed window closes before task work continues;
-- saved login state is loaded privately into a new headless context;
+- the login window closes before task work continues;
+- saved login state is loaded privately into a new task context;
 - downloads and generated files are checked locally before success is reported;
 - interrupted non-idempotent actions are inspected before any retry;
 - no runner, validator, prompt, selector, output path, generated task package,
@@ -44,12 +44,12 @@ user work.
 ### 2. Replace Runtime And Configuration
 
 - Make the managed browser MCP entry launch the pinned Playwright service in
-  headless mode.
+  the explicitly configured task mode.
 - Remove the separate browser-engine downloader, binary manifest, checksums,
   worker handling, restart logic, and transport wrapper.
 - Remove the environment switch that treats Playwright as a fallback.
 - Update the immutability guard so it permits the managed Playwright tools while
-  still protecting authentication state and the headed-login boundary.
+  still protecting authentication state and the human-login boundary.
 - Keep configuration changes namespaced. Preserve unrelated user MCP entries.
 - Make installer `install`, `status`, and `remove` agree on the new managed files
   and entries. Keep MCP configuration diagnosis consistent with them.
@@ -58,15 +58,17 @@ user work.
 
 ### 3. Build The Login Handoff
 
-- Use Playwright itself for both browser modes.
-- Start with a headless access check.
+- Use Playwright itself for task execution and human login.
+- Start with an access check in the configured task browser.
 - Open a dedicated headed context only after the user approves a required login.
+- Return control after opening it. Ask the user to log in and reply when done;
+  capture only after that reply, without login polling or a human deadline.
 - Save Playwright storage state outside all repositories with owner-only access.
 - Scope each state record to approved HTTPS origins and a clear site or account
   name.
 - Capture and restore session storage explicitly when a site needs it.
-- Close headed Playwright before creating the authenticated headless context.
-- Confirm access headlessly before reporting login success or doing task work.
+- Close the login window before creating the authenticated task context.
+- Confirm access in that context before reporting login success or doing task work.
 - Never expose cookies, storage values, tokens, or passwords through tool output,
   logs, screenshots, errors, or model context.
 - Support bounded status and removal operations that reveal metadata only.
@@ -76,19 +78,19 @@ user work.
 - Use normal Playwright locators and actions for navigation, text entry, clicks,
   uploads, downloads, and page inspection.
 - Remove browser-specific DOM workarounds and direct internal editor traversal.
-- Keep headed mode unavailable to ordinary task steps.
-- Give every wait and browser process a clear timeout and cleanup path.
+- Keep the visible human-login context unavailable to ordinary task steps.
+- Bound browser operations and provide process cleanup. Human login has no deadline.
 - Record the page address and intent before any action that may create, publish,
   purchase, send, or generate something.
 - Persist confirmation before beginning a long wait, download, or validation.
-- After a disconnect, inspect the original page in a new headless context. Do
+- After a disconnect, inspect the original page in a new task context. Do
   not automatically repeat an action with an unknown outcome.
 
 ### 5. Make File Delivery Reliable
 
 - Treat a page result and a local file as separate outcomes.
 - Prefer Playwright's download event when the site offers a download.
-- When retrieval is required, use the same authenticated headless context and
+- When retrieval is required, use the same authenticated task context and
   tie the result to the current request.
 - Place the final file without silently replacing unrelated data.
 - Verify type, size, signature, hash, and any task-specific content requirement.
@@ -120,9 +122,9 @@ with `docs/RESOURCE-SELECTION.md`. In particular:
 
 - remove the fallback decision tree;
 - state that Playwright is the only backend;
-- require headless mode for all normal work;
-- allow headed mode only for approved human login;
-- require a return to headless mode after login;
+- select headless or virtual-display mode explicitly for task work;
+- reserve the visible login window for approved human login;
+- require a fresh task context after login;
 - keep download verification and unknown-action safeguards;
 - remove provider names and reference files that belong to the retired browser
   image experiment;
@@ -138,11 +140,11 @@ Add or update deterministic tests for:
 
 1. Playwright-only MCP installation, status, diagnosis, and removal.
 2. Preservation of unrelated configuration and modified user files.
-3. Headless access checks that do not open a window.
+3. Headless and virtual-display access checks that do not open a physical window.
 4. Approval-gated headed login followed by browser closure.
-5. Cookies and origin storage moving into a new headless context.
+5. Cookies and origin storage moving into a new task context.
 6. Explicit session-storage capture and restoration.
-7. Missing GUI, login timeout, launch failure, early exit, and cleanup.
+7. Missing GUI, startup or capture timeout, launch failure, early exit, and cleanup.
 8. Secret redaction and origin checks.
 9. Download events, authenticated retrieval, exclusive file placement, and file
    validation.
@@ -177,9 +179,9 @@ Before completion:
    browser-engine implementation and provider-specific experiment material. The
    search must return no maintained source, prompt, test, configuration, or
    documentation matches.
-6. Confirm that no headed browser opens during headless tests or diagnostics.
+6. Confirm task mode, viewport, missing-Xvfb errors, stdio, and display cleanup.
 7. Confirm that a headed login closes and the resulting state works in a new
-   headless context.
+   task context.
 8. Confirm that a browser-created file exists locally and passes independent
    validation before reporting success.
 
@@ -188,11 +190,17 @@ Before completion:
 ## Completed Work And Outstanding Precondition
 
 The project-managed browser stack and browser image experiment have been
-removed. The managed profile installs the headless Playwright service, secure
+removed. The managed profile installs the configurable Playwright service, secure
 state store, and separate headed login helper. Deployment leaves client-owned
 legacy browser files untouched. Deterministic tests cover login state,
 downloads, collision-safe local placement, validation, non-replay, and retired
 skill cleanup.
+
+The virtual-display extension adds `opencode-browser-service.mjs` and the shared
+`executionMode` setting. Its fixtures cover real concurrent Xvfb displays,
+headed rendering, MCP transport, missing dependencies, EOF, and signal cleanup.
+The real-Xvfb fixture requires host packages `xvfb` and `xauth`; a skipped fixture
+does not count as virtual-display acceptance. No challenge clearance is promised.
 
 `plugins/immutability.ts` permits the managed Playwright browser tools. It still
 blocks browser state-export tools and must not permit another path that returns

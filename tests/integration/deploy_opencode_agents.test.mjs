@@ -11,7 +11,7 @@ const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
 const deploy = path.join(repo, "scripts/deploy-opencode-agents.sh");
 
-// The single Playwright browser backend installs as three copies at the config
+// The single Playwright browser backend installs as five copies at the config
 // root: the headless MCP server, the shared secure state store it imports, and
 // the headed login helper. There is no engine binary to download, so installs
 // need no offline archive scaffolding.
@@ -19,6 +19,8 @@ const BROWSER_CONTROL_FILES = [
   "opencode-playwright-mcp.mjs",
   "opencode-browser-state.mjs",
   "opencode-browser-login.mjs",
+  "opencode-browser-runtime.mjs",
+  "opencode-browser-service.mjs",
 ];
 
 async function fixture(fn) {
@@ -67,7 +69,7 @@ test("default copy install is idempotent and includes the complete managed profi
   await stat(path.join(config, "node_modules", "@opencode-ai", "plugin", "package.json"));
   await stat(path.join(config, "node_modules", "playwright", "package.json"));
   await stat(path.join(config, "skills", "systematic-debugging", "SKILL.md"));
-  for (const name of ["opencode-playwright-mcp.mjs", "opencode-browser-state.mjs", "opencode-browser-login.mjs"]) {
+  for (const name of BROWSER_CONTROL_FILES) {
     await stat(path.join(config, name));
   }
   const loginHelper = path.join(config, "opencode-browser-login.mjs");

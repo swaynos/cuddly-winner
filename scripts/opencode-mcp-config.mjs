@@ -5,22 +5,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-// The managed browser MCP entry runs the headless Playwright MCP server
-// (opencode-playwright-mcp.mjs) installed under the OpenCode config root. It is
-// the project's single browser backend: headless only, with no secret-typing
-// path. Approved login state is written out of band by opencode-browser-login.mjs
-// and loaded privately by the server; a required human login uses the separate
-// headed helper, never this entry. The server reads its config root (and hence
-// the cuddly-winner-sessions/ state store) from CUDDLY_WINNER_CONFIG_DIR, and the
-// HEADLESS environment marker lets modeOf classify it as headless without
-// backend-specific knowledge.
+// The managed Playwright server reads its task execution mode and private state
+// from CUDDLY_WINNER_CONFIG_DIR. Its own launcher enters Xvfb when selected.
+// Human login uses the separate visible helper, never this MCP entry.
 export function buildManagedMcp(configPath) {
   const configRoot = path.dirname(configPath);
   return {
     "cuddly-winner-browser": {
       type: "local",
       command: ["node", path.join(configRoot, "opencode-playwright-mcp.mjs")],
-      environment: { HEADLESS: "true", CUDDLY_WINNER_CONFIG_DIR: configRoot },
+      environment: { CUDDLY_WINNER_CONFIG_DIR: configRoot },
       enabled: true,
     },
   };
@@ -90,6 +84,7 @@ export function modeOf(entry) {
   const command = Array.isArray(entry.command) ? entry.command.map(String) : [];
   if (command.includes("--headless") || entry.environment?.HEADLESS === "true") return "headless";
   if (command.some((value) => value === "--headed" || value === "--no-headless") || entry.environment?.HEADLESS === "false") return "headed";
+  if (entry.environment?.CUDDLY_WINNER_CONFIG_DIR) return "configured";
   return "unknown";
 }
 
