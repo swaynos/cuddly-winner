@@ -63,7 +63,7 @@ test("installer deploys only the Direct profile and retires proven legacy links"
     (await readdir(path.join(config, "agents"))).filter((name) => name.endsWith(".md")).sort(),
     ["ask.md", "grounder.md", "prometheus.md"],
   );
-  assert.deepEqual((await readdir(path.join(config, "plugins"))).sort(), ["immutability.ts"]);
+  assert.deepEqual((await readdir(path.join(config, "plugins"))).sort(), ["goal.ts", "immutability.ts"]);
   assert.deepEqual((await readdir(path.join(config, "tools"))).sort(), ["publish_direct_agent.ts"]);
   assert.deepEqual((await readdir(path.join(config, "rules"))).sort(), ["resource-selection.md"]);
   assert.equal(await exists(path.join(config, "skills")), false);

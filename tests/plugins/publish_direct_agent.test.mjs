@@ -61,6 +61,8 @@ test("publisher rejects unsafe input before writing", async () => fixture(async 
     request({ edit_paths: ["../outside.ts"] }),
     request({ edit_paths: ["src/retry.ts", "src/retry.ts"] }),
     request({ bash: "yes" }),
+    request({ model: "unqualified-model" }),
+    request({ model: null }),
     request({ instructions: "<!-- CUDDLY-WINNER DIRECT POLICY BEGIN -->" }),
   ]) {
     await assert.rejects(publishDirectAgentFile(root, candidate));

@@ -25,6 +25,7 @@ export type DirectAgentPolicy = {
 };
 
 export type DirectAgentRequest = {
+  model?: string;
   name: string;
   description: string;
   outcome: string;
@@ -127,7 +128,7 @@ export function validateDirectAgentRequest(value: unknown): DirectAgentRequest {
     "edit_paths", "bash", "verification_commands", "stop_conditions",
     "escalation_triggers", "instructions",
   ]);
-  for (const key of Object.keys(value)) if (!expected.has(key)) throw new Error(`unknown Direct agent field: ${key}`);
+  for (const key of Object.keys(value)) if (!expected.has(key) && key !== "model") throw new Error(`unknown Direct agent field: ${key}`);
   for (const key of expected) if (!(key in value)) throw new Error(`missing Direct agent field: ${key}`);
 
   assertName(value.name);
@@ -144,6 +145,7 @@ export function validateDirectAgentRequest(value: unknown): DirectAgentRequest {
   assertText(value.instructions, "instructions");
 
   const request: DirectAgentRequest = {
+    ...(value.model === undefined ? {} : { model: value.model as string }),
     name: value.name,
     description: value.description,
     outcome: value.outcome,
@@ -156,6 +158,9 @@ export function validateDirectAgentRequest(value: unknown): DirectAgentRequest {
     escalation_triggers: value.escalation_triggers,
     instructions: value.instructions,
   };
+  if (request.model !== undefined && (typeof request.model !== "string" || !/^[^\s/]+\/[^\s]+$/.test(request.model))) {
+    throw new Error("model must be a provider/model identifier");
+  }
   assertNoPolicyMarkers(request);
   return request;
 }
@@ -240,25 +245,32 @@ export function renderDirectAgent(request: DirectAgentRequest): string {
     `name: ${request.name}`,
     `description: ${JSON.stringify(request.description)}`,
     "mode: primary",
+    ...(request.model ? [`model: ${JSON.stringify(request.model)}`] : []),
+    `options: ${JSON.stringify({ goal: { criteria: request.acceptance_criteria } })}`,
     "permission:",
+    "  \"*\": deny",
     "  read: allow",
     "  glob: allow",
     "  grep: allow",
     "  list: allow",
-    "  edit: allow",
-    "  write: allow",
-    `  bash: ${request.bash ? "ask" : "deny"}`,
-    "  task:",
-    "    \"*\": allow",
+    "  question: allow",
+    "  edit: deny",
+    "  write: deny",
+    "  bash: deny",
+    "  task: deny",
+    "  goal_cycle: allow",
     "---",
     "",
     DIRECT_POLICY_BEGIN,
     JSON.stringify(policy),
     DIRECT_POLICY_END,
     "",
-    "You are the Direct implementation agent for this task. Read this file before working.",
-    "Implement only the requested outcome, stay within the declared edit paths, and run the declared verification after the final edit.",
-    "Stop and ask for direction if a stop condition or escalation trigger applies.",
+    "You are the Direct implementation agent coordinating this goal. Read this file before working.",
+    "Call goal_cycle to run a build iteration AND an independent validation iteration in separate fresh child sessions.",
+    "On failed validation, call goal_cycle again: it supplies the findings to a fresh builder and then a fresh validator.",
+    "Do not implement directly, reuse child contexts, or declare completion from a builder's report.",
+    "Only a validated goal_cycle result establishes completion. Report its criterion-by-criterion evidence.",
+    "A blocked result is incomplete: report the specific blocker and ask for the needed decision. Never weaken the goal to finish.",
     "",
     "# Outcome",
     request.outcome,
@@ -402,6 +414,7 @@ export async function publishDirectAgentFile(root: string, value: unknown): Prom
 export default tool({
   description: "Publish one self-contained task-derived Direct agent without replacing an existing definition.",
   args: {
+    model: tool.schema.string().regex(/^[^\s/]+\/[^\s]+$/).optional(),
     name: tool.schema.string().regex(NAME_RE),
     description: tool.schema.string().min(1),
     outcome: tool.schema.string().min(1),

@@ -631,7 +631,7 @@ AGENT_SOURCES=(
   "${REPO_ROOT}/agents/grounder.md"
   "${REPO_ROOT}/agents/prometheus.md"
 )
-PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts")
+PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/goal.ts")
 TOOL_SOURCES=("${REPO_ROOT}/tools/publish_direct_agent.ts")
 RULE_SOURCES=("${REPO_ROOT}/rules/resource-selection.md")
 

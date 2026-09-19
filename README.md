@@ -11,16 +11,17 @@ The installed profile contains:
 - Ask: read-only short answers and narrow local research.
 - Grounder: hidden, read-only evidence research.
 - Prometheus: planning-only publication of one Direct agent.
-- One immutability plugin, one Direct-agent publisher, one resource-selection
+- An immutability plugin, a Direct goal plugin, one Direct-agent publisher, one resource-selection
   rule, and the existing Playwright browser runtime.
 
 It does not contain Reviewer, task packages, Ralph, optimization, KPI tracking,
-task loops, generic skills, feedback capture, session fetch, spikes, or announce
+external task-loop scaffolds, generic skills, feedback capture, session fetch, spikes, or announce
 hygiene.
 
 ## Direct Workflow
 
-Select Prometheus for planning-ready work. It publishes one task-derived agent:
+Select Prometheus to ground and clarify a goal. It asks focused questions about
+unresolved requirements, then publishes one task-derived agent:
 
 ```text
 .opencode/agents/generated/<name>.md
@@ -29,8 +30,13 @@ Select Prometheus for planning-ready work. It publishes one task-derived agent:
 The file contains the task instructions, verification, and embedded edit/Bash
 policy. Prometheus never replaces an existing generated agent. After publication,
 quit and restart OpenCode, start a new conversation in the target project, and
-select the named agent. The Direct agent owns implementation and fresh
-verification; it does not stage or commit work.
+select the named agent. The Direct agent owns build AND validation: each cycle
+uses a fresh builder session and a separate fresh validator session. Failed
+validation returns findings to another fresh builder; premature coordinator stops
+resume automatically. Only validated criteria complete the goal. Cancellation,
+denied permissions, and genuine blockers stop it as incomplete. It does not stage
+or commit work. Both children use the selected model unless Prometheus pins a
+verified provider/model identifier in the generated agent.
 
 The generated directory is an internal boundary. The visible agent name remains
 the task-derived `<name>`, without a required prefix.

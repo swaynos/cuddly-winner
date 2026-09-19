@@ -4,12 +4,12 @@
 
 Cuddly Winner is an optional OpenCode profile. Native Plan and Build remain the
 default path for ordinary work. The profile adds a small planning path without a
-command sandbox, virtual machine, workflow loop, completion supervisor, or
-protected evidence store.
+command sandbox, virtual machine, or protected evidence store. Its goal runtime
+is scoped to the single generated Direct-agent format on OpenCode V1.
 
 ## Managed Profile
 
-The installer deploys three agents, one plugin, one tool, one shared rule, and
+The installer deploys three agents, two plugins, one tool file, one shared rule, and
 the existing five-file Playwright browser runtime.
 
 | Component | Purpose |
@@ -18,6 +18,7 @@ the existing five-file Playwright browser runtime.
 | Grounder | Hidden, read-only evidence researcher. |
 | Prometheus | Planning-only publisher for Direct agents. |
 | `plugins/immutability.ts` | Enforces managed mutation and Bash boundaries. |
+| `plugins/goal.ts` | Supplies goal_cycle and resumes premature goal stops. |
 | `tools/publish_direct_agent.ts` | Creates one no-clobber Direct agent. |
 | `rules/resource-selection.md` | Browser and source-selection policy. |
 
@@ -37,6 +38,9 @@ The nested directory is an internal boundary, not a visible agent-name prefix.
 The file's frontmatter supplies the plain task-derived OpenCode name. It contains
 the requested outcome, criteria, durable context, instructions, verification,
 stop conditions, escalation triggers, and one embedded schema-v1 policy block.
+Goal definitions additionally carry their acceptance criteria in frontmatter
+`options.goal.criteria` for machine checking, and an optional native `model`.
+These are in the same agent file; the permission policy schema remains unchanged.
 
 The policy contains only:
 
@@ -69,6 +73,36 @@ a Direct policy.
 Classic generated packages are not migrated or accepted. When the old registry,
 agent, brief, and manifest layout identifies the selected agent, the guard denies
 mutation and Bash and tells the user to republish it as a Direct agent.
+
+### Goal Execution
+
+Prometheus interviews and publishes; it never executes the goal. The generated
+root agent coordinates through goal_cycle and cannot directly edit, run Bash,
+or spawn arbitrary tasks. The tool creates a new native General child for each
+build and another new child for validation. It passes the goal definition to
+both, previous validation findings only to the builder, and never passes the
+builder conversation to the validator. Child parentID preserves the existing
+Direct policy inheritance. Children cannot delegate or publish agents. Validator
+edit tools are denied; shell verification remains permission-controlled and must
+not change product code. The guard does not sandbox shell effects.
+
+The validator records structured evidence for every fixed criterion through
+goal_verdict, which accepts calls only from the active validator session. This
+avoids the pinned V1 structured-output API's session serialization failure. A
+missing verdict or evidence is incomplete, not success. Premature validator
+completion repeats the cycle; interrupted execution or an API failure blocks it.
+Failed criteria cause another build/validate cycle. Validation success requires
+actual completed evidence-gathering tool use as well as the structured verdict;
+the runtime enforces the protocol, not the truthfulness of model judgments.
+
+The goal plugin listens for root session idle events and submits a continuation
+when a goal has not passed or blocked. Cycle tool results and child sessions are
+the durable checkpoints; no registry or task-state file is created. In-memory
+sets only prevent concurrent cycles/continuations and track cancellation. Abort
+propagates to the active child. Errors, rejected permissions, and interrupted
+cycle records are never automatically replayed. Explicit user input can resume
+after inspection. Restarting OpenCode does not launch background work by itself.
+Native agents and Direct files without goal metadata do not enter this runtime.
 
 ### Decision Record
 
