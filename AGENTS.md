@@ -49,3 +49,15 @@ mode; a visible browser is for approved human login only.
 Run focused tests before broader checks. Before claiming completion, verify the
 changed behavior, the installer inventory, and durable documentation. Restart
 OpenCode after changing installed agents, plugins, tools, rules, or browser files.
+
+## Design Principles
+
+Follow the "SOLID" principles of object-oriented programming, but also applied to introduced components such as Agents, Skills, etc.
+
+This means:
+- They should be modular and reusable
+- They should be easy to test
+- They should be easy to maintain
+- They should be easy to extend
+
+Additions to this project should represent the simplest implementation that solves the problem at hand. Follow the principles of "KISS", or "keep it simple, stupid".
