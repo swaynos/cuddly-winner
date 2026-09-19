@@ -1,4 +1,4 @@
-name: Control Plane CI
+name: Direct Profile CI
 
 on:
   pull_request:
@@ -14,27 +14,9 @@ jobs:
         with:
           node-version: 24.15.0
           cache: npm
-      - name: Set up pyenv
-        uses: gabrielfalcao/pyenv-action@v18
-        with:
-          default: 3.12.7
-      - name: Install pyenv-virtualenv
-        run: git clone --depth 1 https://github.com/pyenv/pyenv-virtualenv.git "$(pyenv root)/plugins/pyenv-virtualenv"
       - run: npm ci
       - name: Install virtual-display test dependencies
         run: sudo apt-get update && sudo apt-get install -y xvfb xauth
-      - name: Install the pinned OpenCode CLI
-        run: |
-          npm install -g "opencode-ai@$(cat .opencode-cli-version)"
-          opencode --version
       - run: bash scripts/ci.sh
         env:
           CUDDLY_WINNER_CI_PROFILE_PARENT: ${{ runner.temp }}
-          OPENCODE_E2E_ARTIFACTS: ${{ runner.temp }}/e2e-artifacts
-      - name: Upload end-to-end evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-evidence
-          path: ${{ runner.temp }}/e2e-artifacts
-          if-no-files-found: ignore

@@ -53,7 +53,6 @@ yarn-error.log*
 Thumbs.db
 
 # Project-specific paths
-evals/seed_build/reports/
 *.log
 
 # Local feedback may contain private source paths, session IDs, and excerpts.
@@ -62,15 +61,5 @@ evals/seed_build/reports/
 # ChatGPT image-generation downloads, prompts, and run evidence are private.
 /.chatgpt-image-generation/
 
-# Spike workspaces are disposable and never committed
-.spike/
-
-# Per-pass task-loop evidence is local to a run, not source.
-.task-loop/
-
-# BEGIN OpenCode generated task artifacts
-/.opencode/agents/*.md
-/.opencode/generated-agents.json
-/.opencode/tasks/
-/.spike/
-# END OpenCode generated task artifacts
+# Direct agents are local task output published by Prometheus.
+/.opencode/agents/generated/

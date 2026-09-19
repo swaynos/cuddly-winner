@@ -163,10 +163,3 @@ before considering a retry. Never repeat an unknown action automatically.
 Record only the stage, safe page address, mode, and possible action outcome,
 not credentials or page secrets. Stop if output association or local validation
 cannot establish success.
-
-## Session Fetch
-
-`session_fetch` serves configured sites when direct public retrieval is not enough.
-It uses approved visible login followed by private headless retrieval, returns an
-opaque handle, accepts only `GET` and `HEAD` to configured HTTPS origins, and
-clears state on close or expiry.

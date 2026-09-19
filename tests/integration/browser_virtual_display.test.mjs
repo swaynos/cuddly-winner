@@ -12,6 +12,7 @@ import path from "node:path";
 // The same local fixture can verify a deployed service without loading real accounts.
 const server = process.env.CUDDLY_WINNER_TEST_BROWSER_SERVER || path.resolve(import.meta.dirname, "../../scripts/opencode-playwright-mcp.mjs");
 const hasXvfb = spawnSync("sh", ["-c", "command -v Xvfb && command -v xvfb-run && command -v xauth"], { stdio: "ignore" }).status === 0;
+const isLinux = process.platform === "linux";
 
 function client(configDir, extraEnv = {}) {
   const child = spawn(process.execPath, [server], { env: { ...process.env,
@@ -52,11 +53,11 @@ test("missing Xvfb fails without falling back to the physical display", { timeou
   try {
     const c = client(dir, { PATH: dir, DISPLAY: ":0" });
     assert.notEqual((await c.exited)[0], 0);
-    assert.match(c.errors(), /install xvfb and xauth/);
+    assert.match(c.errors(), isLinux ? /install xvfb and xauth/ : /requires Linux and Xvfb/);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
-test("service wraps the real MCP process and keeps stdio and exit status intact", { timeout: 10000 }, async () => {
+test("service wraps the real MCP process and keeps stdio and exit status intact", { skip: !isLinux, timeout: 10000 }, async () => {
   const dir = await config();
   try {
     // Mock only the X server boundary. The real MCP process handles the request.

@@ -6,6 +6,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const LEGACY_AGENTS = {
+  "reviewer.md": {
+    source: "agents/reviewer.md",
+    mode: "copy",
+    sha256: "669911a5d42184ef4a78fdb8b3693cc6382b5809e038ae5585569b513eb8065d",
+  },
   "out-of-the-box-thinker.md": {
     source: "agents/out-of-the-box-thinker.md",
     mode: "copy",

@@ -1,40 +1,44 @@
-import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { isRegisteredGeneratedAgent, validateTaskPackage } from "../tools/validate_scaffold.ts";
+import {
+  hasDirectAgentFile,
+  isGeneratedDirectPath,
+  isDirectAgentName,
+  isProtectedControlPath,
+  readDirectAgentPolicy,
+  type DirectAgentPolicy,
+} from "../tools/publish_direct_agent.ts";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 const SHELL_TOOLS = new Set(["bash"]);
-const PROMETHEUS_ONLY_TOOLS = new Set(["spike", "scaffold_gitignore", "validate_scaffold"]);
-const MANAGED_AGENTS = new Set(["ask", "prometheus", "reviewer", "grounder"]);
-const READ_ONLY_AGENTS = new Set(["ask", "reviewer", "grounder"]);
-const PROMETHEUS_WRITABLE = [".opencode/agents/**", ".opencode/tasks/**", ".opencode/generated-agents.json", ".spike/**"];
-const TRUSTED_PATHS = [
-  "tools/spike.ts",
-  "tools/validate_scaffold.ts",
-  "tools/scaffold_gitignore.ts",
-  "plugins/immutability.ts",
-  "plugins/autonomous-kpis.ts",
-  "skills/cuddly-winner-feedback/record-feedback.mjs",
-];
+const PROMETHEUS_ONLY_TOOLS = new Set(["publish_direct_agent"]);
+const BROWSER_FILE_WRITE_TOOLS = new Set(["browser_screenshot", "browser_download", "browser_save_media"]);
+const MANAGED_AGENTS = new Set(["ask", "prometheus", "grounder"]);
+const READ_ONLY_AGENTS = new Set(["ask", "grounder"]);
 
-function matchesPattern(relPath: string, pattern: string): boolean {
-  const escaped = pattern
-    .replace(/\\/g, "/")
-    .replace(/[.+^${}()|[\]]/g, "\\$&")
-    .replace(/\*\*/g, "{{DOUBLE_STAR}}")
-    .replace(/\*/g, "[^/]*")
-    .replace(/\?/g, "[^/]")
-    .replace(/\{\{DOUBLE_STAR\}\}/g, ".*");
-  return new RegExp(`^${escaped}$`).test(relPath.replace(/\\/g, "/"));
+// Browser tools that can hand saved authentication state back to the model stay
+// blocked even though the managed MCP does not expose them.
+const BROWSER_STATE_EXPORT_TOOLS = new Set([
+  "browser_get_cookies",
+  "browser_storage_state",
+  "browser_network_requests",
+]);
+
+function matchesTool(tool: string, names: Set<string>): boolean {
+  return names.has(tool) || [...names].some((name) => tool.endsWith(`_${name}`));
 }
 
-function extractPatchedPaths(patchText: string): string[] {
-  const paths = new Set<string>();
-  for (const line of patchText.split(/\r?\n/)) {
-    const match = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/) ?? line.match(/^\*\*\* Move to: (.+)$/);
-    if (match?.[1].trim()) paths.add(match[1].trim());
-  }
-  return [...paths];
+function exposesBrowserState(tool: string): boolean {
+  return matchesTool(tool, BROWSER_STATE_EXPORT_TOOLS);
+}
+
+function mutatesFiles(tool: string): boolean {
+  return MUTATING_TOOLS.has(tool) || matchesTool(tool, BROWSER_FILE_WRITE_TOOLS);
+}
+
+function isInside(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
 function safeTarget(lexicalRoot: string, root: string, target: string): string {
@@ -55,34 +59,30 @@ function safeTarget(lexicalRoot: string, root: string, target: string): string {
   return resolve(root, rel);
 }
 
-function isInside(root: string, target: string): boolean {
-  const rel = relative(root, target);
-  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+function extractPatchedPaths(patchText: string): string[] {
+  const paths = new Set<string>();
+  for (const line of patchText.split(/\r?\n/)) {
+    const match = line.match(/^\*\*\* (?:Update|Add|Delete) File: (.+)$/) ?? line.match(/^\*\*\* Move to: (.+)$/);
+    if (match?.[1].trim()) paths.add(match[1].trim());
+  }
+  return [...paths];
 }
 
-function isTrustedPath(relPath: string): boolean {
-  return TRUSTED_PATHS.some((trusted) => relPath === trusted || relPath.startsWith(`${trusted}/`));
-}
-
-function isPublishedTaskPackage(relPath: string): boolean {
-  return relPath === ".opencode/generated-agents.json" || relPath.startsWith(".opencode/agents/") || relPath.startsWith(".opencode/tasks/");
-}
-
-// Browser tools that can hand saved authentication state (cookies, storage,
-// captured network traffic) back to the model. The managed headless Playwright
-// server does not expose these at all; this global block is defence in depth
-// against any raw Playwright MCP surface that does. Playwright is now the
-// sanctioned backend, so ordinary browser tools are permitted without any
-// environment gate. See docs/ARCHITECTURE.md "Deployment".
-const BROWSER_STATE_EXPORT_TOOLS = new Set([
-  "browser_get_cookies",
-  "browser_storage_state",
-  "browser_network_requests",
-]);
-
-function exposesBrowserState(tool: string): boolean {
-  const bare = tool.startsWith("playwright_") ? tool.slice("playwright_".length) : tool;
-  return BROWSER_STATE_EXPORT_TOOLS.has(tool) || BROWSER_STATE_EXPORT_TOOLS.has(bare);
+function hasLegacyGeneratedPackage(root: string, agent: string): boolean {
+  if (!isDirectAgentName(agent)) return false;
+  const paths = [
+    ".opencode/generated-agents.json",
+    `.opencode/agents/${agent}.md`,
+    `.opencode/tasks/${agent}.md`,
+    `.opencode/tasks/${agent}.json`,
+  ];
+  return paths.every((relativePath) => {
+    try {
+      return lstatSync(resolve(root, relativePath)).isFile();
+    } catch (error: any) {
+      return error?.code !== "ENOENT";
+    }
+  });
 }
 
 function resolvedSession(result: unknown, sessionID: string): Record<string, any> | undefined {
@@ -99,37 +99,35 @@ function resolvedSession(result: unknown, sessionID: string): Record<string, any
 export const ImmutabilityGuard = async ({ directory, worktree, client }: { directory: string; worktree: string; client: any }) => {
   const lexicalRoot = resolve(directory || worktree);
   const root = realpathSync(lexicalRoot);
-  // `chat.params` records the selected agent for the active turn. This is not
-  // durable authorization state: an explicit root-agent switch takes effect.
   const sessionAgents = new Map<string, string>();
   const invalidAncestry = new Set<string>();
-  const publicationReminders = new Set<string>();
 
-  type GeneratedPolicy = { editPaths: string[]; bash: boolean };
-  type GeneratedRegistration = { registered: boolean; policy?: GeneratedPolicy };
-  const generatedPolicies = new Map<string, Promise<GeneratedRegistration>>();
-  function generatedPolicy(agent: string): Promise<GeneratedRegistration> {
-    const cached = generatedPolicies.get(agent);
+  type DirectRegistration = { direct: boolean; legacy?: boolean; policy?: DirectAgentPolicy };
+  const directPolicies = new Map<string, DirectRegistration>();
+  function directPolicy(agent: string): DirectRegistration {
+    const cached = directPolicies.get(agent);
     if (cached) return cached;
-    const pending = (async () => {
-      let registered = false;
-      try {
-        registered = await isRegisteredGeneratedAgent(root, agent);
-        if (!registered) return { registered: false };
-        const result = await validateTaskPackage(root, agent);
-        if (!result.valid) return { registered };
-        const manifest = JSON.parse(readFileSync(resolve(root, `.opencode/tasks/${agent}.json`), "utf8"));
-        return { registered, policy: { editPaths: manifest.permissions.edit_paths, bash: manifest.permissions.bash } };
-      } catch {
-        return { registered };
-      }
-    })();
-    generatedPolicies.set(agent, pending);
-    return pending;
+    if (hasLegacyGeneratedPackage(root, agent)) {
+      const registration = { direct: true, legacy: true };
+      directPolicies.set(agent, registration);
+      return registration;
+    }
+    if (!hasDirectAgentFile(root, agent)) return { direct: false };
+    try {
+      const registration = { direct: true, policy: readDirectAgentPolicy(root, agent) };
+      directPolicies.set(agent, registration);
+      return registration;
+    } catch {
+      const registration = { direct: true };
+      directPolicies.set(agent, registration);
+      return registration;
+    }
   }
-  async function isManaged(agent: string): Promise<boolean> { return MANAGED_AGENTS.has(agent) || (await generatedPolicy(agent)).registered; }
+  function isManaged(agent: string): boolean {
+    return MANAGED_AGENTS.has(agent) || directPolicy(agent).direct;
+  }
 
-  type AgentResolution = { valid: true; agent?: string } | { valid: false };
+  type AgentResolution = { valid: true; agents: string[]; current?: string; hasParent: boolean } | { valid: false };
   async function resolveAgent(sessionID: string, visited = new Set<string>()): Promise<AgentResolution> {
     if (invalidAncestry.has(sessionID)) return { valid: false };
     if (visited.has(sessionID)) {
@@ -144,80 +142,39 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       const resolved = resolvedSession(result, sessionID);
       if (!resolved) throw new Error("unresolved session");
       session = resolved;
-      const parentID = session?.parentID;
-      if (parentID) {
-        const parent = await resolveAgent(parentID, visited);
+      let parent: AgentResolution | undefined;
+      if (session.parentID) {
+        parent = await resolveAgent(session.parentID, visited);
         if (!parent.valid) {
           invalidAncestry.add(sessionID);
           return parent;
         }
-        if (!parent.agent) {
-          invalidAncestry.add(sessionID);
-          return { valid: false };
-        }
-        // A managed parent controls its child for the current turn. This stops
-        // delegation from widening the parent's active boundary.
-        if (await isManaged(parent.agent)) {
-          return { valid: true, agent: parent.agent };
-        }
       }
+      const current = sessionAgents.get(sessionID) ?? (typeof session.agent === "string" && session.agent ? session.agent : undefined);
+      const agents = [...(parent?.agents ?? [])];
+      if (current && isManaged(current)) agents.push(current);
+      return { valid: true, agents, current, hasParent: Boolean(session.parentID) };
     } catch {
       for (const id of visited) invalidAncestry.add(id);
       return { valid: false };
     }
-    const selected = sessionAgents.get(sessionID);
-    const current = selected ?? (typeof session.agent === "string" && session.agent ? session.agent : undefined);
-    if (current) return { valid: true, agent: current };
-    if (session.parentID) {
-      invalidAncestry.add(sessionID);
-      return { valid: false };
-    }
-    return { valid: true };
+    return { valid: true, agents: [], hasParent: false };
   }
 
-  // Unlike resolveAgent, this never walks parentID or reads/writes the shared
-  // inheritance cache: the idle-publication reminder must fire only for a
-  // session that is itself Prometheus, not a managed descendant (e.g. a
-  // Grounder child) that merely inherits Prometheus's edit restrictions.
-  async function ownAgent(sessionID: string): Promise<string | undefined> {
-    try {
-      const result = await client?.session?.get?.({ path: { id: sessionID } });
-      const session = result?.data ?? result;
-      if (typeof session?.agent === "string" && session.agent) return session.agent;
-    } catch {}
-    try {
-      const result = await client?.session?.messages?.({ path: { id: sessionID } });
-      const messages = result?.data ?? (Array.isArray(result) ? result : []);
-      for (let index = messages.length - 1; index >= 0; index--) {
-        const info = messages[index]?.info;
-        if (info?.role === "user" && info.agent) return info.agent;
-      }
-    } catch {}
-    return undefined;
+  function directPolicyFor(agent: string): DirectAgentPolicy | undefined {
+    const registration = directPolicy(agent);
+    if (registration.legacy) {
+      throw new Error(`ImmutabilityGuard: @${agent} uses a retired generated-agent package; republish it as a Direct agent before mutating files or using shell commands.`);
+    }
+    if (registration.direct && !registration.policy) {
+      throw new Error(`ImmutabilityGuard: @${agent} has an invalid Direct agent definition; mutation and shell access are denied.`);
+    }
+    return registration.policy;
   }
 
   return {
-    event: async ({ event }: { event: { type: string; properties?: { sessionID?: string } } }) => {
-      if (event.type !== "session.idle") return;
-      const sessionID = event.properties?.sessionID;
-      if (!sessionID || publicationReminders.has(sessionID)) return;
-      const agent = await ownAgent(sessionID);
-      if (agent !== "prometheus") return;
-      if (existsSync(resolve(root, ".opencode/generated-agents.json"))) return;
-
-      // Continue the same session once rather than allowing an unpublished plan to end silently.
-      publicationReminders.add(sessionID);
-      await client?.session?.promptAsync?.({
-        path: { id: sessionID },
-        body: {
-          agent: "prometheus",
-          parts: [{ type: "text", text: "Before completing, publish a registered .opencode generated-agent task package if this task is planning-ready. If a concrete planning blocker remains, state it as a focused question." }],
-        },
-      });
-    },
     "chat.params": async (input: { sessionID: string; agent: string }) => {
-      if (!input.sessionID || !input.agent) return;
-      sessionAgents.set(input.sessionID, input.agent);
+      if (input.sessionID && input.agent) sessionAgents.set(input.sessionID, input.agent);
     },
     "tool.execute.before": async (
       input: { tool: string; sessionID: string; callID: string },
@@ -226,48 +183,62 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       if (exposesBrowserState(input.tool)) {
         throw new Error(`ImmutabilityGuard: ${input.tool} is blocked because it can hand saved browser authentication state to the model. Managed browser tools load login state privately; export tools are never permitted.`);
       }
-      if (!MUTATING_TOOLS.has(input.tool) && !SHELL_TOOLS.has(input.tool) && !PROMETHEUS_ONLY_TOOLS.has(input.tool)) return;
+      if (!mutatesFiles(input.tool) && !SHELL_TOOLS.has(input.tool) && !PROMETHEUS_ONLY_TOOLS.has(input.tool)) return;
+
       const resolution = await resolveAgent(input.sessionID);
       if (!resolution.valid) throw new Error("ImmutabilityGuard: session has invalid or cyclic ancestry; mutation and shell access are denied.");
-      const agent = resolution.agent;
-      if (!agent || !await isManaged(agent)) return;
-      const registration = await generatedPolicy(agent);
-      const generated = registration.policy;
-      if (registration.registered && !generated) throw new Error(`ImmutabilityGuard: @${agent} has an invalid generated task package; mutation and shell access are denied.`);
+      const agents = resolution.agents;
 
       if (PROMETHEUS_ONLY_TOOLS.has(input.tool)) {
-        if (agent !== "prometheus") throw new Error(`ImmutabilityGuard: only @prometheus may invoke ${input.tool}.`);
+        if (resolution.hasParent || resolution.current !== "prometheus" || agents.length !== 1 || agents[0] !== "prometheus") {
+          throw new Error(`ImmutabilityGuard: only @prometheus may invoke ${input.tool}.`);
+        }
+        return;
+      }
+      if (!agents.length) return;
+      const agent = agents[agents.length - 1];
+      if (agents.some((name) => READ_ONLY_AGENTS.has(name))) {
+        throw new Error(`ImmutabilityGuard: @${agent} is read-only.`);
+      }
+      if (agents.includes("prometheus")) {
+        if (SHELL_TOOLS.has(input.tool)) throw new Error("ImmutabilityGuard: @prometheus may not execute shell commands.");
+        throw new Error("ImmutabilityGuard: @prometheus may not edit project files.");
+      }
+      const policies = agents.map(directPolicyFor).filter((policy): policy is DirectAgentPolicy => Boolean(policy));
+
+      if (SHELL_TOOLS.has(input.tool)) {
+        if (policies.some((policy) => !policy.bash)) throw new Error(`ImmutabilityGuard: @${agent} may not execute shell commands.`);
         return;
       }
 
       const args = output.args ?? {};
-      if (SHELL_TOOLS.has(input.tool)) {
-        if (READ_ONLY_AGENTS.has(agent)) throw new Error(`ImmutabilityGuard: @${agent} is read-only.`);
-        if (agent === "prometheus") throw new Error("ImmutabilityGuard: @prometheus may not execute shell commands directly.");
-        if (generated && !generated.bash) throw new Error(`ImmutabilityGuard: @${agent} may not execute shell commands.`);
-        return;
+      const browserFileWriter = matchesTool(input.tool, BROWSER_FILE_WRITE_TOOLS);
+      let paths: string[];
+      if (browserFileWriter) {
+        if (["filePath", "file_path", "cwd"].some((key) => Object.prototype.hasOwnProperty.call(args, key))) {
+          throw new Error(`ImmutabilityGuard: ${input.tool} exposed unsupported target arguments.`);
+        }
+        if (typeof args.path !== "string" || !isAbsolute(args.path)) {
+          throw new Error(`ImmutabilityGuard: ${input.tool} requires an absolute output path.`);
+        }
+        paths = [args.path];
+      } else {
+        const rawPath = (args.filePath ?? args.file_path ?? args.path) as string | undefined;
+        const cwd = (args.cwd as string | undefined) ?? root;
+        paths = rawPath
+          ? [isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath)]
+          : input.tool === "apply_patch" && typeof args.patchText === "string"
+            ? extractPatchedPaths(args.patchText).map((item) => isAbsolute(item) ? item : resolve(cwd, item))
+            : [];
       }
-
-      if (READ_ONLY_AGENTS.has(agent)) throw new Error(`ImmutabilityGuard: @${agent} is read-only.`);
-      const rawPath = (args.filePath ?? args.file_path ?? args.path) as string | undefined;
-      const cwd = (args.cwd as string | undefined) ?? root;
-      const paths = rawPath
-        ? [isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath)]
-        : input.tool === "apply_patch" && typeof args.patchText === "string"
-          ? extractPatchedPaths(args.patchText).map((item) => isAbsolute(item) ? item : resolve(cwd, item))
-          : [];
       if (!paths.length) throw new Error(`ImmutabilityGuard: ${input.tool} did not expose mutation targets.`);
 
       for (const unresolvedPath of paths) {
         const absolutePath = safeTarget(lexicalRoot, root, unresolvedPath);
         const relPath = relative(root, absolutePath).replace(/\\/g, "/");
-        if (isPublishedTaskPackage(relPath) && agent !== "prometheus") throw new Error(`ImmutabilityGuard: @${agent} cannot rewrite published task package: "${relPath}".`);
-        if (agent === "prometheus" && isPublishedTaskPackage(relPath)) continue;
-        if (isTrustedPath(relPath)) throw new Error(`ImmutabilityGuard: "${relPath}" is trusted control-plane state.`);
-        if (generated && !generated.editPaths.includes(relPath)) throw new Error(`ImmutabilityGuard: @${agent} cannot edit outside its declared edit paths: "${relPath}".`);
-        if (agent === "prometheus" && !PROMETHEUS_WRITABLE.some((pattern) => matchesPattern(relPath, pattern))) {
-          throw new Error(`ImmutabilityGuard: @prometheus is restricted to writing [${PROMETHEUS_WRITABLE.join(", ")}].`);
-        }
+        if (isGeneratedDirectPath(relPath)) throw new Error(`ImmutabilityGuard: @${agent} cannot rewrite published Direct agent definition: "${relPath}".`);
+        if (isProtectedControlPath(relPath)) throw new Error(`ImmutabilityGuard: "${relPath}" is trusted control-plane state.`);
+        if (policies.some((policy) => !policy.edit_paths.includes(relPath))) throw new Error(`ImmutabilityGuard: @${agent} cannot edit outside its declared edit paths: "${relPath}".`);
       }
     },
   };

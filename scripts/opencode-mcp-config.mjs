@@ -20,9 +20,25 @@ export function buildManagedMcp(configPath) {
   };
 }
 
-// MCP entries this project used to manage. Install prunes any that linger in a
-// config from an earlier profile, so upgrading removes them without a manual edit.
-const RETIRED_MANAGED_MCP_KEYS = ["cuddly-winner-notebooklm", "cuddly-winner-research-browser"];
+// Exact historical entries this project managed. Modified entries with the same
+// names are user-owned conflicts and must survive upgrades.
+const RETIRED_MANAGED_MCP = {
+  "cuddly-winner-notebooklm": [{
+    type: "local",
+    command: ["npx", "-y", "notebooklm-mcp@2.0.0"],
+    environment: {
+      HEADLESS: "true",
+      NOTEBOOKLM_PROFILE: "minimal",
+      NOTEBOOKLM_DISABLED_TOOLS: "setup_auth,re_auth,cleanup_data,add_notebook,update_notebook,remove_notebook,reset_session,close_session,generate_audio,download_audio",
+    },
+    enabled: true,
+  }],
+  "cuddly-winner-research-browser": [{
+    type: "local",
+    command: ["npx", "-y", "@playwright/mcp@0.0.78", "--headless", "--isolated"],
+    enabled: true,
+  }],
+};
 const RETIRED_LEGACY_MANAGED_MCP = {
   notebooklm: { type: "local", command: ["npx", "-y", "notebooklm-mcp@latest"], enabled: true },
 };
@@ -98,9 +114,11 @@ function printStatus(config, configPath) {
     process.stdout.write(`[${state}] ${name} mode=${modeOf(current)}\n`);
     if (state !== "managed") currentProfile = false;
   }
-  for (const name of RETIRED_MANAGED_MCP_KEYS) {
-    if (entries[name] === undefined) continue;
-    process.stdout.write(`[retired] ${name} mode=${modeOf(entries[name])}\n`);
+  for (const [name, historicalEntries] of Object.entries(RETIRED_MANAGED_MCP)) {
+    const entry = entries[name];
+    if (entry === undefined) continue;
+    const state = historicalEntries.some(historical => sameJson(entry, historical)) ? "retired" : "unmanaged";
+    process.stdout.write(`[${state}] ${name} mode=${modeOf(entry)}${state === "unmanaged" ? " (retired name; preserved)" : ""}\n`);
     currentProfile = false;
   }
   return currentProfile;
@@ -124,6 +142,7 @@ function printRetiredStatus(config) {
       currentProfile = false;
     } else if (entries[name] !== undefined) {
       process.stdout.write(`[unmanaged] ${name} mode=${modeOf(entries[name])} (retired name; preserved)\n`);
+      currentProfile = false;
     }
   }
   return currentProfile;
@@ -151,11 +170,13 @@ export function apply(action, configPath) {
         changed = true;
       }
     }
-    for (const name of RETIRED_MANAGED_MCP_KEYS) {
-      if (mcp[name] !== undefined) {
+    for (const [name, historicalEntries] of Object.entries(RETIRED_MANAGED_MCP)) {
+      if (historicalEntries.some(historical => sameJson(mcp[name], historical))) {
         delete mcp[name];
         changed = true;
         process.stdout.write(`Removed retired managed entry: ${name}\n`);
+      } else if (mcp[name] !== undefined) {
+        process.stdout.write(`Retired MCP conflict: ${name} (ownership not proven; preserved)\n`);
       }
     }
   } else if (action === "cleanup-retired" || action === "remove-retired") {

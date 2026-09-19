@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SDK_VERSION="1.17.15"
 PLAYWRIGHT_VERSION="1.58.2"
+YAML_VERSION="2.9.0"
 MANAGED_ENTRY_DRIFT=0
 STATUS_DRIFT=0
 
@@ -27,13 +28,7 @@ Options:
   --mode MODE            Install mode: copy (default) or symlink
   -h, --help             Show this help
 
-Configuration root precedence:
-  1) --config-dir
-  2) OPENCODE_DEPLOY_CONFIG_DIR
-  3) `opencode debug paths`
-
-Install deploys the complete managed profile. Status and remove always inspect
-every managed entry.
+Install deploys the Direct profile. Status and remove inspect every managed entry.
 EOF
 }
 
@@ -59,25 +54,23 @@ canonical_config_root() {
     let candidate = resolve(process.argv[1]);
     const missing = [];
     for (;;) {
-      let lexical;
       try {
-        lexical = lstatSync(candidate);
+        const lexical = lstatSync(candidate);
+        const existing = realpathSync(candidate);
+        if ((!lexical.isDirectory() && !lexical.isSymbolicLink()) || !statSync(existing).isDirectory()) {
+          throw new Error(`config-root ancestor is not a directory: ${candidate}`);
+        }
+        const result = resolve(existing, ...missing);
+        if (result === parse(result).root) throw new Error("the filesystem root cannot be an OpenCode config root");
+        process.stdout.write(result);
+        break;
       } catch (error) {
-        if (error.code !== "ENOENT") throw error;
+        if (error?.code !== "ENOENT") throw error;
         const parent = dirname(candidate);
         if (parent === candidate) throw new Error("no existing config-root ancestor");
         missing.unshift(basename(candidate));
         candidate = parent;
-        continue;
       }
-      const existing = realpathSync(candidate);
-      if (!lexical.isDirectory() && !lexical.isSymbolicLink() || !statSync(existing).isDirectory()) {
-        throw new Error(`config-root ancestor is not a directory: ${candidate}`);
-      }
-      const result = resolve(existing, ...missing);
-      if (result === parse(result).root) throw new Error("the filesystem root cannot be an OpenCode config root");
-      process.stdout.write(result);
-      break;
     }
   ' "$1"
 }
@@ -89,14 +82,14 @@ assert_managed_destination() {
     const { dirname, isAbsolute, join, relative, resolve, sep } = require("node:path");
     const root = resolve(process.argv[1]);
     const destination = resolve(process.argv[2]);
-    const destinationRelative = relative(root, destination);
-    if (destinationRelative === ".." || destinationRelative.startsWith(`..${sep}`) || isAbsolute(destinationRelative)) {
+    const relation = relative(root, destination);
+    if (relation === ".." || relation.startsWith(`..${sep}`) || isAbsolute(relation)) {
       process.stderr.write(`managed destination escapes config root: ${destination}\n`);
       process.exit(1);
     }
-    const parentRelative = relative(root, dirname(destination));
+    const parents = relative(root, dirname(destination));
     let current = root;
-    for (const part of parentRelative ? parentRelative.split(sep) : []) {
+    for (const part of parents ? parents.split(sep) : []) {
       current = join(current, part);
       try {
         const stat = lstatSync(current);
@@ -109,7 +102,7 @@ assert_managed_destination() {
           process.exit(1);
         }
       } catch (error) {
-        if (error.code !== "ENOENT") throw error;
+        if (error?.code !== "ENOENT") throw error;
       }
     }
   ' "$CONFIG_DIR" "$destination" || die "Unsafe managed destination: $destination"
@@ -156,8 +149,7 @@ links_equal() {
     const { readlinkSync } = require("node:fs");
     const { dirname, resolve } = require("node:path");
     const [source, destination] = process.argv.slice(1);
-    const target = resolve(dirname(destination), readlinkSync(destination));
-    process.exit(target === resolve(source) ? 0 : 1);
+    process.exit(resolve(dirname(destination), readlinkSync(destination)) === resolve(source) ? 0 : 1);
   ' "$src" "$dst"
 }
 
@@ -258,7 +250,6 @@ sync_group() {
   local mode="$4"
   shift 4
   local sources=("$@")
-
   printf '%s dir: %s\n' "$label" "$destination"
   printf '%s entries: %s\n' "$label" "${#sources[@]}"
   local src
@@ -267,62 +258,31 @@ sync_group() {
   done
 }
 
-sync_discoverable_skill_backups() {
-  # Iterate matches directly under nullglob. Bash 3.2 rejects "${empty[@]}"
-  # when nounset is set, so no intermediate array is collected here.
-  local backup target source name
-  assert_managed_destination "${SKILLS_DIR}/.cuddly-winner-parent-check"
-  shopt -s nullglob
-  for source in "${SKILL_SOURCES[@]}"; do
-    name="$(basename "$source")"
-    for backup in "${SKILLS_DIR}/${name}.bak."*; do
-      if [[ "$ACTION" == "status" ]]; then
-        printf '  [discoverable backup] %s\n' "$backup"
-        mark_managed_entry_drift
-      elif [[ "$ACTION" == "install" ]]; then
-        target="${CONFIG_DIR}/backups/skills/$(basename "$backup")"
-        assert_managed_destination "$target"
-        mkdir -p "$(dirname "$target")"
-        mv "$backup" "$target"
-        printf 'Relocated discoverable backup: %s -> %s\n' "$backup" "$target"
-      fi
-    done
-  done
-  shopt -u nullglob
-}
-
 sync_retired_agents() {
   local state_file="$1"
-  local name source expected_sha256 dst retired_output state_status_output state_status_failed=0
+  local name source expected_sha256 dst output state_failed=0
   local source_args=()
-  assert_managed_destination "$state_file"
   local agent_source
+  assert_managed_destination "$state_file"
   for agent_source in "${AGENT_SOURCES[@]}"; do
     source_args+=(--source "$agent_source")
   done
   if [[ "$ACTION" == "status" ]]; then
-    if state_status_output="$(node "$AGENT_STATE_HELPER" status --state "$state_file" "${source_args[@]}")"; then
-      printf '%s' "$state_status_output"
-      [[ -z "$state_status_output" ]] || printf '\n'
+    if output="$(node "$AGENT_STATE_HELPER" status --state "$state_file" "${source_args[@]}")"; then
+      [[ -z "$output" ]] || printf '%s\n' "$output"
     else
-      if [[ -n "$state_status_output" ]]; then
-        printf '%s\n' "$state_status_output"
-      else
-        printf 'Managed agent state: error\n'
-      fi
+      [[ -z "$output" ]] || printf '%s\n' "$output"
       mark_managed_entry_drift
-      state_status_failed=1
+      state_failed=1
     fi
   fi
-  if ! retired_output="$(node "$AGENT_STATE_HELPER" retired --state "$state_file" "${source_args[@]}")"; then
+  if ! output="$(node "$AGENT_STATE_HELPER" retired --state "$state_file" "${source_args[@]}")"; then
     if [[ "$ACTION" == "status" ]]; then
-      if [[ "$state_status_failed" == 0 ]]; then
-        printf 'Managed agent state: error\n'
-      fi
+      [[ "$state_failed" == 1 ]] || printf 'Managed agent state: error\n'
       mark_managed_entry_drift
-    else
-      return 1
+      return
     fi
+    die "Unable to read managed agent state"
   fi
   while IFS=$'\t' read -r name source expected_sha256; do
     [[ -n "$name" ]] || continue
@@ -332,7 +292,7 @@ sync_retired_agents() {
       if links_equal "$source" "$dst"; then
         printf '  [retired link] %s -> %s\n' "$dst" "$source"
         mark_managed_entry_drift
-      elif [[ -f "$dst" ]] && [[ "$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"))' "$dst")" == "$expected_sha256" ]]; then
+      elif [[ -f "$dst" && "$(node -e 'const { createHash } = require("node:crypto"); const { readFileSync } = require("node:fs"); process.stdout.write(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex"))' "$dst")" == "$expected_sha256" ]]; then
         printf '  [retired copy] %s\n' "$dst"
         mark_managed_entry_drift
       elif [[ -e "$dst" || -L "$dst" ]]; then
@@ -347,217 +307,88 @@ sync_retired_agents() {
         printf 'Skipped modified or unrelated retired agent: %s\n' "$dst"
       fi
     fi
-  done <<< "$retired_output"
-}
-
-git_blob_matches() {
-  local file="$1"
-  local expected="$2"
-  [[ -f "$file" && ! -L "$file" ]] || return 1
-  node -e '
-    const { createHash } = require("node:crypto");
-    const { readFileSync } = require("node:fs");
-    const [file, expected] = process.argv.slice(1);
-    const bytes = readFileSync(file);
-    const actual = createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
-    process.exit(actual === expected ? 0 : 1);
-  ' "$file" "$expected"
-}
-
-legacy_supervisor_directory_matches() {
-  local directory="$1"
-  [[ -d "$directory" && ! -L "$directory" ]] || return 1
-  node -e '
-    const { createHash } = require("node:crypto");
-    const { readFileSync, readdirSync } = require("node:fs");
-    const { join } = require("node:path");
-    const directory = process.argv[1];
-    const expected = new Map([
-      ["index.js", "e2a671b53677820427c10558b7cceeff932c3a6e"],
-      ["package.json", "5f1c68d15f12f1ef34b8769cacf6319a1aa98fcd"],
-    ]);
-    const entries = readdirSync(directory, { withFileTypes: true });
-    if (entries.length !== expected.size || entries.some(entry => !entry.isFile() || !expected.has(entry.name))) process.exit(1);
-    for (const entry of entries) {
-      const bytes = readFileSync(join(directory, entry.name));
-      const actual = createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
-      if (actual !== expected.get(entry.name)) process.exit(1);
-    }
-  ' "$directory"
-}
-
-retired_artifact_owned() {
-  local relative="$1"
-  local dst="${CONFIG_DIR}/${relative}"
-  if [[ -L "$dst" ]] && links_equal "${REPO_ROOT}/${relative}" "$dst"; then
-    return 0
-  fi
-  case "$relative" in
-    plugins/opencode-autonomous-supervisor.js)
-      git_blob_matches "$dst" "c43313a21bb4c0a05bd3810079b5cad45b650340"
-      ;;
-    plugins/opencode-autonomous-supervisor)
-      legacy_supervisor_directory_matches "$dst"
-      ;;
-    tools/run.ts)
-      git_blob_matches "$dst" "fec121e626de9da1776b0d8167174acb41c8168e"
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
-retired_browser_skill_owned() {
-  local dst="${SKILLS_DIR}/playwright-image-generation"
-  [[ -L "$dst" && "$(readlink "$dst")" == "${REPO_ROOT}/skills/playwright-image-generation" ]]
-}
-
-sync_retired_browser_skill() {
-  local dst="${SKILLS_DIR}/playwright-image-generation"
-  assert_managed_destination "$dst"
-  [[ -e "$dst" || -L "$dst" ]] || return 0
-  if retired_browser_skill_owned; then
-    if [[ "$ACTION" == "status" ]]; then
-      printf '  [retired managed skill] %s\n' "$dst"
-      mark_managed_entry_drift
-    else
-      rm -f "$dst"
-      printf 'Removed retired managed skill: %s\n' "$dst"
-    fi
-  else
-    printf 'Retired skill conflict: %s (ownership not proven; preserved)\n' "$dst"
-    if [[ "$ACTION" == "status" ]]; then
-      mark_managed_entry_drift
-    fi
-  fi
-}
-
-remove_owned_retired_artifact() {
-  local relative="$1"
-  local dst="${CONFIG_DIR}/${relative}"
-  if [[ -L "$dst" || -f "$dst" ]]; then
-    rm -f "$dst"
-  else
-    rm -f "$dst/index.js" "$dst/package.json"
-    rmdir "$dst"
-  fi
-  printf 'Removed retired managed artifact: %s\n' "$dst"
-}
-
-sync_retired_artifacts() {
-  local relative dst
-  for relative in \
-    plugins/opencode-autonomous-supervisor.js \
-    plugins/opencode-autonomous-supervisor \
-    tools/run.ts; do
-    dst="${CONFIG_DIR}/${relative}"
-    assert_managed_destination "$dst"
-    [[ -e "$dst" || -L "$dst" ]] || continue
-    if retired_artifact_owned "$relative"; then
-      if [[ "$ACTION" == "status" ]]; then
-        printf '  [retired managed artifact] %s\n' "$dst"
-        mark_managed_entry_drift
-      else
-        remove_owned_retired_artifact "$relative"
-      fi
-    else
-      printf 'Retired artifact conflict: %s (ownership not proven; preserved)\n' "$dst"
-      if [[ "$ACTION" == "status" ]]; then
-        mark_managed_entry_drift
-      fi
-    fi
-  done
+  done <<< "$output"
 }
 
 record_agent_state() {
-  local state_file="$1"
   local source_args=()
   local agent_source
-  assert_managed_destination "$state_file"
   for agent_source in "${AGENT_SOURCES[@]}"; do
     source_args+=(--source "$agent_source")
   done
-  node "$AGENT_STATE_HELPER" record --state "$state_file" --mode "$MODE" "${source_args[@]}"
+  node "$AGENT_STATE_HELPER" record --state "$AGENT_STATE_FILE" --mode "$MODE" "${source_args[@]}"
 }
 
-sync_rule_instructions() {
-  local action="$1"
-  shift
-  local sources=("$@")
-  [[ ${#sources[@]} -eq 0 ]] && return
-  assert_managed_destination "$OPENCODE_JSON"
-  command -v node >/dev/null 2>&1 || die "node is required to manage opencode.json instructions"
-  local dests=()
-  local src
-  for src in "${sources[@]}"; do
-    dests+=("${RULES_DIR}/$(basename "$src")")
-    assert_managed_destination "${RULES_DIR}/$(basename "$src")"
-  done
-  case "$action" in
-    install) node "$INSTRUCTIONS_HELPER" add --config "$OPENCODE_JSON" "${dests[@]}" ;;
-    remove) node "$INSTRUCTIONS_HELPER" remove --config "$OPENCODE_JSON" "${dests[@]}" ;;
-    status) node "$RULE_INSTRUCTIONS_STATUS_HELPER" status --config "$OPENCODE_JSON" "${dests[@]}" ;;
-  esac
-}
-
-feedback_locator_status() {
-  if [[ ! -e "$FEEDBACK_LOCATOR" && ! -L "$FEEDBACK_LOCATOR" ]]; then
-    printf 'Feedback locator: missing\n'
-    mark_status_drift
-    return
+sync_retired_assets() {
+  if ! node "$RETIRED_ASSETS_HELPER" "$ACTION" --root "$CONFIG_DIR" --repo "$REPO_ROOT"; then
+    if [[ "$ACTION" == "status" ]]; then
+      mark_status_drift
+    else
+      die "Unable to inspect retired managed assets"
+    fi
   fi
-  if [[ -L "$FEEDBACK_LOCATOR" || ! -f "$FEEDBACK_LOCATOR" ]]; then
-    printf 'Feedback locator: modified\n'
-    mark_status_drift
-    return
-  fi
-  local value locator_mode directory_mode
-  value="$(<"$FEEDBACK_LOCATOR")"
-  if ! locator_mode="$(node -e 'const { lstatSync } = require("node:fs"); process.stdout.write((lstatSync(process.argv[1]).mode & 0o777).toString(8))' "$FEEDBACK_LOCATOR")" ||
-     ! directory_mode="$(node -e 'const { lstatSync } = require("node:fs"); process.stdout.write((lstatSync(process.argv[1]).mode & 0o777).toString(8))' "$FEEDBACK_LOCATOR_DIR")"; then
-    printf 'Feedback locator: modified\n'
-    mark_status_drift
-  elif [[ "$value" == "$FEEDBACK_ROOT" && "$locator_mode" == "600" && "$directory_mode" == "700" ]]; then
-    printf 'Feedback locator: current\n'
-  elif [[ "$value" == /* && ! -d "$(dirname "$value")" ]]; then
-    printf 'Feedback locator: stale\n'
-    mark_status_drift
-  else
-    printf 'Feedback locator: modified\n'
-    mark_status_drift
-  fi
+  rmdir "$SKILLS_DIR" 2>/dev/null || true
 }
 
 sync_feedback_locator() {
   assert_managed_destination "$FEEDBACK_LOCATOR"
+  [[ -e "$FEEDBACK_LOCATOR" || -L "$FEEDBACK_LOCATOR" ]] || return 0
+  local expected="${REPO_ROOT}/feedback"
+  if [[ -f "$FEEDBACK_LOCATOR" && ! -L "$FEEDBACK_LOCATOR" && "$(<"$FEEDBACK_LOCATOR")" == "$expected" ]]; then
+    if [[ "$ACTION" == "status" ]]; then
+      printf '  [retired managed feedback locator] %s\n' "$FEEDBACK_LOCATOR"
+      mark_status_drift
+    else
+      rm -f "$FEEDBACK_LOCATOR"
+      printf 'Removed retired managed feedback locator: %s\n' "$FEEDBACK_LOCATOR"
+    fi
+  else
+    printf 'Retired feedback locator conflict: %s (ownership not proven; preserved)\n' "$FEEDBACK_LOCATOR"
+    [[ "$ACTION" == "status" ]] && mark_status_drift
+  fi
+}
+
+legacy_rule_present() {
+  node -e '
+    const { existsSync, readFileSync } = require("node:fs");
+    const [config, retired] = process.argv.slice(1);
+    if (!existsSync(config)) process.exit(1);
+    try {
+      const value = JSON.parse(readFileSync(config, "utf8"));
+      process.exit(Array.isArray(value.instructions) && value.instructions.includes(retired) ? 0 : 1);
+    } catch {
+      process.exit(1);
+    }
+  ' "$OPENCODE_JSON" "${RULES_DIR}/writing-and-output.md"
+}
+
+sync_rule_instructions() {
+  local current="${RULES_DIR}/resource-selection.md"
+  local retired="${RULES_DIR}/writing-and-output.md"
   case "$ACTION" in
-    status)
-      feedback_locator_status
+    install)
+      if [[ ! -e "$retired" && ! -L "$retired" ]]; then
+        node "$INSTRUCTIONS_HELPER" remove --config "$OPENCODE_JSON" "$retired"
+      else
+        printf 'Retired rule instruction conflict: %s (ownership not proven; preserved)\n' "$retired"
+      fi
+      node "$INSTRUCTIONS_HELPER" add --config "$OPENCODE_JSON" "$current"
       ;;
     remove)
-      if [[ -f "$FEEDBACK_LOCATOR" && ! -L "$FEEDBACK_LOCATOR" && "$(<"$FEEDBACK_LOCATOR")" == "$FEEDBACK_ROOT" ]]; then
-        rm -f "$FEEDBACK_LOCATOR"
-        printf 'Feedback locator: removed\n'
-      elif [[ -e "$FEEDBACK_LOCATOR" || -L "$FEEDBACK_LOCATOR" ]]; then
-        printf 'Feedback locator: modified; preserved\n'
+      node "$INSTRUCTIONS_HELPER" remove --config "$OPENCODE_JSON" "$current"
+      if [[ ! -e "$retired" && ! -L "$retired" ]]; then
+        node "$INSTRUCTIONS_HELPER" remove --config "$OPENCODE_JSON" "$retired"
       else
-        printf 'Feedback locator: missing\n'
+        printf 'Retired rule instruction conflict: %s (ownership not proven; preserved)\n' "$retired"
       fi
       ;;
-    install)
-      mkdir -p "$FEEDBACK_LOCATOR_DIR"
-      chmod 700 "$FEEDBACK_LOCATOR_DIR"
-      if [[ -f "$FEEDBACK_LOCATOR" && ! -L "$FEEDBACK_LOCATOR" && "$(<"$FEEDBACK_LOCATOR")" == "$FEEDBACK_ROOT" ]]; then
-        chmod 600 "$FEEDBACK_LOCATOR"
-        printf 'Feedback locator: current\n'
-      else
-        if [[ -e "$FEEDBACK_LOCATOR" || -L "$FEEDBACK_LOCATOR" ]]; then
-          backup_entry "$FEEDBACK_LOCATOR"
-        fi
-        (umask 077 && printf '%s\n' "$FEEDBACK_ROOT" > "$FEEDBACK_LOCATOR")
-        chmod 600 "$FEEDBACK_LOCATOR"
-        printf 'Feedback locator: installed\n'
+    status)
+      if ! node "$RULE_INSTRUCTIONS_STATUS_HELPER" status --config "$OPENCODE_JSON" "$current"; then
+        mark_status_drift
+      fi
+      if legacy_rule_present; then
+        printf '  [retired managed rule instruction] %s\n' "$retired"
+        mark_status_drift
       fi
       ;;
   esac
@@ -569,8 +400,10 @@ install_tool_sdk() {
   local vendored_modules="${REPO_ROOT}/node_modules"
   local vendored_package="${vendored_modules}/@opencode-ai/plugin/package.json"
   local vendored_playwright="${vendored_modules}/playwright/package.json"
+  local vendored_yaml="${vendored_modules}/yaml/package.json"
   local vendored_version=""
   local vendored_playwright_version=""
+  local vendored_yaml_version=""
   local stage_root stage_runtime
   assert_managed_destination "${config_dir}/node_modules/@opencode-ai/plugin/package.json"
   assert_managed_destination "${config_dir}/node_modules/playwright/package.json"
@@ -580,20 +413,20 @@ install_tool_sdk() {
   if [[ -f "$vendored_playwright" ]]; then
     vendored_playwright_version="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$vendored_playwright")"
   fi
+  if [[ -f "$vendored_yaml" ]]; then
+    vendored_yaml_version="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$vendored_yaml")"
+  fi
   stage_root="$(mktemp -d "${config_dir}/.cuddly-winner-runtime-stage.XXXXXX")"
   stage_runtime="${stage_root}/node_modules"
   assert_managed_destination "$stage_runtime"
-  if [[ "$vendored_version" == "$SDK_VERSION" && "$vendored_playwright_version" == "$PLAYWRIGHT_VERSION" ]]; then
+  if [[ "$vendored_version" == "$SDK_VERSION" && "$vendored_playwright_version" == "$PLAYWRIGHT_VERSION" && "$vendored_yaml_version" == "$YAML_VERSION" ]]; then
     if ! mkdir -p "$stage_runtime" || ! cp -R "${vendored_modules}/." "${stage_runtime}/"; then
       rm -rf "$stage_root"
       die "Unable to copy the pinned OpenCode tool runtime into a clean staging directory"
     fi
   else
-    if ! command -v npm >/dev/null 2>&1; then
-      rm -rf "$stage_root"
-      die "npm is required to install the OpenCode tool runtime"
-    fi
-    if ! PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix "$stage_root" --no-save --no-audit --no-fund "@opencode-ai/plugin@${SDK_VERSION}" "playwright@${PLAYWRIGHT_VERSION}" >/dev/null; then
+    command -v npm >/dev/null 2>&1 || die "npm is required to install the OpenCode tool runtime"
+    if ! PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix "$stage_root" --no-save --no-audit --no-fund "@opencode-ai/plugin@${SDK_VERSION}" "playwright@${PLAYWRIGHT_VERSION}" "yaml@${YAML_VERSION}" >/dev/null; then
       rm -rf "$stage_root"
       die "Unable to install the OpenCode tool runtime in a clean staging directory"
     fi
@@ -601,10 +434,10 @@ install_tool_sdk() {
   if ! node -e '
     const { readFileSync } = require("node:fs");
     const { join } = require("node:path");
-    const [root, sdk, playwright] = process.argv.slice(1);
+    const [root, sdk, playwright, yaml] = process.argv.slice(1);
     const version = name => JSON.parse(readFileSync(join(root, name, "package.json"), "utf8")).version;
-    process.exit(version("@opencode-ai/plugin") === sdk && version("playwright") === playwright ? 0 : 1);
-  ' "$stage_runtime" "$SDK_VERSION" "$PLAYWRIGHT_VERSION"; then
+    process.exit(version("@opencode-ai/plugin") === sdk && version("playwright") === playwright && version("yaml") === yaml ? 0 : 1);
+  ' "$stage_runtime" "$SDK_VERSION" "$PLAYWRIGHT_VERSION" "$YAML_VERSION"; then
     rm -rf "$stage_root"
     die "Clean runtime staging did not produce the pinned package versions"
   fi
@@ -620,7 +453,6 @@ install_tool_sdk() {
     rm -rf "$stage_root"
     die "Pinned Playwright Chromium build is unavailable after installation"
   fi
-
   if [[ -e "$runtime_root" || -L "$runtime_root" ]]; then
     if node "$RUNTIME_INTEGRITY_HELPER" compare --root "$runtime_root" --state "$RUNTIME_INTEGRITY_STATE" --expected-root "$stage_runtime" &&
        node "$RUNTIME_INTEGRITY_HELPER" status --root "$runtime_root" --state "$RUNTIME_INTEGRITY_STATE" >/dev/null; then
@@ -639,8 +471,6 @@ install_tool_sdk() {
   node "$RUNTIME_INTEGRITY_HELPER" status --root "$runtime_root" --state "$RUNTIME_INTEGRITY_STATE" >/dev/null
 }
 
-# Browser control files always install as copies at the config root. They run
-# or manage Playwright login state and must never become source-tree symlinks.
 install_browser_control_file() {
   local src="$1"
   local dst="$2"
@@ -692,14 +522,7 @@ runtime_package_status() {
   if [[ ! -f "$package_file" || -L "$package_file" ]]; then
     printf '  [missing] runtime package: %s (expected %s)\n' "$package" "$expected"
     mark_status_drift
-    return
-  fi
-  if ! actual="$(node -e '
-    const { readFileSync } = require("node:fs");
-    const value = JSON.parse(readFileSync(process.argv[1], "utf8"));
-    if (typeof value.version !== "string") process.exit(1);
-    process.stdout.write(value.version);
-  ' "$package_file" 2>/dev/null)"; then
+  elif ! actual="$(node -e 'const { readFileSync } = require("node:fs"); const value = JSON.parse(readFileSync(process.argv[1], "utf8")); if (typeof value.version !== "string") process.exit(1); process.stdout.write(value.version);' "$package_file" 2>/dev/null)"; then
     printf '  [invalid metadata] runtime package: %s (expected %s)\n' "$package" "$expected"
     mark_status_drift
   elif [[ "$actual" == "$expected" ]]; then
@@ -714,6 +537,7 @@ runtime_status() {
   printf 'Runtime packages:\n'
   runtime_package_status "@opencode-ai/plugin" "$SDK_VERSION"
   runtime_package_status "playwright" "$PLAYWRIGHT_VERSION"
+  runtime_package_status "yaml" "$YAML_VERSION"
   if ! node -e '
     const { existsSync } = require("node:fs");
     const { chromium } = require(process.argv[1]);
@@ -763,23 +587,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ "$MODE" == "copy" || "$MODE" == "symlink" ]] || die "Invalid --mode '$MODE'. Use 'copy' or 'symlink'."
-
+[[ "$MODE" == "copy" || "$MODE" == "symlink" ]] || die "Invalid --mode '$MODE'. Use copy or symlink."
 RAW_CONFIG_DIR="${CONFIG_ARG:-${OPENCODE_DEPLOY_CONFIG_DIR:-}}"
 if [[ -z "$RAW_CONFIG_DIR" ]]; then
-  if ! RAW_CONFIG_DIR="$(debug_config_dir)"; then
-    die "Unable to resolve OpenCode config directory. Set --config-dir or OPENCODE_DEPLOY_CONFIG_DIR."
-  fi
+  RAW_CONFIG_DIR="$(debug_config_dir)" || die "Unable to resolve OpenCode config directory. Set --config-dir or OPENCODE_DEPLOY_CONFIG_DIR."
 fi
-[[ -n "$RAW_CONFIG_DIR" ]] || die "Unable to resolve OpenCode config directory. Set --config-dir or OPENCODE_DEPLOY_CONFIG_DIR."
-
-if ! CONFIG_DIR="$(canonical_config_root "$(resolve_path "$RAW_CONFIG_DIR")")"; then
-  die "Unable to resolve a safe OpenCode config directory: $RAW_CONFIG_DIR"
-fi
+CONFIG_DIR="$(canonical_config_root "$(resolve_path "$RAW_CONFIG_DIR")")" || die "Unable to resolve a safe OpenCode config directory: $RAW_CONFIG_DIR"
 if [[ "$ACTION" == "install" ]]; then
   mkdir -p "$CONFIG_DIR"
   CONFIG_DIR="$(cd "$CONFIG_DIR" && pwd -P)"
 fi
+
 AGENTS_DIR="${CONFIG_DIR}/agents"
 PLUGINS_DIR="${CONFIG_DIR}/plugins"
 TOOLS_DIR="${CONFIG_DIR}/tools"
@@ -789,17 +607,14 @@ OPENCODE_JSON="${CONFIG_DIR}/opencode.json"
 LEGACY_OPENCODE_JSON="${CONFIG_DIR}/config.json"
 AGENT_STATE_FILE="${AGENTS_DIR}/cuddly-winner-managed.json"
 RUNTIME_INTEGRITY_STATE="${CONFIG_DIR}/node_modules/.cuddly-winner-runtime-integrity.json"
-FEEDBACK_LOCATOR_DIR="${CONFIG_DIR}/feedback"
-FEEDBACK_LOCATOR="${FEEDBACK_LOCATOR_DIR}/cuddly-winner-feedback-root"
-FEEDBACK_ROOT="$(cd "$REPO_ROOT" && pwd -P)/feedback"
-[[ "$FEEDBACK_ROOT" != *$'\n'* ]] || die "Repository path cannot contain a newline."
+FEEDBACK_LOCATOR="${CONFIG_DIR}/feedback/cuddly-winner-feedback-root"
 INSTRUCTIONS_HELPER="${SCRIPT_DIR}/opencode-instructions.mjs"
 RULE_INSTRUCTIONS_STATUS_HELPER="${SCRIPT_DIR}/opencode-rule-instructions.mjs"
 MCP_HELPER="${SCRIPT_DIR}/opencode-mcp-config.mjs"
-# The single Playwright browser backend installs as five copies at the config
-# root: the task MCP server, secure state store, shared runtime, Xvfb launcher,
-# and visible login helper. All handle or resolve authentication state, so they
-# are always copies and never source-tree symlinks.
+AGENT_STATE_HELPER="${SCRIPT_DIR}/opencode-agent-state.mjs"
+RETIRED_ASSETS_HELPER="${SCRIPT_DIR}/opencode-retired-assets.mjs"
+RUNTIME_INTEGRITY_HELPER="${SCRIPT_DIR}/opencode-runtime-integrity.mjs"
+
 BROWSER_MCP_SERVER_SOURCE="${SCRIPT_DIR}/opencode-playwright-mcp.mjs"
 BROWSER_MCP_SERVER_DEST="${CONFIG_DIR}/opencode-playwright-mcp.mjs"
 BROWSER_STATE_SOURCE="${SCRIPT_DIR}/opencode-browser-state.mjs"
@@ -810,26 +625,15 @@ BROWSER_RUNTIME_SOURCE="${SCRIPT_DIR}/opencode-browser-runtime.mjs"
 BROWSER_RUNTIME_DEST="${CONFIG_DIR}/opencode-browser-runtime.mjs"
 BROWSER_SERVICE_SOURCE="${SCRIPT_DIR}/opencode-browser-service.mjs"
 BROWSER_SERVICE_DEST="${CONFIG_DIR}/opencode-browser-service.mjs"
-AGENT_STATE_HELPER="${SCRIPT_DIR}/opencode-agent-state.mjs"
-RUNTIME_INTEGRITY_HELPER="${SCRIPT_DIR}/opencode-runtime-integrity.mjs"
 
-shopt -s nullglob
-AGENT_SOURCES=("${REPO_ROOT}"/agents/*.md)
-SKILL_SOURCES=()
-for source in "${REPO_ROOT}"/skills/*; do
-  [[ -f "$source/SKILL.md" ]] && SKILL_SOURCES+=("$source")
-done
-RULE_SOURCES=("${REPO_ROOT}"/rules/*.md)
-shopt -u nullglob
-PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/autonomous-kpis.ts" "${REPO_ROOT}/plugins/announce-hygiene.ts")
-PLUGIN_MODE="copy"
-SESSION_FETCH_SOURCE="${REPO_ROOT}/tools/session_fetch.ts"
-SESSION_FETCH_MODE="copy"
-TOOL_SOURCES=(
-  "${REPO_ROOT}/tools/scaffold_gitignore.ts"
-  "${REPO_ROOT}/tools/spike.ts"
-  "${REPO_ROOT}/tools/validate_scaffold.ts"
+AGENT_SOURCES=(
+  "${REPO_ROOT}/agents/ask.md"
+  "${REPO_ROOT}/agents/grounder.md"
+  "${REPO_ROOT}/agents/prometheus.md"
 )
+PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts")
+TOOL_SOURCES=("${REPO_ROOT}/tools/publish_direct_agent.ts")
+RULE_SOURCES=("${REPO_ROOT}/rules/resource-selection.md")
 
 assert_config_destination "$OPENCODE_JSON"
 assert_config_destination "$LEGACY_OPENCODE_JSON"
@@ -839,35 +643,27 @@ printf 'Mode: %s\n' "$MODE"
 printf 'OpenCode config dir: %s\n' "$CONFIG_DIR"
 
 if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
-  if [[ "$ACTION" == "status" ]]; then
-    printf 'Retired agents:\n'
-  fi
+  [[ "$ACTION" == "status" ]] && printf 'Retired agents:\n'
   sync_retired_agents "$AGENT_STATE_FILE"
+  sync_retired_assets
   sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
-  sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
-  sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"
-  sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
-  sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
-  sync_discoverable_skill_backups
+  sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "copy" "${PLUGIN_SOURCES[@]}"
+  sync_group "Tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
-   sync_retired_artifacts
-  sync_retired_browser_skill
+  sync_feedback_locator
+  sync_rule_instructions
   if [[ "$ACTION" == "status" ]]; then
     if [[ "$MANAGED_ENTRY_DRIFT" == 0 ]]; then
       printf 'Managed entries: current\n'
     else
       printf 'Managed entries: drifted; run install, then restart OpenCode.\n'
     fi
-    if ! sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"; then
-      mark_status_drift
-    fi
-    if ! node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"; then
+    if ! node "$MCP_HELPER" status --config "$OPENCODE_JSON"; then
       mark_status_drift
     fi
     if ! node "$MCP_HELPER" status-retired --config "$LEGACY_OPENCODE_JSON"; then
       mark_status_drift
     fi
-    sync_feedback_locator
     runtime_status
     if [[ "$STATUS_DRIFT" == 0 ]]; then
       printf 'Managed profile: current\n'
@@ -876,11 +672,8 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
     fi
     exit "$STATUS_DRIFT"
   fi
-  sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
-  node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
+  node "$MCP_HELPER" remove --config "$OPENCODE_JSON"
   node "$MCP_HELPER" remove-retired --config "$LEGACY_OPENCODE_JSON"
-  sync_feedback_locator
-  assert_managed_destination "$RUNTIME_INTEGRITY_STATE"
   node "$RUNTIME_INTEGRITY_HELPER" remove --root "${CONFIG_DIR}/node_modules" --state "$RUNTIME_INTEGRITY_STATE"
   remove_browser_control_file "$BROWSER_MCP_SERVER_SOURCE" "$BROWSER_MCP_SERVER_DEST"
   remove_browser_control_file "$BROWSER_STATE_SOURCE" "$BROWSER_STATE_DEST"
@@ -891,27 +684,23 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
 fi
 
 sync_retired_agents "$AGENT_STATE_FILE"
+sync_retired_assets
+sync_feedback_locator
 sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
-sync_retired_artifacts
-sync_retired_browser_skill
-record_agent_state "$AGENT_STATE_FILE"
-sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "$PLUGIN_MODE" "${PLUGIN_SOURCES[@]}"
-sync_group "Session fetch tool" "$TOOLS_DIR" "$ACTION" "$SESSION_FETCH_MODE" "$SESSION_FETCH_SOURCE"
-sync_group "Workflow tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
+record_agent_state
+sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "copy" "${PLUGIN_SOURCES[@]}"
+sync_group "Tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
 install_browser_control_file "$BROWSER_MCP_SERVER_SOURCE" "$BROWSER_MCP_SERVER_DEST"
 install_browser_control_file "$BROWSER_STATE_SOURCE" "$BROWSER_STATE_DEST"
 install_browser_control_file "$BROWSER_LOGIN_SOURCE" "$BROWSER_LOGIN_DEST"
 install_browser_control_file "$BROWSER_RUNTIME_SOURCE" "$BROWSER_RUNTIME_DEST"
 install_browser_control_file "$BROWSER_SERVICE_SOURCE" "$BROWSER_SERVICE_DEST"
-sync_discoverable_skill_backups
-sync_group "Skills" "$SKILLS_DIR" "$ACTION" "$MODE" "${SKILL_SOURCES[@]}"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
-sync_rule_instructions "$ACTION" "${RULE_SOURCES[@]}"
-node "$MCP_HELPER" "$ACTION" --config "$OPENCODE_JSON"
-if [[ "$ACTION" == "install" && -f "$LEGACY_OPENCODE_JSON" ]]; then
+sync_rule_instructions
+node "$MCP_HELPER" install --config "$OPENCODE_JSON"
+if [[ -f "$LEGACY_OPENCODE_JSON" ]]; then
   node "$MCP_HELPER" cleanup-retired --config "$LEGACY_OPENCODE_JSON"
 fi
-sync_feedback_locator
 
 printf 'Done. Restart OpenCode to load changed agents, plugins, or tools.\n'

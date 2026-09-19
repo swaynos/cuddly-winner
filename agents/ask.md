@@ -8,9 +8,6 @@ tools:
   apply_patch: false
 permission:
   bash: deny
-  spike: deny
-  scaffold_gitignore: deny
-  validate_scaffold: deny
   read: allow
   grep: allow
   glob: allow

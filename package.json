@@ -9,6 +9,10 @@
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.17.15",
-    "playwright": "1.58.2"
+    "playwright": "1.58.2",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "opencode-ai": "1.18.31"
   }
 }

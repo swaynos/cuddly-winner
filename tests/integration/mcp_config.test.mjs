@@ -59,10 +59,11 @@ test("managed MCP status exits nonzero for missing and modified entries", async 
   );
 }));
 
-test("managed MCP install prunes the retired notebooklm and research-browser entries", async () => fixture(async (_root, file) => {
+test("managed MCP install prunes only exact retired entries", async () => fixture(async (_root, file) => {
+  const modifiedNotebook = { type: "local", command: ["/custom/notebooklm-mcp"], enabled: true };
   await writeFile(file, JSON.stringify({
     mcp: {
-      "cuddly-winner-notebooklm": { type: "local", command: ["/old/notebooklm-mcp"], enabled: true },
+      "cuddly-winner-notebooklm": modifiedNotebook,
       "cuddly-winner-research-browser": { type: "local", command: ["npx", "-y", "@playwright/mcp@0.0.78", "--headless", "--isolated"], enabled: true },
       "user-x": { type: "local", command: ["x"] },
     },
@@ -70,14 +71,14 @@ test("managed MCP install prunes the retired notebooklm and research-browser ent
   await assert.rejects(
     invoke(mcp, ["status", "--config", file]),
     error => error.code === 1
-      && /\[retired\] cuddly-winner-notebooklm/.test(error.stdout)
+      && /\[unmanaged\] cuddly-winner-notebooklm/.test(error.stdout)
       && /\[retired\] cuddly-winner-research-browser/.test(error.stdout),
   );
   const result = await invoke(mcp, ["install", "--config", file]);
-  assert.match(result.stdout, /Removed retired managed entry: cuddly-winner-notebooklm/);
+  assert.match(result.stdout, /Retired MCP conflict: cuddly-winner-notebooklm/);
   assert.match(result.stdout, /Removed retired managed entry: cuddly-winner-research-browser/);
   const after = await config(file);
-  assert.equal(after.mcp["cuddly-winner-notebooklm"], undefined);
+  assert.deepEqual(after.mcp["cuddly-winner-notebooklm"], modifiedNotebook);
   assert.equal(after.mcp["cuddly-winner-research-browser"], undefined);
   assert.ok(after.mcp["cuddly-winner-browser"]);
   assert.deepEqual(after.mcp["user-x"], { type: "local", command: ["x"] });
@@ -121,6 +122,10 @@ test("retired MCP cleanup preserves a user-owned notebooklm entry", async () => 
   const userOwned = { type: "remote", url: "https://example.test/notebooklm", enabled: true };
   await writeFile(file, JSON.stringify({ mcp: { notebooklm: userOwned } }));
 
+  await assert.rejects(
+    invoke(mcp, ["status-retired", "--config", file]),
+    error => error.code === 1 && /\[unmanaged\] notebooklm/.test(error.stdout),
+  );
   await assert.rejects(
     invoke(mcp, ["cleanup-retired", "--config", file]),
     error => error.code === 1 && /ownership not proven; preserved/.test(error.stdout),
