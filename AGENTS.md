@@ -30,7 +30,7 @@ The profile supports one Direct-agent format only:
 
 It embeds schema version 1 policy with exact edit paths and boolean Bash access.
 Do not add a registry, manifest, task brief, migration, alias, strategy
-vocabulary, KPI policy, loop, or compatibility path. A legacy package must be
+vocabulary, KPI policy, or compatibility path. A legacy package must be
 republished as a Direct agent.
 
 Ask and Grounder are read-only. Prometheus publishes Direct agents but does not
