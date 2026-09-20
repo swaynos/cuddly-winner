@@ -82,9 +82,11 @@ or spawn arbitrary tasks. The tool creates a new native General child for each
 build and another new child for validation. It passes the goal definition to
 both, previous validation findings only to the builder, and never passes the
 builder conversation to the validator. Child parentID preserves the existing
-Direct policy inheritance. Children cannot delegate or publish agents. Validator
-edit tools are denied; shell verification remains permission-controlled and must
-not change product code. The guard does not sandbox shell effects.
+Direct policy inheritance. Both builder and validator children explicitly receive
+read, glob, grep, and list inspection permissions. Children cannot delegate or
+publish agents. Validator edit tools are denied; shell verification remains
+permission-controlled and must not change product code. An approval-gated Bash
+permission is not a command allowlist or shell sandbox.
 
 The validator records structured evidence for every fixed criterion through
 goal_verdict, which accepts calls only from the active validator session. This

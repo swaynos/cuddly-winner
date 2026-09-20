@@ -84,6 +84,10 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
         const child = data(await client.session.create({ body: {
           parentID: id, title: `Goal ${role}: ${goal.agent}`,
           permission: [
+            { permission: "read", pattern: "*", action: "allow" },
+            { permission: "glob", pattern: "*", action: "allow" },
+            { permission: "grep", pattern: "*", action: "allow" },
+            { permission: "list", pattern: "*", action: "allow" },
             { permission: "task", pattern: "*", action: "deny" },
             { permission: "goal_cycle", pattern: "*", action: "deny" },
             { permission: "goal_verdict", pattern: "*", action: role === "validator" ? "allow" : "deny" },

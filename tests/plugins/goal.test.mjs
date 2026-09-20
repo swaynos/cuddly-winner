@@ -74,7 +74,15 @@ test("failed validation repairs in new sessions; only independent validation com
   assert.match(f.prompts[2].body.parts[0].text, /expected 2, got 1/);
   assert.doesNotMatch(f.prompts[3].body.parts[0].text, /expected 2, got 1/);
   assert.ok(f.prompts.every(p => p.body.agent === "general" && p.body.model.modelID === "test"));
+  for (const call of [f.calls[0], f.calls[1]]) {
+    for (const perm of ["read", "glob", "grep", "list"]) {
+      assert.equal(call.permission.find(p => p.permission === perm)?.action, "allow");
+    }
+  }
+  assert.equal(f.calls[0].permission.find(p => p.permission === "edit").action, "allow");
   assert.equal(f.calls[1].permission.find(p => p.permission === "edit").action, "deny");
+  assert.equal(f.calls[0].permission.find(p => p.permission === "bash").action, "ask");
+  assert.equal(f.calls[1].permission.find(p => p.permission === "bash").action, "ask");
   f.finish(second);
   await f.idle();
   assert.equal(f.continuations.length, 1);
@@ -204,3 +212,10 @@ test("interrupted tool records and model aborts survive plugin reload without re
   await reloaded.event({ event: { type: "session.idle", properties: { sessionID: "root" } } });
   assert.equal(f.continuations.length, 0);
 }));
+
+test("disabled bash in policy denies bash on both children", async () => fixture(async f => {
+  await f.cycle();
+  for (const call of f.calls) {
+    assert.equal(call.permission.find(p => p.permission === "bash")?.action, "deny");
+  }
+}, { bash: false }));

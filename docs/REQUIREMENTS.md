@@ -30,8 +30,11 @@ feeds findings to the next fresh builder. Only criterion-by-criterion validation
 with tool evidence establishes completion. A premature coordinator stop resumes
 automatically; cancellation, denied permissions, unknown API outcomes, and genuine
 blockers remain incomplete and require explicit user input before resuming.
-The validator cannot use edit tools or delegate; it must not modify product code
-through shell commands. This is not a shell sandbox.
+Both builder and validator child sessions explicitly receive read, glob, grep, and
+list inspection permissions. The validator cannot use edit tools or delegate; when
+Bash is enabled, it receives an approval-gated verification channel and must not
+modify product code through shell commands. Approval is not a command allowlist;
+this is not a shell sandbox.
 An optional verified provider/model ID in the generated frontmatter pins execution;
 otherwise both children use the selected coordinator model.
 Direct agents cannot rewrite their generated definition or trusted profile sources. Their
