@@ -1,8 +1,10 @@
 # Cuddly Winner
 
-Cuddly Winner is a small optional OpenCode profile. Native Plan and Build remain
-the default for ordinary work. Prometheus is available when a task benefits from
-a durable, bounded implementation handoff.
+Cuddly Winner is a small optional OpenCode profile that works seamlessly with
+default OpenCode Plan and Build without altering their native behavior. Any new
+behaviors introduced by this project work strictly within their intended surfaces.
+Native Plan and Build remain the default for ordinary work. Prometheus is available
+when a task benefits from a durable, bounded implementation handoff.
 
 ## Profile
 

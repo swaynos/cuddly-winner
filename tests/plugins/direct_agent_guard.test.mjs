@@ -186,15 +186,34 @@ test("Prometheus may publish Direct agents but cannot edit or use Bash", async (
   );
 }));
 
-test("only Prometheus may publish Direct agents", async () => fixture(async root => {
-  const instance = await guard(root, { build: "build" });
-  await assert.rejects(
-    instance["tool.execute.before"](
-      { tool: "publish_direct_agent", sessionID: "build", callID: "publish" },
-      { args: {} },
-    ),
-    /only @prometheus/,
+test("only root Prometheus and Build sessions may publish Direct agents", async () => fixture(async root => {
+  const instance = await guard(root, {
+    build: "build",
+    planner: "prometheus",
+    plan: "plan",
+    ask: "ask",
+    general: "general",
+    unknown: undefined,
+    child: "build",
+  }, { child: "build" });
+  await instance["tool.execute.before"](
+    { tool: "publish_direct_agent", sessionID: "build", callID: "publish" },
+    { args: {} },
   );
+  await instance["tool.execute.before"](
+    { tool: "publish_direct_agent", sessionID: "planner", callID: "publish" },
+    { args: {} },
+  );
+  for (const sessionID of ["plan", "ask", "general", "unknown", "child"]) {
+    await assert.rejects(
+      instance["tool.execute.before"](
+        { tool: "publish_direct_agent", sessionID, callID: "publish" },
+        { args: {} },
+      ),
+      /only @prometheus or @build/,
+      sessionID,
+    );
+  }
 }));
 
 test("children keep their own role limits and cannot inherit publication", async () => fixture(async root => {
@@ -220,7 +239,7 @@ test("children keep their own role limits and cannot inherit publication", async
         { tool: "publish_direct_agent", sessionID, callID: "publish" },
         { args: {} },
       ),
-      /only @prometheus/,
+      /only @prometheus or @build/,
     );
   }
   await assert.rejects(

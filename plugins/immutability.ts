@@ -11,7 +11,7 @@ import {
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 const SHELL_TOOLS = new Set(["bash"]);
-const PROMETHEUS_ONLY_TOOLS = new Set(["publish_direct_agent"]);
+const DIRECT_PUBLISH_TOOLS = new Set(["publish_direct_agent"]);
 const BROWSER_FILE_WRITE_TOOLS = new Set(["browser_screenshot", "browser_download", "browser_save_media"]);
 const MANAGED_AGENTS = new Set(["ask", "prometheus", "grounder"]);
 const READ_ONLY_AGENTS = new Set(["ask", "grounder"]);
@@ -183,15 +183,19 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       if (exposesBrowserState(input.tool)) {
         throw new Error(`ImmutabilityGuard: ${input.tool} is blocked because it can hand saved browser authentication state to the model. Managed browser tools load login state privately; export tools are never permitted.`);
       }
-      if (!mutatesFiles(input.tool) && !SHELL_TOOLS.has(input.tool) && !PROMETHEUS_ONLY_TOOLS.has(input.tool)) return;
+      if (!mutatesFiles(input.tool) && !SHELL_TOOLS.has(input.tool) && !DIRECT_PUBLISH_TOOLS.has(input.tool)) return;
 
       const resolution = await resolveAgent(input.sessionID);
       if (!resolution.valid) throw new Error("ImmutabilityGuard: session has invalid or cyclic ancestry; mutation and shell access are denied.");
       const agents = resolution.agents;
 
-      if (PROMETHEUS_ONLY_TOOLS.has(input.tool)) {
-        if (resolution.hasParent || resolution.current !== "prometheus" || agents.length !== 1 || agents[0] !== "prometheus") {
-          throw new Error(`ImmutabilityGuard: only @prometheus may invoke ${input.tool}.`);
+      if (DIRECT_PUBLISH_TOOLS.has(input.tool)) {
+        const canPublish =
+          !resolution.hasParent &&
+          ((resolution.current === "prometheus" && agents.length === 1 && agents[0] === "prometheus") ||
+           (resolution.current === "build" && agents.length === 0));
+        if (!canPublish) {
+          throw new Error(`ImmutabilityGuard: only @prometheus or @build may invoke ${input.tool}.`);
         }
         return;
       }

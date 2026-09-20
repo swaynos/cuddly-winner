@@ -2,10 +2,12 @@
 
 ## Scope
 
-Cuddly Winner is an optional OpenCode profile. Native Plan and Build remain the
-default path for ordinary work. The profile adds a small planning path without a
-command sandbox, virtual machine, or protected evidence store. Its goal runtime
-is scoped to the single generated Direct-agent format on OpenCode V1.
+Cuddly Winner is an optional OpenCode profile designed to work seamlessly with
+default OpenCode Plan and Build. It does not change their native behavior, and any
+new behaviors introduced by the profile work strictly within their intended surfaces.
+Native Plan and Build remain the default path for ordinary work. The profile adds a small
+planning path without a command sandbox, virtual machine, or protected evidence store.
+Its goal runtime is scoped to the single generated Direct-agent format on OpenCode V1.
 
 ## Managed Profile
 
@@ -28,7 +30,7 @@ for a person to log in. Browser state stays outside the repository.
 
 ## Direct Agents
 
-Prometheus publishes exactly one self-contained file:
+A root Prometheus or Build session publishes exactly one self-contained file:
 
 ```text
 .opencode/agents/generated/<task-derived-name>.md
@@ -64,7 +66,7 @@ allows exact `edit_paths`, applies the boolean Bash decision, blocks generated
 definition rewrites and trusted profile sources, and carries the same boundary to
 descendants. All managed ancestor restrictions combine, so a child cannot loosen
 a read-only, Prometheus, or Direct-policy boundary. Only the selected root
-Prometheus session may publish. Native and unrelated project-local agents remain
+Prometheus or Build session may publish. Native and unrelated project-local agents remain
 outside the Direct policy. Browser screenshot, download, and media-save tools use
 the same path checks as edit tools. Profile sources under `agents/`, `plugins/`,
 `tools/`, `rules/`, and `scripts/` are trusted control paths and cannot appear in
@@ -76,8 +78,8 @@ mutation and Bash and tells the user to republish it as a Direct agent.
 
 ### Goal Execution
 
-Prometheus interviews and publishes; it never executes the goal. The generated
-root agent coordinates through goal_cycle and cannot directly edit, run Bash,
+Publishing does not start goal execution. Selecting the generated root agent starts
+its workflow; it coordinates through goal_cycle and cannot directly edit, run Bash,
 or spawn arbitrary tasks. The tool creates a new native General child for each
 build and another new child for validation. It passes the goal definition to
 both, previous validation findings only to the builder, and never passes the

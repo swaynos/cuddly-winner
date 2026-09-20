@@ -33,7 +33,7 @@
   - `Prometheus`: Planning-only publisher. Can invoke `publish_direct_agent`, but **MUST NOT** implement tasks, edit files, or run Bash.
   - Generated Direct goal agents own build AND independent validation iterations, each in a fresh child session. The goal runtime continues after failed validation or premature completion; cancellation, denied permissions, and genuine blockers stop it as incomplete.
   - Keep orchestration scoped to the single Direct-agent format. This does not prohibit user-requested automation in other projects.
-  - `Plan` and `Build`: Native OpenCode Plan and Build must remain fully available without requiring a specialist handoff.
+  - `Plan` and `Build`: Native OpenCode Plan and Build remain fully available without requiring a specialist handoff, and work seamlessly without altered behavior. Any new behaviors introduced by this project work strictly within their intended surfaces. Root Build sessions can also invoke `publish_direct_agent`.
 
 ## Browser Boundary
 

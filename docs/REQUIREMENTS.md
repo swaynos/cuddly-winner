@@ -3,8 +3,9 @@
 ## Product Goal
 
 Provide a lightweight optional OpenCode profile for evidence-backed planning and
-one bounded, goal-driven implementation handoff. It must not replace native Plan
-or Build or claim command sandboxing.
+one bounded, goal-driven implementation handoff. It works seamlessly with default
+OpenCode Plan and Build, never changes their native behavior, and keeps any new
+behaviors scoped strictly to their intended surfaces without claiming command sandboxing.
 
 ## Current Contract
 
@@ -39,7 +40,7 @@ An optional verified provider/model ID in the generated frontmatter pins executi
 otherwise both children use the selected coordinator model.
 Direct agents cannot rewrite their generated definition or trusted profile sources. Their
 descendants inherit the Direct boundary and cannot loosen any managed ancestor's
-restriction. Only the selected root Prometheus session may publish a Direct agent.
+restriction. Only the selected root Prometheus or Build session may publish a Direct agent.
 A malformed Direct policy fails closed. Browser tools that save screenshots,
 downloads, or media locally obey the same exact edit-path policy as edit tools.
 
@@ -56,9 +57,11 @@ goal metadata do not silently acquire autonomous continuation; publish a new nam
 
 ## Native Compatibility
 
-Build, Plan, unknown identities, and unrelated local agents remain usable without
-a Direct package. The immutability plugin applies only to Ask, Grounder,
-Prometheus, Direct agents, and a detected legacy package. It intercepts OpenCode
+Build, Plan, unknown identities, and unrelated local agents remain completely native
+and usable without a Direct package. The profile works seamlessly with default Plan
+and Build and does not alter their behavior. The immutability plugin applies only to
+Ask, Grounder, Prometheus, Direct agents, and a detected legacy package, while allowing
+root Build sessions to publish Direct agents if chosen. It intercepts OpenCode
 edit and Bash tool calls, not host filesystem effects produced by a command.
 
 ## Browser Runtime

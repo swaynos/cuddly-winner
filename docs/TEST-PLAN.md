@@ -5,7 +5,7 @@
 | Area | Evidence |
 | --- | --- |
 | Direct publisher | Unit tests cover one-file rendering, invalid input, recursive local-name collisions, no-clobber behavior, and symlink rejection. |
-| Direct guard | Unit tests cover exact paths, trusted profile sources, browser file writers, Bash, managed-ancestor restrictions, root-only publication, malformed policies, legacy-package denial, and browser-state export blocking. |
+| Direct guard | Unit tests cover exact paths, trusted profile sources, browser file writers, Bash, managed-ancestor restrictions, root Prometheus/Build publication, malformed policies, legacy-package denial, and browser-state export blocking. |
 | Direct goal | Tests cover fresh builder/validator sessions, child inspection permissions (read, glob, grep, list), validator edit denial, approval-gated shell verification, independent evidence, failed-validation repair, premature-stop continuation, model selection, cancellation, permission denial, unknown outcomes, and inherited policy boundaries. A deterministic provider fixture exercises the pinned OpenCode V1 runtime without paid inference. |
 | Installation | Integration tests cover the three-agent inventory, exact-match retirement, customized MCP and rule preservation, prior state, and browser control files. |
 | OpenCode discovery | A pinned OpenCode CLI discovers an installed-profile Direct agent by its task-derived name. |
