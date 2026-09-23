@@ -1,13 +1,13 @@
-/** Publish one self-contained Direct agent without replacing an existing task. */
+/** Publish one self-contained Goal Agent without replacing an existing definition. */
 import { tool } from "@opencode-ai/plugin";
 import { randomBytes } from "node:crypto";
 import { promises as fs, lstatSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 
-export const DIRECT_AGENT_DIRECTORY = ".opencode/agents/generated";
-export const DIRECT_POLICY_BEGIN = "<!-- CUDDLY-WINNER DIRECT POLICY BEGIN -->";
-export const DIRECT_POLICY_END = "<!-- CUDDLY-WINNER DIRECT POLICY END -->";
+export const GOAL_AGENT_DIRECTORY = ".opencode/agents/generated";
+export const GOAL_POLICY_BEGIN = "<!-- CUDDLY-WINNER GOAL POLICY BEGIN -->";
+export const GOAL_POLICY_END = "<!-- CUDDLY-WINNER GOAL POLICY END -->";
 
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const TRUSTED_CONTROL_PATHS = ["agents", "plugins", "tools", "rules", "scripts"];
@@ -17,15 +17,16 @@ const RESERVED_NAMES = new Set([
 ]);
 const POLICY_KEYS = new Set(["schema_version", "name", "edit_paths", "bash"]);
 
-export type DirectAgentPolicy = {
+export type GoalAgentPolicy = {
   schema_version: 1;
   name: string;
   edit_paths: string[];
   bash: boolean;
 };
 
-export type DirectAgentRequest = {
-  model?: string;
+export type GoalAgentRequest = {
+  builder_model?: string;
+  validator_model?: string;
   name: string;
   description: string;
   outcome: string;
@@ -55,14 +56,14 @@ function pathKey(value: string): string {
   return value.normalize("NFC").toLowerCase();
 }
 
-export function isGeneratedDirectPath(value: string): boolean {
+export function isGeneratedGoalAgentPath(value: string): boolean {
   const candidate = pathKey(value);
-  const generated = pathKey(DIRECT_AGENT_DIRECTORY);
+  const generated = pathKey(GOAL_AGENT_DIRECTORY);
   return candidate === generated || candidate.startsWith(`${generated}/`);
 }
 
 export function isProtectedControlPath(value: string): boolean {
-  if (isGeneratedDirectPath(value)) return true;
+  if (isGeneratedGoalAgentPath(value)) return true;
   const candidate = pathKey(value);
   return TRUSTED_CONTROL_PATHS.some((trusted) => {
     const protectedPath = pathKey(trusted);
@@ -76,7 +77,7 @@ function assertName(value: unknown): asserts value is string {
   }
 }
 
-export function isDirectAgentName(value: unknown): value is string {
+export function isGoalAgentName(value: unknown): value is string {
   return typeof value === "string" && NAME_RE.test(value) && !RESERVED_NAMES.has(value);
 }
 
@@ -109,27 +110,28 @@ function assertSafeEditPaths(paths: string[]): void {
 }
 
 function assertNoPolicyMarker(value: string, label: string): void {
-  if (value.includes(DIRECT_POLICY_BEGIN) || value.includes(DIRECT_POLICY_END)) {
-    throw new Error(`${label} must not contain a Direct policy marker`);
+  if (value.includes(GOAL_POLICY_BEGIN) || value.includes(GOAL_POLICY_END)) {
+    throw new Error(`${label} must not contain a Goal Agent policy marker`);
   }
 }
 
-function assertNoPolicyMarkers(request: DirectAgentRequest): void {
+function assertNoPolicyMarkers(request: GoalAgentRequest): void {
   for (const [label, value] of Object.entries(request)) {
     if (typeof value === "string") assertNoPolicyMarker(value, label);
     else if (Array.isArray(value)) for (const item of value) assertNoPolicyMarker(item, label);
   }
 }
 
-export function validateDirectAgentRequest(value: unknown): DirectAgentRequest {
-  if (!record(value)) throw new Error("Direct agent request must be an object");
+export function validateGoalAgentRequest(value: unknown): GoalAgentRequest {
+  if (!record(value)) throw new Error("Goal Agent request must be an object");
+  const modelFields = new Set(["builder_model", "validator_model"]);
   const expected = new Set([
     "name", "description", "outcome", "acceptance_criteria", "durable_context",
     "edit_paths", "bash", "verification_commands", "stop_conditions",
     "escalation_triggers", "instructions",
   ]);
-  for (const key of Object.keys(value)) if (!expected.has(key) && key !== "model") throw new Error(`unknown Direct agent field: ${key}`);
-  for (const key of expected) if (!(key in value)) throw new Error(`missing Direct agent field: ${key}`);
+  for (const key of Object.keys(value)) if (!expected.has(key) && !modelFields.has(key)) throw new Error(`unknown Goal Agent field: ${key}`);
+  for (const key of expected) if (!(key in value)) throw new Error(`missing Goal Agent field: ${key}`);
 
   assertName(value.name);
   assertText(value.description, "description");
@@ -143,9 +145,16 @@ export function validateDirectAgentRequest(value: unknown): DirectAgentRequest {
   assertTextList(value.stop_conditions, "stop_conditions");
   assertTextList(value.escalation_triggers, "escalation_triggers");
   assertText(value.instructions, "instructions");
+  for (const key of modelFields) {
+    const model = value[key];
+    if (model !== undefined && (typeof model !== "string" || !/^[^\s/]+\/[^\s]+$/.test(model))) {
+      throw new Error(`${key} must be a provider/model identifier`);
+    }
+  }
 
-  const request: DirectAgentRequest = {
-    ...(value.model === undefined ? {} : { model: value.model as string }),
+  const request: GoalAgentRequest = {
+    ...(value.builder_model === undefined ? {} : { builder_model: value.builder_model as string }),
+    ...(value.validator_model === undefined ? {} : { validator_model: value.validator_model as string }),
     name: value.name,
     description: value.description,
     outcome: value.outcome,
@@ -158,9 +167,6 @@ export function validateDirectAgentRequest(value: unknown): DirectAgentRequest {
     escalation_triggers: value.escalation_triggers,
     instructions: value.instructions,
   };
-  if (request.model !== undefined && (typeof request.model !== "string" || !/^[^\s/]+\/[^\s]+$/.test(request.model))) {
-    throw new Error("model must be a provider/model identifier");
-  }
   assertNoPolicyMarkers(request);
   return request;
 }
@@ -170,15 +176,15 @@ function inside(root: string, target: string): boolean {
   return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
 }
 
-function directAgentRelativePath(name: string): string {
+function goalAgentRelativePath(name: string): string {
   assertName(name);
-  return `${DIRECT_AGENT_DIRECTORY}/${name}.md`;
+  return `${GOAL_AGENT_DIRECTORY}/${name}.md`;
 }
 
-export function directAgentPath(root: string, name: string): string {
+export function goalAgentPath(root: string, name: string): string {
   const realRoot = realpathSync(path.resolve(root));
-  const target = path.resolve(realRoot, directAgentRelativePath(name));
-  if (!inside(realRoot, target)) throw new Error("Direct agent path escapes the project root");
+  const target = path.resolve(realRoot, goalAgentRelativePath(name));
+  if (!inside(realRoot, target)) throw new Error("Goal Agent path escapes the project root");
   return target;
 }
 
@@ -197,29 +203,29 @@ function assertSafeExistingPath(root: string, target: string, leafMustBeFile = f
       }
       throw error;
     }
-    if (stat.isSymbolicLink()) throw new Error(`Direct agent path contains a symlink: ${current}`);
+    if (stat.isSymbolicLink()) throw new Error(`Goal Agent path contains a symlink: ${current}`);
     if (index < relative.split(path.sep).length - 1 && !stat.isDirectory()) {
-      throw new Error(`Direct agent parent is not a directory: ${current}`);
+      throw new Error(`Goal Agent parent is not a directory: ${current}`);
     }
     if (index === relative.split(path.sep).length - 1 && leafMustBeFile && !stat.isFile()) {
-      throw new Error(`Direct agent must be a regular file: ${current}`);
+      throw new Error(`Goal Agent must be a regular file: ${current}`);
     }
   }
 }
 
 async function ensureSafeGeneratedDirectory(root: string): Promise<string> {
   let current = root;
-  for (const part of DIRECT_AGENT_DIRECTORY.split("/")) {
+  for (const part of GOAL_AGENT_DIRECTORY.split("/")) {
     current = path.join(current, part);
     try {
       const stat = await fs.lstat(current);
-      if (stat.isSymbolicLink()) throw new Error(`Direct agent path contains a symlink: ${current}`);
-      if (!stat.isDirectory()) throw new Error(`Direct agent parent is not a directory: ${current}`);
+      if (stat.isSymbolicLink()) throw new Error(`Goal Agent path contains a symlink: ${current}`);
+      if (!stat.isDirectory()) throw new Error(`Goal Agent parent is not a directory: ${current}`);
     } catch (error: any) {
       if (error?.code !== "ENOENT") throw error;
       await fs.mkdir(current, { mode: 0o700 });
       const stat = await fs.lstat(current);
-      if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Direct agent parent is unsafe: ${current}`);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Goal Agent parent is unsafe: ${current}`);
     }
   }
   return current;
@@ -233,8 +239,8 @@ function commands(items: string[]): string {
   return items.map((item) => `- \`${item}\``).join("\n");
 }
 
-export function renderDirectAgent(request: DirectAgentRequest): string {
-  const policy: DirectAgentPolicy = {
+export function renderGoalAgent(request: GoalAgentRequest): string {
+  const policy: GoalAgentPolicy = {
     schema_version: 1,
     name: request.name,
     edit_paths: request.edit_paths,
@@ -245,8 +251,11 @@ export function renderDirectAgent(request: DirectAgentRequest): string {
     `name: ${request.name}`,
     `description: ${JSON.stringify(request.description)}`,
     "mode: primary",
-    ...(request.model ? [`model: ${JSON.stringify(request.model)}`] : []),
-    `options: ${JSON.stringify({ goal: { criteria: request.acceptance_criteria } })}`,
+    `options: ${JSON.stringify({ goal: {
+      criteria: request.acceptance_criteria,
+      ...(request.builder_model ? { builder_model: request.builder_model } : {}),
+      ...(request.validator_model ? { validator_model: request.validator_model } : {}),
+    } })}`,
     "permission:",
     "  \"*\": deny",
     "  read: allow",
@@ -261,14 +270,14 @@ export function renderDirectAgent(request: DirectAgentRequest): string {
     "  goal_cycle: allow",
     "---",
     "",
-    DIRECT_POLICY_BEGIN,
+    GOAL_POLICY_BEGIN,
     JSON.stringify(policy),
-    DIRECT_POLICY_END,
+    GOAL_POLICY_END,
     "",
-    "You are the Direct implementation agent coordinating this goal. Read this file before working.",
+    "You are the goal-oriented agent coordinating this goal. Read this file before working.",
     "Call goal_cycle to run a build iteration AND an independent validation iteration in separate fresh child sessions.",
     "On failed validation, call goal_cycle again: it supplies the findings to a fresh builder and then a fresh validator.",
-    "Do not implement directly, reuse child contexts, or declare completion from a builder's report.",
+    "Do not implement in the coordinator, reuse child contexts, or declare completion from a builder's report.",
     "Only a validated goal_cycle result establishes completion. Report its criterion-by-criterion evidence.",
     "A blocked result is incomplete: report the specific blocker and ask for the needed decision. Never weaken the goal to finish.",
     "",
@@ -296,47 +305,47 @@ export function renderDirectAgent(request: DirectAgentRequest): string {
   ].join("\n");
 }
 
-function parsePolicy(content: string, expectedName: string): DirectAgentPolicy {
-  const begin = content.indexOf(DIRECT_POLICY_BEGIN);
-  const end = content.indexOf(DIRECT_POLICY_END);
-  if (begin === -1 || end === -1 || begin !== content.lastIndexOf(DIRECT_POLICY_BEGIN) || end !== content.lastIndexOf(DIRECT_POLICY_END) || end <= begin) {
-    throw new Error("Direct agent must contain exactly one policy block");
+function parsePolicy(content: string, expectedName: string): GoalAgentPolicy {
+  const begin = content.indexOf(GOAL_POLICY_BEGIN);
+  const end = content.indexOf(GOAL_POLICY_END);
+  if (begin === -1 || end === -1 || begin !== content.lastIndexOf(GOAL_POLICY_BEGIN) || end !== content.lastIndexOf(GOAL_POLICY_END) || end <= begin) {
+    throw new Error("Goal Agent must contain exactly one policy block");
   }
-  const body = content.slice(begin + DIRECT_POLICY_BEGIN.length, end).trim();
+  const body = content.slice(begin + GOAL_POLICY_BEGIN.length, end).trim();
   let raw: unknown;
   try {
     raw = JSON.parse(body);
   } catch {
-    throw new Error("Direct agent policy is not valid JSON");
+    throw new Error("Goal Agent policy is not valid JSON");
   }
-  if (!record(raw)) throw new Error("Direct agent policy must be an object");
-  for (const key of Object.keys(raw)) if (!POLICY_KEYS.has(key)) throw new Error(`unknown Direct agent policy key: ${key}`);
-  for (const key of POLICY_KEYS) if (!(key in raw)) throw new Error(`missing Direct agent policy key: ${key}`);
-  if (raw.schema_version !== 1) throw new Error("Direct agent policy schema_version must be 1");
+  if (!record(raw)) throw new Error("Goal Agent policy must be an object");
+  for (const key of Object.keys(raw)) if (!POLICY_KEYS.has(key)) throw new Error(`unknown Goal Agent policy key: ${key}`);
+  for (const key of POLICY_KEYS) if (!(key in raw)) throw new Error(`missing Goal Agent policy key: ${key}`);
+  if (raw.schema_version !== 1) throw new Error("Goal Agent policy schema_version must be 1");
   assertName(raw.name);
-  if (raw.name !== expectedName) throw new Error("Direct agent policy name does not match the selected agent");
-  assertPathList(raw.edit_paths, "Direct agent policy edit_paths");
-  if (typeof raw.bash !== "boolean") throw new Error("Direct agent policy bash must be boolean");
+  if (raw.name !== expectedName) throw new Error("Goal Agent policy name does not match the selected agent");
+  assertPathList(raw.edit_paths, "Goal Agent policy edit_paths");
+  if (typeof raw.bash !== "boolean") throw new Error("Goal Agent policy bash must be boolean");
 
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(content);
   if (!frontmatter || !new RegExp(`^name:\\s*${expectedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m").test(frontmatter[1])) {
-    throw new Error("Direct agent frontmatter name does not match the selected agent");
+    throw new Error("Goal Agent frontmatter name does not match the selected agent");
   }
   return { schema_version: 1, name: raw.name, edit_paths: raw.edit_paths, bash: raw.bash };
 }
 
-export function readDirectAgentPolicy(root: string, name: string): DirectAgentPolicy {
+export function readGoalAgentPolicy(root: string, name: string): GoalAgentPolicy {
   const realRoot = realpathSync(path.resolve(root));
-  const file = directAgentPath(realRoot, name);
+  const file = goalAgentPath(realRoot, name);
   assertSafeExistingPath(realRoot, file, true);
   return parsePolicy(readFileSync(file, "utf8"), name);
 }
 
-export function hasDirectAgentFile(root: string, name: string): boolean {
-  if (!isDirectAgentName(name)) return false;
+export function hasGoalAgentFile(root: string, name: string): boolean {
+  if (!isGoalAgentName(name)) return false;
   try {
     const realRoot = realpathSync(path.resolve(root));
-    const file = directAgentPath(realRoot, name);
+    const file = goalAgentPath(realRoot, name);
     assertSafeExistingPath(realRoot, file, true);
     return true;
   } catch (error: any) {
@@ -383,14 +392,14 @@ async function assertNameIsAvailable(root: string, name: string): Promise<void> 
   }
 }
 
-export async function publishDirectAgentFile(root: string, value: unknown): Promise<PublishedAgent> {
-  const request = validateDirectAgentRequest(value);
+export async function publishGoalAgentFile(root: string, value: unknown): Promise<PublishedAgent> {
+  const request = validateGoalAgentRequest(value);
   const realRoot = await fs.realpath(path.resolve(root));
   await assertNameIsAvailable(realRoot, request.name);
   const directory = await ensureSafeGeneratedDirectory(realRoot);
   const target = path.join(directory, `${request.name}.md`);
   const temporary = path.join(directory, `.publish-${process.pid}-${randomBytes(12).toString("hex")}`);
-  const content = renderDirectAgent(request);
+  const content = renderGoalAgent(request);
   try {
     const handle = await fs.open(temporary, "wx", 0o600);
     try {
@@ -405,16 +414,17 @@ export async function publishDirectAgentFile(root: string, value: unknown): Prom
       if (error?.code === "EEXIST") throw new Error(`agent already exists: ${request.name}`);
       throw error;
     }
-    return { name: request.name, path: directAgentRelativePath(request.name) };
+    return { name: request.name, path: goalAgentRelativePath(request.name) };
   } finally {
     await fs.rm(temporary, { force: true }).catch(() => undefined);
   }
 }
 
 export default tool({
-  description: "Publish one self-contained task-derived Direct agent without replacing an existing definition.",
+  description: "Publish one self-contained Goal Agent with an outcome and acceptance criteria, without replacing an existing definition.",
   args: {
-    model: tool.schema.string().regex(/^[^\s/]+\/[^\s]+$/).optional(),
+    builder_model: tool.schema.string().regex(/^[^\s/]+\/[^\s]+$/).optional(),
+    validator_model: tool.schema.string().regex(/^[^\s/]+\/[^\s]+$/).optional(),
     name: tool.schema.string().regex(NAME_RE),
     description: tool.schema.string().min(1),
     outcome: tool.schema.string().min(1),
@@ -429,6 +439,6 @@ export default tool({
   },
   async execute(args, context) {
     const root = context.directory ?? context.worktree ?? process.cwd();
-    return JSON.stringify(await publishDirectAgentFile(root, args), null, 2);
+    return JSON.stringify(await publishGoalAgentFile(root, args), null, 2);
   },
 });

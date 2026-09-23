@@ -5,15 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import { Goal } from "../../plugins/goal.ts";
 import { ImmutabilityGuard } from "../../plugins/immutability.ts";
-import { publishDirectAgentFile } from "../../tools/publish_direct_agent.ts";
+import { publishGoalAgentFile } from "../../tools/publish_goal_agent.ts";
 
 const model = { providerID: "local", modelID: "test" };
 const verdict = (passed) => ({ status: "checked", reason: "", checks: { c0: { passed, evidence: passed ? "node test.mjs passed against current files" : "node test.mjs failed: expected 2, got 1" } } });
 
 async function fixture(fn, options = {}) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "direct-goal-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "goal-agent-runtime-"));
   try {
-    await publishDirectAgentFile(root, {
+    await publishGoalAgentFile(root, {
       name: "fix-counter", description: "Fix the counter", outcome: "Counter works",
       acceptance_criteria: ["Counter returns two"], durable_context: ["README.md"],
       edit_paths: ["counter.mjs"], bash: true, verification_commands: ["node test.mjs"],
@@ -73,7 +73,8 @@ test("failed validation repairs in new sessions; only independent validation com
   assert.deepEqual(f.calls.map(c => c.parentID), ["root", "root", "root", "root"]);
   assert.match(f.prompts[2].body.parts[0].text, /expected 2, got 1/);
   assert.doesNotMatch(f.prompts[3].body.parts[0].text, /expected 2, got 1/);
-  assert.ok(f.prompts.every(p => p.body.agent === "general" && p.body.model.modelID === "test"));
+  assert.ok(f.prompts.every(p => p.body.agent === "general" && p.body.model.providerID === model.providerID && p.body.model.modelID === model.modelID));
+  assert.ok(f.continuations.every(p => p.body.model.providerID === model.providerID && p.body.model.modelID === model.modelID));
   for (const call of [f.calls[0], f.calls[1]]) {
     for (const perm of ["read", "glob", "grep", "list"]) {
       assert.equal(call.permission.find(p => p.permission === perm)?.action, "allow");
@@ -143,17 +144,17 @@ test("permission denial, API failure and assistant errors never auto-retry", asy
   }
 });
 
-test("child tools inherit exact Direct edit boundaries through real guard", async () => fixture(async f => {
+test("child tools inherit exact Goal Agent edit boundaries through real guard", async () => fixture(async f => {
   await f.cycle();
   const guard = await ImmutabilityGuard({ client: f.client, directory: f.root, worktree: f.root });
   for (const child of f.calls) {
     await guard["chat.params"]({ sessionID: child.id, agent: "general" });
     await assert.rejects(guard["tool.execute.before"]({ tool: "write", sessionID: child.id }, { args: { filePath: path.join(f.root, "outside.mjs") } }), /outside its declared/);
-    await assert.rejects(guard["tool.execute.before"]({ tool: "publish_direct_agent", sessionID: child.id }, { args: {} }), /only @prometheus/);
+    await assert.rejects(guard["tool.execute.before"]({ tool: "publish_goal_agent", sessionID: child.id }, { args: {} }), /only @prometheus/);
   }
 }));
 
-test("native agents, child sessions and historical non-goal Direct files do not start goals", async () => fixture(async f => {
+test("native agents, child sessions and Goal Agents without goal metadata do not start goals", async () => fixture(async f => {
   f.history.get("root")[0].info.agent = "build";
   f.finish();
   await f.idle();
@@ -197,10 +198,18 @@ test("only the current independent validator can record a criterion-complete ver
   await assert.rejects(f.hooks.tool.goal_verdict.execute(verdict(true), { ...f.context, sessionID: f.calls[1].id }), /Only the active/);
 }));
 
-test("published execution model overrides the coordinator model in both children", async () => fixture(async f => {
+test("builder and validator can use separate published model overrides", async () => fixture(async f => {
   await f.cycle();
-  assert.ok(f.prompts.every(p => p.body.model.providerID === "qwen" && p.body.model.modelID === "verified-model"));
-}, { model: "qwen/verified-model" }));
+  assert.deepEqual(f.prompts.map(p => p.body.model), [
+    { providerID: "qwen", modelID: "coder" },
+    { providerID: "anthropic", modelID: "checker" },
+  ]);
+}, { builder_model: "qwen/coder", validator_model: "anthropic/checker" }));
+
+test("builder and validator inherit the Goal Agent session model by default", async () => fixture(async f => {
+  await f.cycle();
+  assert.deepEqual(f.prompts.map(p => p.body.model), [model, model]);
+}));
 
 test("interrupted tool records and model aborts survive plugin reload without replay", async () => fixture(async f => {
   f.finish(null, { error: { name: "MessageAbortedError" } });

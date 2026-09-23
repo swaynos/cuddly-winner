@@ -2,16 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, writeFile, symlink, rm } from "node:fs/promises";
 import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
-import { publishDirectAgentFile } from "../../tools/publish_direct_agent.ts";
+import { publishGoalAgentFile } from "../../tools/publish_goal_agent.ts";
 
 const repo = path.resolve(import.meta.dirname, "../..");
 
 test("OpenCode V1 resumes a premature stop, builds, independently rejects, repairs and validates", { timeout: 120_000 }, async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "direct-goal-live-"));
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "goal-runtime-live-")));
   let processHandle;
   let serverLog = "";
   let rootTurns = 0;
@@ -59,31 +59,36 @@ test("OpenCode V1 resumes a premature stop, builds, independently rejects, repai
   try {
     provider.listen(0, "127.0.0.1");
     await once(provider, "listening");
-    const portProbe = http.createServer();
-    portProbe.listen(0, "127.0.0.1");
-    await once(portProbe, "listening");
-    const port = portProbe.address().port;
-    await new Promise(resolve => portProbe.close(resolve));
     await mkdir(path.join(root, ".opencode", "plugins"), { recursive: true });
     await mkdir(path.join(root, ".opencode", "tools"), { recursive: true });
-    for (const file of ["plugins/goal.ts", "plugins/immutability.ts", "tools/publish_direct_agent.ts"]) {
+    for (const file of ["plugins/goal.ts", "plugins/immutability.ts", "tools/publish_goal_agent.ts"]) {
       await symlink(path.join(repo, file), path.join(root, ".opencode", file));
     }
     await symlink(path.join(repo, "node_modules"), path.join(root, ".opencode", "node_modules"));
     await writeFile(path.join(root, "opencode.json"), JSON.stringify({
-      $schema: "https://opencode.ai/config.json", model: "fixture/fixture", small_model: "fixture/fixture",
-      provider: { fixture: { npm: "@ai-sdk/openai-compatible", name: "fixture", options: { baseURL: `http://127.0.0.1:${provider.address().port}/v1`, apiKey: "fixture" }, models: { fixture: { name: "fixture", limit: { context: 128000, output: 4096 } } } } },
+      $schema: "https://opencode.ai/config.json", model: "fixture/default", small_model: "fixture/default",
+      agent: { general: { model: "fixture/general" } },
+      provider: { fixture: { npm: "@ai-sdk/openai-compatible", name: "fixture", options: { baseURL: `http://127.0.0.1:${provider.address().port}/v1`, apiKey: "fixture" }, models: {
+        default: { name: "default", limit: { context: 128000, output: 4096 } },
+        general: { name: "general", limit: { context: 128000, output: 4096 } },
+        fixture: { name: "fixture", limit: { context: 128000, output: 4096 } },
+      } } },
     }));
-    await publishDirectAgentFile(root, {
+    await publishGoalAgentFile(root, {
       name: "fix-counter", description: "Fix counter", outcome: "counter.txt contains good",
       acceptance_criteria: ["counter.txt contains exactly good followed by a newline"],
       durable_context: ["counter.txt"], edit_paths: ["counter.txt"], bash: false,
       verification_commands: ["Read counter.txt and compare its contents"],
       stop_conditions: ["Filesystem inaccessible"], escalation_triggers: ["Additional edit paths required"],
-      instructions: "Write counter.txt and independently check it", model: "fixture/fixture",
+      instructions: "Write counter.txt and independently check it",
     });
     const env = { ...process.env, HOME: root, XDG_CONFIG_HOME: path.join(root, "config"), XDG_DATA_HOME: path.join(root, "data"), XDG_CACHE_HOME: path.join(root, "cache"), OPENCODE_DISABLE_DEFAULT_PLUGINS: "1" };
     for (const key of ["OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT", "OPENCODE_SERVER_PASSWORD"]) delete env[key];
+    const portProbe = http.createServer();
+    portProbe.listen(0, "127.0.0.1");
+    await once(portProbe, "listening");
+    const port = portProbe.address().port;
+    await new Promise(resolve => portProbe.close(resolve));
     processHandle = spawn(path.join(repo, "node_modules", ".bin", "opencode"), ["serve", "--port", String(port), "--hostname", "127.0.0.1"], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
     processHandle.stdout.on("data", b => { serverLog += b; });
     processHandle.stderr.on("data", b => { serverLog += b; });
@@ -97,7 +102,7 @@ test("OpenCode V1 resumes a premature stop, builds, independently rejects, repai
       try { await api("/global/health"); break; } catch { if (i === 99) throw new Error(`Server startup failed: ${serverLog}`); await new Promise(r => setTimeout(r, 100)); }
     }
     const session = await api("/session", { title: "Goal fixture" });
-    await api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", model: { providerID: "fixture", modelID: "fixture" }, parts: [{ type: "text", text: "Execute this goal." }] });
+    await api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Execute this goal." }] });
     let history;
     for (let i = 0; i < 300; i++) {
       history = await api(`/session/${session.id}/message`);
@@ -112,6 +117,14 @@ test("OpenCode V1 resumes a premature stop, builds, independently rejects, repai
     }
     assert.equal(builds, 2);
     assert.equal(checks, 2);
+    const phaseModels = role => requests
+      .filter(input => input.messages?.some(message => message.role === "user" && JSON.stringify(message.content).includes(`Perform only your assigned ${role} phase`)))
+      .map(input => input.model);
+    for (const role of ["builder", "validator"]) {
+      const models = phaseModels(role);
+      assert.ok(models.length >= 2, `expected model requests for both ${role} children`);
+      assert.deepEqual([...new Set(models)], ["default"]);
+    }
     assert.ok(rootTurns >= 3, "premature stop must have resumed");
     const children = await api(`/session/${session.id}/children`);
     assert.equal(children.length, 4);

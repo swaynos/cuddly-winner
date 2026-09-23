@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SDK_VERSION="1.17.15"
+SDK_VERSION="1.18.31"
 PLAYWRIGHT_VERSION="1.58.2"
 YAML_VERSION="2.9.0"
 MANAGED_ENTRY_DRIFT=0
@@ -28,7 +28,7 @@ Options:
   --mode MODE            Install mode: copy (default) or symlink
   -h, --help             Show this help
 
-Install deploys the Direct profile. Status and remove inspect every managed entry.
+Install deploys the Cuddly Winner profile. Status and remove inspect every managed entry.
 EOF
 }
 
@@ -632,7 +632,7 @@ AGENT_SOURCES=(
   "${REPO_ROOT}/agents/prometheus.md"
 )
 PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/goal.ts")
-TOOL_SOURCES=("${REPO_ROOT}/tools/publish_direct_agent.ts")
+TOOL_SOURCES=("${REPO_ROOT}/tools/publish_goal_agent.ts")
 RULE_SOURCES=("${REPO_ROOT}/rules/resource-selection.md")
 
 assert_config_destination "$OPENCODE_JSON"

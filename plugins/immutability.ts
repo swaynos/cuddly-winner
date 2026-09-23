@@ -1,17 +1,17 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import {
-  hasDirectAgentFile,
-  isGeneratedDirectPath,
-  isDirectAgentName,
+  hasGoalAgentFile,
+  isGeneratedGoalAgentPath,
+  isGoalAgentName,
   isProtectedControlPath,
-  readDirectAgentPolicy,
-  type DirectAgentPolicy,
-} from "../tools/publish_direct_agent.ts";
+  readGoalAgentPolicy,
+  type GoalAgentPolicy,
+} from "../tools/publish_goal_agent.ts";
 
 const MUTATING_TOOLS = new Set(["write", "edit", "patch", "apply_patch"]);
 const SHELL_TOOLS = new Set(["bash"]);
-const DIRECT_PUBLISH_TOOLS = new Set(["publish_direct_agent"]);
+const GOAL_AGENT_PUBLISH_TOOLS = new Set(["publish_goal_agent"]);
 const BROWSER_FILE_WRITE_TOOLS = new Set(["browser_screenshot", "browser_download", "browser_save_media"]);
 const MANAGED_AGENTS = new Set(["ask", "prometheus", "grounder"]);
 const READ_ONLY_AGENTS = new Set(["ask", "grounder"]);
@@ -69,7 +69,7 @@ function extractPatchedPaths(patchText: string): string[] {
 }
 
 function hasLegacyGeneratedPackage(root: string, agent: string): boolean {
-  if (!isDirectAgentName(agent)) return false;
+  if (!isGoalAgentName(agent)) return false;
   const paths = [
     ".opencode/generated-agents.json",
     `.opencode/agents/${agent}.md`,
@@ -102,29 +102,29 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
   const sessionAgents = new Map<string, string>();
   const invalidAncestry = new Set<string>();
 
-  type DirectRegistration = { direct: boolean; legacy?: boolean; policy?: DirectAgentPolicy };
-  const directPolicies = new Map<string, DirectRegistration>();
-  function directPolicy(agent: string): DirectRegistration {
-    const cached = directPolicies.get(agent);
+  type GoalAgentRegistration = { goalAgent: boolean; legacy?: boolean; policy?: GoalAgentPolicy };
+  const goalAgentPolicies = new Map<string, GoalAgentRegistration>();
+  function goalAgentPolicy(agent: string): GoalAgentRegistration {
+    const cached = goalAgentPolicies.get(agent);
     if (cached) return cached;
     if (hasLegacyGeneratedPackage(root, agent)) {
-      const registration = { direct: true, legacy: true };
-      directPolicies.set(agent, registration);
+      const registration = { goalAgent: true, legacy: true };
+      goalAgentPolicies.set(agent, registration);
       return registration;
     }
-    if (!hasDirectAgentFile(root, agent)) return { direct: false };
+    if (!hasGoalAgentFile(root, agent)) return { goalAgent: false };
     try {
-      const registration = { direct: true, policy: readDirectAgentPolicy(root, agent) };
-      directPolicies.set(agent, registration);
+      const registration = { goalAgent: true, policy: readGoalAgentPolicy(root, agent) };
+      goalAgentPolicies.set(agent, registration);
       return registration;
     } catch {
-      const registration = { direct: true };
-      directPolicies.set(agent, registration);
+      const registration = { goalAgent: true };
+      goalAgentPolicies.set(agent, registration);
       return registration;
     }
   }
   function isManaged(agent: string): boolean {
-    return MANAGED_AGENTS.has(agent) || directPolicy(agent).direct;
+    return MANAGED_AGENTS.has(agent) || goalAgentPolicy(agent).goalAgent;
   }
 
   type AgentResolution = { valid: true; agents: string[]; current?: string; hasParent: boolean } | { valid: false };
@@ -161,13 +161,13 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
     return { valid: true, agents: [], hasParent: false };
   }
 
-  function directPolicyFor(agent: string): DirectAgentPolicy | undefined {
-    const registration = directPolicy(agent);
+  function goalAgentPolicyFor(agent: string): GoalAgentPolicy | undefined {
+    const registration = goalAgentPolicy(agent);
     if (registration.legacy) {
-      throw new Error(`ImmutabilityGuard: @${agent} uses a retired generated-agent package; republish it as a Direct agent before mutating files or using shell commands.`);
+      throw new Error(`ImmutabilityGuard: @${agent} uses a retired generated-agent package; republish it as a Goal Agent before mutating files or using shell commands.`);
     }
-    if (registration.direct && !registration.policy) {
-      throw new Error(`ImmutabilityGuard: @${agent} has an invalid Direct agent definition; mutation and shell access are denied.`);
+    if (registration.goalAgent && !registration.policy) {
+      throw new Error(`ImmutabilityGuard: @${agent} has an invalid Goal Agent definition; mutation and shell access are denied.`);
     }
     return registration.policy;
   }
@@ -183,13 +183,13 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       if (exposesBrowserState(input.tool)) {
         throw new Error(`ImmutabilityGuard: ${input.tool} is blocked because it can hand saved browser authentication state to the model. Managed browser tools load login state privately; export tools are never permitted.`);
       }
-      if (!mutatesFiles(input.tool) && !SHELL_TOOLS.has(input.tool) && !DIRECT_PUBLISH_TOOLS.has(input.tool)) return;
+      if (!mutatesFiles(input.tool) && !SHELL_TOOLS.has(input.tool) && !GOAL_AGENT_PUBLISH_TOOLS.has(input.tool)) return;
 
       const resolution = await resolveAgent(input.sessionID);
       if (!resolution.valid) throw new Error("ImmutabilityGuard: session has invalid or cyclic ancestry; mutation and shell access are denied.");
       const agents = resolution.agents;
 
-      if (DIRECT_PUBLISH_TOOLS.has(input.tool)) {
+      if (GOAL_AGENT_PUBLISH_TOOLS.has(input.tool)) {
         const canPublish =
           !resolution.hasParent &&
           ((resolution.current === "prometheus" && agents.length === 1 && agents[0] === "prometheus") ||
@@ -208,7 +208,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
         if (SHELL_TOOLS.has(input.tool)) throw new Error("ImmutabilityGuard: @prometheus may not execute shell commands.");
         throw new Error("ImmutabilityGuard: @prometheus may not edit project files.");
       }
-      const policies = agents.map(directPolicyFor).filter((policy): policy is DirectAgentPolicy => Boolean(policy));
+      const policies = agents.map(goalAgentPolicyFor).filter((policy): policy is GoalAgentPolicy => Boolean(policy));
 
       if (SHELL_TOOLS.has(input.tool)) {
         if (policies.some((policy) => !policy.bash)) throw new Error(`ImmutabilityGuard: @${agent} may not execute shell commands.`);
@@ -240,7 +240,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       for (const unresolvedPath of paths) {
         const absolutePath = safeTarget(lexicalRoot, root, unresolvedPath);
         const relPath = relative(root, absolutePath).replace(/\\/g, "/");
-        if (isGeneratedDirectPath(relPath)) throw new Error(`ImmutabilityGuard: @${agent} cannot rewrite published Direct agent definition: "${relPath}".`);
+        if (isGeneratedGoalAgentPath(relPath)) throw new Error(`ImmutabilityGuard: @${agent} cannot rewrite published Goal Agent definition: "${relPath}".`);
         if (isProtectedControlPath(relPath)) throw new Error(`ImmutabilityGuard: "${relPath}" is trusted control-plane state.`);
         if (policies.some((policy) => !policy.edit_paths.includes(relPath))) throw new Error(`ImmutabilityGuard: @${agent} cannot edit outside its declared edit paths: "${relPath}".`);
       }

@@ -4,10 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { ImmutabilityGuard } from "../../plugins/immutability.ts";
-import { publishDirectAgentFile } from "../../tools/publish_direct_agent.ts";
+import { publishGoalAgentFile } from "../../tools/publish_goal_agent.ts";
 
 async function fixture(fn) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "direct-guard-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "goal-agent-guard-"));
   try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
@@ -20,7 +20,7 @@ function client(agents = {}, parents = {}) {
 }
 
 async function publish(root, overrides = {}) {
-  return publishDirectAgentFile(root, {
+  return publishGoalAgentFile(root, {
     name: "retry-fix",
     description: "Fix retry scheduling.",
     outcome: "Retry scheduling follows the requested policy.",
@@ -47,54 +47,54 @@ function mutate(instance, sessionID, filePath) {
   );
 }
 
-test("Direct agents use the policy in their one generated file", async () => fixture(async root => {
+test("Goal Agents use the policy in their one generated file", async () => fixture(async root => {
   await publish(root);
-  const instance = await guard(root, { direct: "retry-fix" });
-  await mutate(instance, "direct", path.join(root, "src", "retry.ts"));
-  await assert.rejects(mutate(instance, "direct", path.join(root, "README.md")), /outside its declared edit paths/);
+  const instance = await guard(root, { goalAgent: "retry-fix" });
+  await mutate(instance, "goalAgent", path.join(root, "src", "retry.ts"));
+  await assert.rejects(mutate(instance, "goalAgent", path.join(root, "README.md")), /outside its declared edit paths/);
   await instance["tool.execute.before"](
-    { tool: "bash", sessionID: "direct", callID: "shell" },
+    { tool: "bash", sessionID: "goalAgent", callID: "shell" },
     { args: { command: "node --test", cwd: root } },
   );
 }));
 
-test("Direct agents cannot rewrite generated definitions", async () => fixture(async root => {
+test("Goal Agents cannot rewrite generated definitions", async () => fixture(async root => {
   const published = await publish(root);
-  const instance = await guard(root, { direct: "retry-fix" });
+  const instance = await guard(root, { goalAgent: "retry-fix" });
   await assert.rejects(
-    mutate(instance, "direct", path.join(root, published.path)),
-    /published Direct agent/,
+    mutate(instance, "goalAgent", path.join(root, published.path)),
+    /published Goal Agent/,
   );
   await assert.rejects(
-    mutate(instance, "direct", path.join(root, ".OPENCODE", "agents", "generated", "retry-fix.md")),
-    /published Direct agent/,
+    mutate(instance, "goalAgent", path.join(root, ".OPENCODE", "agents", "generated", "retry-fix.md")),
+    /published Goal Agent/,
   );
 }));
 
-test("browser file writers obey Direct edit paths", async () => fixture(async root => {
+test("browser file writers obey Goal Agent edit paths", async () => fixture(async root => {
   await publish(root);
-  const instance = await guard(root, { direct: "retry-fix" });
+  const instance = await guard(root, { goalAgent: "retry-fix" });
   await instance["tool.execute.before"](
-    { tool: "cuddly-winner-browser_browser_screenshot", sessionID: "direct", callID: "allowed" },
+    { tool: "cuddly-winner-browser_browser_screenshot", sessionID: "goalAgent", callID: "allowed" },
     { args: { path: path.join(root, "src", "retry.ts") } },
   );
   await assert.rejects(
     instance["tool.execute.before"](
-      { tool: "cuddly-winner-browser_browser_download", sessionID: "direct", callID: "blocked" },
+      { tool: "cuddly-winner-browser_browser_download", sessionID: "goalAgent", callID: "blocked" },
       { args: { path: path.join(root, "README.md") } },
     ),
     /outside its declared edit paths/,
   );
   await assert.rejects(
     instance["tool.execute.before"](
-      { tool: "browser_save_media", sessionID: "direct", callID: "generated" },
+      { tool: "browser_save_media", sessionID: "goalAgent", callID: "generated" },
       { args: { path: path.join(root, ".opencode", "agents", "generated", "retry-fix.md") } },
     ),
-    /published Direct agent/,
+    /published Goal Agent/,
   );
   await assert.rejects(
     instance["tool.execute.before"](
-      { tool: "cuddly-winner-browser_browser_download", sessionID: "direct", callID: "aliases" },
+      { tool: "cuddly-winner-browser_browser_download", sessionID: "goalAgent", callID: "aliases" },
       { args: {
         filePath: path.join(root, "src", "retry.ts"),
         path: path.join(root, "README.md"),
@@ -110,7 +110,7 @@ test("publisher rejects case-variant protected edit paths", async () => fixture(
     /protected control-plane path/,
   );
   await assert.rejects(
-    publish(root, { edit_paths: ["TOOLS/publish_direct_agent.ts"] }),
+    publish(root, { edit_paths: ["TOOLS/publish_goal_agent.ts"] }),
     /protected control-plane path/,
   );
   for (const protectedPath of [
@@ -131,18 +131,18 @@ test("a malformed generated policy fails closed", async () => fixture(async root
   const file = path.join(root, ".opencode", "agents", "generated", "retry-fix.md");
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, "---\nname: retry-fix\nmode: primary\n---\nmissing policy\n");
-  const instance = await guard(root, { direct: "retry-fix" });
-  await assert.rejects(mutate(instance, "direct", path.join(root, "src", "retry.ts")), /invalid Direct agent definition/);
+  const instance = await guard(root, { goalAgent: "retry-fix" });
+  await assert.rejects(mutate(instance, "goalAgent", path.join(root, "src", "retry.ts")), /invalid Goal Agent definition/);
   await assert.rejects(
     instance["tool.execute.before"](
-      { tool: "bash", sessionID: "direct", callID: "shell" },
+      { tool: "bash", sessionID: "goalAgent", callID: "shell" },
       { args: { command: "true", cwd: root } },
     ),
-    /invalid Direct agent definition/,
+    /invalid Goal Agent definition/,
   );
 }));
 
-test("Direct policy boundaries inherit through descendants", async () => fixture(async root => {
+test("Goal-Agent policy boundaries inherit through descendants", async () => fixture(async root => {
   await publish(root, { bash: false });
   const instance = await guard(root, { parent: "retry-fix", child: "build" }, { child: "parent" });
   await mutate(instance, "child", path.join(root, "src", "retry.ts"));
@@ -156,7 +156,7 @@ test("Direct policy boundaries inherit through descendants", async () => fixture
   );
 }));
 
-test("nested Direct agents combine their Bash restrictions", async () => fixture(async root => {
+test("nested Goal Agents combine their Bash restrictions", async () => fixture(async root => {
   await publish(root, { bash: true });
   await publish(root, { name: "nested-fix", bash: false });
   const instance = await guard(root, { parent: "retry-fix", child: "nested-fix" }, { child: "parent" });
@@ -170,10 +170,10 @@ test("nested Direct agents combine their Bash restrictions", async () => fixture
   );
 }));
 
-test("Prometheus may publish Direct agents but cannot edit or use Bash", async () => fixture(async root => {
+test("Prometheus may publish Goal Agents but cannot edit or use Bash", async () => fixture(async root => {
   const instance = await guard(root, { planner: "prometheus" });
   await instance["tool.execute.before"](
-    { tool: "publish_direct_agent", sessionID: "planner", callID: "publish" },
+    { tool: "publish_goal_agent", sessionID: "planner", callID: "publish" },
     { args: {} },
   );
   await assert.rejects(mutate(instance, "planner", path.join(root, "README.md")), /may not edit project files/);
@@ -186,7 +186,7 @@ test("Prometheus may publish Direct agents but cannot edit or use Bash", async (
   );
 }));
 
-test("only root Prometheus and Build sessions may publish Direct agents", async () => fixture(async root => {
+test("only root Prometheus and Build sessions may publish Goal Agents", async () => fixture(async root => {
   const instance = await guard(root, {
     build: "build",
     planner: "prometheus",
@@ -197,17 +197,17 @@ test("only root Prometheus and Build sessions may publish Direct agents", async 
     child: "build",
   }, { child: "build" });
   await instance["tool.execute.before"](
-    { tool: "publish_direct_agent", sessionID: "build", callID: "publish" },
+    { tool: "publish_goal_agent", sessionID: "build", callID: "publish" },
     { args: {} },
   );
   await instance["tool.execute.before"](
-    { tool: "publish_direct_agent", sessionID: "planner", callID: "publish" },
+    { tool: "publish_goal_agent", sessionID: "planner", callID: "publish" },
     { args: {} },
   );
   for (const sessionID of ["plan", "ask", "general", "unknown", "child"]) {
     await assert.rejects(
       instance["tool.execute.before"](
-        { tool: "publish_direct_agent", sessionID, callID: "publish" },
+        { tool: "publish_goal_agent", sessionID, callID: "publish" },
         { args: {} },
       ),
       /only @prometheus or @build/,
@@ -224,26 +224,26 @@ test("children keep their own role limits and cannot inherit publication", async
     worker: "build",
     native: "build",
     nestedPlanner: "prometheus",
-    direct: "retry-fix",
-    directResearcher: "grounder",
+    goalAgent: "retry-fix",
+    goalAgentResearcher: "grounder",
   }, {
     researcher: "planner",
     worker: "planner",
     nestedPlanner: "native",
-    directResearcher: "direct",
+    goalAgentResearcher: "goalAgent",
   });
 
   for (const sessionID of ["researcher", "worker", "nestedPlanner"]) {
     await assert.rejects(
       instance["tool.execute.before"](
-        { tool: "publish_direct_agent", sessionID, callID: "publish" },
+        { tool: "publish_goal_agent", sessionID, callID: "publish" },
         { args: {} },
       ),
       /only @prometheus or @build/,
     );
   }
   await assert.rejects(
-    mutate(instance, "directResearcher", path.join(root, "src", "retry.ts")),
+    mutate(instance, "goalAgentResearcher", path.join(root, "src", "retry.ts")),
     /read-only/,
   );
 }));
@@ -252,20 +252,20 @@ test("managed children cannot exceed managed parent restrictions", async () => f
   await publish(root);
   const instance = await guard(root, {
     researcher: "grounder",
-    directUnderResearch: "retry-fix",
+    goalAgentUnderResearch: "retry-fix",
     planner: "prometheus",
-    directUnderPlanner: "retry-fix",
+    goalAgentUnderPlanner: "retry-fix",
   }, {
-    directUnderResearch: "researcher",
-    directUnderPlanner: "planner",
+    goalAgentUnderResearch: "researcher",
+    goalAgentUnderPlanner: "planner",
   });
 
   await assert.rejects(
-    mutate(instance, "directUnderResearch", path.join(root, "src", "retry.ts")),
+    mutate(instance, "goalAgentUnderResearch", path.join(root, "src", "retry.ts")),
     /read-only/,
   );
   await assert.rejects(
-    mutate(instance, "directUnderPlanner", path.join(root, "src", "retry.ts")),
+    mutate(instance, "goalAgentUnderPlanner", path.join(root, "src", "retry.ts")),
     /@prometheus may not edit/,
   );
 }));

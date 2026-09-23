@@ -1,4 +1,4 @@
-name: Direct Profile CI
+name: Goal Agent Profile CI
 
 on:
   pull_request:

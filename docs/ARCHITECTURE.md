@@ -3,11 +3,13 @@
 ## Scope
 
 Cuddly Winner is an optional OpenCode profile designed to work seamlessly with
-default OpenCode Plan and Build. It does not change their native behavior, and any
-new behaviors introduced by the profile work strictly within their intended surfaces.
+default OpenCode Plan and Build. The only addition to native Build is access to
+publish_goal_agent, so a Build session can publish a Goal Agent without
+switching to Prometheus. It does not change their native behavior, and any new
+behaviors introduced by the profile work strictly within their intended surfaces.
 Native Plan and Build remain the default path for ordinary work. The profile adds a small
 planning path without a command sandbox, virtual machine, or protected evidence store.
-Its goal runtime is scoped to the single generated Direct-agent format on OpenCode V1.
+Its goal runtime is scoped to the single generated Goal-Agent format on OpenCode V1.
 
 ## Managed Profile
 
@@ -18,17 +20,17 @@ the existing five-file Playwright browser runtime.
 | --- | --- |
 | Ask | Read-only short answers and narrow evidence gathering. |
 | Grounder | Hidden, read-only evidence researcher. |
-| Prometheus | Planning-only publisher for Direct agents. |
+| Prometheus | Planning-only publisher for Goal Agents. |
 | `plugins/immutability.ts` | Enforces managed mutation and Bash boundaries. |
 | `plugins/goal.ts` | Supplies goal_cycle and resumes premature goal stops. |
-| `tools/publish_direct_agent.ts` | Creates one no-clobber Direct agent. |
+| `tools/publish_goal_agent.ts` | Creates one no-clobber Goal Agent. |
 | `rules/resource-selection.md` | Browser and source-selection policy. |
 
 The browser runtime remains Playwright-only. Task work uses configured
 `headless` or Linux `virtual-display` mode. A separate headed window exists only
 for a person to log in. Browser state stays outside the repository.
 
-## Direct Agents
+## Goal Agents
 
 A root Prometheus or Build session publishes exactly one self-contained file:
 
@@ -40,9 +42,12 @@ The nested directory is an internal boundary, not a visible agent-name prefix.
 The file's frontmatter supplies the plain task-derived OpenCode name. It contains
 the requested outcome, criteria, durable context, instructions, verification,
 stop conditions, escalation triggers, and one embedded schema-v1 policy block.
-Goal definitions additionally carry their acceptance criteria in frontmatter
-`options.goal.criteria` for machine checking, and an optional native `model`.
-These are in the same agent file; the permission policy schema remains unchanged.
+Goal definitions additionally carry acceptance criteria in frontmatter
+`options.goal.criteria` for machine checking. Optional `options.goal.builder_model`
+and `options.goal.validator_model` values select separate verified models. When
+an override is omitted, that child inherits the model currently selected in the
+Goal Agent session (normally the user's configured default). These are in the
+same agent file; the permission policy schema remains unchanged.
 
 The policy contains only:
 
@@ -61,34 +66,45 @@ nested local agent definitions by file name and frontmatter name. It writes
 through a temporary regular file and hard link, so it never replaces an existing
 generated agent.
 
-`ImmutabilityGuard` reads this file only for the selected Direct identity. It
+### Updating or removing a Goal Agent
+
+To update a Goal Agent, delete `.opencode/agents/generated/<name>.md`, run
+Prometheus again, and restart OpenCode. To remove one, delete the file and
+restart OpenCode. Publishing over an existing name fails with
+`agent name already exists: <name>`; the publisher never replaces an existing
+agent. This refusal is covered by `tests/plugins/publish_goal_agent.test.mjs`.
+
+`ImmutabilityGuard` reads this file only for the selected Goal Agent identity. It
 allows exact `edit_paths`, applies the boolean Bash decision, blocks generated
 definition rewrites and trusted profile sources, and carries the same boundary to
 descendants. All managed ancestor restrictions combine, so a child cannot loosen
-a read-only, Prometheus, or Direct-policy boundary. Only the selected root
+a read-only, Prometheus, or Goal-Agent policy boundary. Only the selected root
 Prometheus or Build session may publish. Native and unrelated project-local agents remain
-outside the Direct policy. Browser screenshot, download, and media-save tools use
+outside the Goal-Agent policy. Browser screenshot, download, and media-save tools use
 the same path checks as edit tools. Profile sources under `agents/`, `plugins/`,
 `tools/`, `rules/`, and `scripts/` are trusted control paths and cannot appear in
-a Direct policy.
+a Goal-Agent policy.
 
 Classic generated packages are not migrated or accepted. When the old registry,
 agent, brief, and manifest layout identifies the selected agent, the guard denies
-mutation and Bash and tells the user to republish it as a Direct agent.
+mutation and Bash and tells the user to republish it as a Goal Agent.
 
 ### Goal Execution
 
 Publishing does not start goal execution. Selecting the generated root agent starts
-its workflow; it coordinates through goal_cycle and cannot directly edit, run Bash,
+its workflow; it coordinates through goal_cycle and cannot edit project files, run Bash,
 or spawn arbitrary tasks. The tool creates a new native General child for each
 build and another new child for validation. It passes the goal definition to
 both, previous validation findings only to the builder, and never passes the
 builder conversation to the validator. Child parentID preserves the existing
-Direct policy inheritance. Both builder and validator children explicitly receive
+Goal-Agent policy inheritance. Both builder and validator children explicitly receive
 read, glob, grep, and list inspection permissions. Children cannot delegate or
 publish agents. Validator edit tools are denied; shell verification remains
 permission-controlled and must not change product code. An approval-gated Bash
 permission is not a command allowlist or shell sandbox.
+Each child inherits the model currently selected in the Goal Agent session
+(normally the user's configured default) unless its corresponding
+`builder_model` or `validator_model` override is present.
 
 The validator records structured evidence for every fixed criterion through
 goal_verdict, which accepts calls only from the active validator session. This
@@ -106,7 +122,7 @@ sets only prevent concurrent cycles/continuations and track cancellation. Abort
 propagates to the active child. Errors, rejected permissions, and interrupted
 cycle records are never automatically replayed. Explicit user input can resume
 after inspection. Restarting OpenCode does not launch background work by itself.
-Native agents and Direct files without goal metadata do not enter this runtime.
+Native agents and Goal Agent files without goal metadata do not enter this runtime.
 
 ### Decision Record
 
@@ -125,8 +141,13 @@ browser runtime files always install as copies. `install`, `status`, and `remove
 operate under one configuration root.
 
 The installer records managed agents and safely retires removed assets. It deletes
-only an exact known copy or a link to the repository source. Modified, unrelated,
-and user-owned files survive and make `status` report drift. It preserves browser
+only an exact known copy or a link to the repository source, except that install
+and remove forcibly delete a file or symlink at the retired
+`tools/publish_direct_agent.ts` path. `status` reports that retired file if it
+still exists.
+Modified, unrelated, and user-owned files at other retired paths survive and make
+`status` report drift. An unexpected directory at the retired publisher path is
+preserved. The installer preserves browser
 settings, saved sessions, and feedback data. Retired user configuration is never
 treated as profile-owned merely because its path matches an old feature. It rejects
 symlinked retirement parents rather than following them outside the configuration

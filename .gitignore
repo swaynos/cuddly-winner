@@ -61,5 +61,5 @@ Thumbs.db
 # ChatGPT image-generation downloads, prompts, and run evidence are private.
 /.chatgpt-image-generation/
 
-# Direct agents are local task output published by Prometheus.
+# Goal Agents are local task output published by Prometheus or Build.
 /.opencode/agents/generated/

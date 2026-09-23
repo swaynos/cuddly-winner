@@ -5,10 +5,10 @@
     "node": ">=22.22.2 <25"
   },
   "scripts": {
-    "test": "node --test tests/plugins/*.test.mjs tests/integration/*.test.mjs"
+    "test": "node --test --test-concurrency=2 tests/plugins/*.test.mjs tests/integration/*.test.mjs"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.17.15",
+    "@opencode-ai/plugin": "1.18.31",
     "playwright": "1.58.2",
     "yaml": "2.9.0"
   },

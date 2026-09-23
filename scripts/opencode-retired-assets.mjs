@@ -26,6 +26,8 @@ const DIRECTORIES = [
   ["skills/writing-skills", "8080bfd5a3e78ea42f9d52364b1551f3d95a14ec0e9ced07d721e1e57740eff7"],
 ].map(([relativePath, sha256]) => ({ relativePath, sha256, source: relativePath }));
 
+const PURGED_FILES = ["tools/publish_direct_agent.ts"];
+
 const HISTORICAL = [
   { relativePath: "plugins/opencode-autonomous-supervisor.js", sha1: "c43313a21bb4c0a05bd3810079b5cad45b650340" },
   { relativePath: "tools/run.ts", sha1: "fec121e626de9da1776b0d8167174acb41c8168e" },
@@ -184,6 +186,24 @@ for (const asset of [
   } else {
     process.stdout.write(`Retired asset conflict: ${result.target} (ownership not proven; preserved)\n`);
     if (action === 'status') drift = true;
+  }
+}
+
+for (const relativePath of PURGED_FILES) {
+  const target = destination(root, relativePath);
+  const stat = lstatOrMissing(target);
+  if (!stat) continue;
+  if (!stat.isFile() && !stat.isSymbolicLink()) {
+    process.stdout.write(`Retired file conflict: ${target} (not a file or symlink; preserved)\n`);
+    if (action === 'status') drift = true;
+    continue;
+  }
+  if (action === 'status') {
+    process.stdout.write(`  [retired publisher present] ${target}\n`);
+    drift = true;
+  } else {
+    rmSync(target, { force: false });
+    process.stdout.write(`Purged retired publisher: ${target}\n`);
   }
 }
 

@@ -19,7 +19,7 @@ const BROWSER_CONTROL_FILES = [
 ];
 
 async function fixture(fn) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "direct-profile-deploy-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "profile-deploy-"));
   try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
@@ -37,12 +37,13 @@ async function exists(file) {
   try { await lstat(file); return true; } catch (error) { if (error?.code === "ENOENT") return false; throw error; }
 }
 
-test("installer deploys only the Direct profile and retires proven legacy links", async () => fixture(async root => {
+test("installer deploys the Cuddly Winner profile and purges the retired publisher", async () => fixture(async root => {
   const config = path.join(root, "config");
   const legacy = [
     "agents/reviewer.md",
     "plugins/autonomous-kpis.ts",
     "plugins/announce-hygiene.ts",
+    "tools/publish_direct_agent.ts",
     "tools/validate_scaffold.ts",
     "tools/scaffold_gitignore.ts",
     "tools/spike.ts",
@@ -64,22 +65,36 @@ test("installer deploys only the Direct profile and retires proven legacy links"
     ["ask.md", "grounder.md", "prometheus.md"],
   );
   assert.deepEqual((await readdir(path.join(config, "plugins"))).sort(), ["goal.ts", "immutability.ts"]);
-  assert.deepEqual((await readdir(path.join(config, "tools"))).sort(), ["publish_direct_agent.ts"]);
+  assert.deepEqual((await readdir(path.join(config, "tools"))).sort(), ["publish_goal_agent.ts"]);
   assert.deepEqual((await readdir(path.join(config, "rules"))).sort(), ["resource-selection.md"]);
   assert.equal(await exists(path.join(config, "skills")), false);
   for (const relative of legacy) assert.equal(await exists(path.join(config, relative)), false, relative);
   for (const name of BROWSER_CONTROL_FILES) await stat(path.join(config, name));
 }));
 
-test("installer preserves a user-owned retired asset", async () => fixture(async root => {
+test("installer purges a customized retired publisher but preserves unrelated retired assets", async () => fixture(async root => {
   const config = path.join(root, "config");
   const retired = path.join(config, "tools", "spike.ts");
+  const priorPublisher = path.join(config, "tools", "publish_direct_agent.ts");
   await mkdir(path.dirname(retired), { recursive: true });
   await writeFile(retired, "user-owned tool\n");
+  await writeFile(priorPublisher, "user-owned publisher\n");
 
   await deployFixture(root);
   assert.equal(await exists(retired), true);
+  assert.equal(await exists(priorPublisher), false);
   await assert.rejects(deployFixture(root, "status"), error => error.code === 1);
+}));
+
+test("retired publisher purge does not recursively remove an unexpected directory", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  const retiredDirectory = path.join(config, "tools", "publish_direct_agent.ts");
+  const preserved = path.join(retiredDirectory, "user-data.txt");
+  await mkdir(retiredDirectory, { recursive: true });
+  await writeFile(preserved, "keep directory contents\n");
+
+  await deployFixture(root);
+  assert.equal(await readFile(preserved, "utf8"), "keep directory contents\n");
 }));
 
 test("installer keeps the instruction for a user-owned retired rule", async () => fixture(async root => {
@@ -136,7 +151,7 @@ test("retirement refuses a symlinked asset parent", async () => fixture(async ro
   assert.equal(await exists(preserved), true);
 }));
 
-test("durable docs describe the enforced Direct boundaries", async () => {
+test("durable docs describe the enforced Goal Agent boundaries", async () => {
   const requirements = await readFile(path.join(repo, "docs", "REQUIREMENTS.md"), "utf8");
   const architecture = await readFile(path.join(repo, "docs", "ARCHITECTURE.md"), "utf8");
   assert.match(requirements, /Browser tools that save screenshots,[\s\S]*exact edit-path policy/);
