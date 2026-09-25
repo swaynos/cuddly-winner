@@ -52,8 +52,14 @@ test("Goal Agents use the policy in their one generated file", async () => fixtu
   const instance = await guard(root, { goalAgent: "retry-fix" });
   await mutate(instance, "goalAgent", path.join(root, "src", "retry.ts"));
   await assert.rejects(mutate(instance, "goalAgent", path.join(root, "README.md")), /outside its declared edit paths/);
-  await instance["tool.execute.before"](
+  await assert.rejects(instance["tool.execute.before"](
     { tool: "bash", sessionID: "goalAgent", callID: "shell" },
+    { args: { command: "node --test", cwd: root } },
+  ), /coordinates through goal_cycle/);
+
+  const child = await guard(root, { goalAgent: "retry-fix", builder: "general" }, { builder: "goalAgent" });
+  await child["tool.execute.before"](
+    { tool: "bash", sessionID: "builder", callID: "shell" },
     { args: { command: "node --test", cwd: root } },
   );
 }));

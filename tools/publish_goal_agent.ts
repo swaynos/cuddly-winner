@@ -265,7 +265,7 @@ export function renderGoalAgent(request: GoalAgentRequest): string {
     "  question: allow",
     "  edit: deny",
     "  write: deny",
-    "  bash: deny",
+    `  bash: ${request.bash ? "ask" : "deny"}`,
     "  task: deny",
     "  goal_cycle: allow",
     "---",

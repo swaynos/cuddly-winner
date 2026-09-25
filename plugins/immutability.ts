@@ -211,6 +211,9 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       const policies = agents.map(goalAgentPolicyFor).filter((policy): policy is GoalAgentPolicy => Boolean(policy));
 
       if (SHELL_TOOLS.has(input.tool)) {
+        if (!resolution.hasParent && policies.length) {
+          throw new Error(`ImmutabilityGuard: @${agent} coordinates through goal_cycle and may not execute shell commands.`);
+        }
         if (policies.some((policy) => !policy.bash)) throw new Error(`ImmutabilityGuard: @${agent} may not execute shell commands.`);
         return;
       }

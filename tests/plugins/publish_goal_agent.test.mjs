@@ -41,6 +41,7 @@ test("publishes one self-contained goal-oriented agent", async () => fixture(asy
   assert.equal((await lstat(file)).isFile(), true);
   const content = await readFile(file, "utf8");
   assert.match(content, /^---\nname: retry-fix\n/m);
+  assert.match(content, /\n  bash: ask\n/);
   assert.doesNotMatch(content, /^model:/m);
   const options = JSON.parse(content.match(/^options: (.*)$/m)[1]);
   assert.deepEqual(options.goal, { criteria: ["The retry policy has focused coverage."] });

@@ -102,6 +102,11 @@ read, glob, grep, and list inspection permissions. Children cannot delegate or
 publish agents. Validator edit tools are denied; shell verification remains
 permission-controlled and must not change product code. An approval-gated Bash
 permission is not a command allowlist or shell sandbox.
+
+When a Goal Agent policy enables Bash, the generated root exposes it as `ask` so a
+child can inherit the approval-gated capability. `ImmutabilityGuard` still denies
+root shell calls; only a child session may use the inherited capability.
+
 Each child inherits the model currently selected in the Goal Agent session
 (normally the user's configured default) unless its corresponding
 `builder_model` or `validator_model` override is present.
