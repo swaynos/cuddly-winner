@@ -16,7 +16,7 @@ const hasXvfb = spawnSync("sh", ["-c", "command -v Xvfb && command -v xvfb-run &
 
 function client(root, env = {}) {
   const child = spawn(process.execPath, [server], { env: { ...process.env, CUDDLY_WINNER_CONFIG_DIR: root,
-    CUDDLY_WINNER_VIRTUAL_DISPLAY: "", CUDDLY_WINNER_BROWSER_TIMEOUT_MS: "1500", CUDDLY_WINNER_BROWSER_MAX_UPLOAD_BYTES: "1024", ...env }, stdio: ["pipe", "pipe", "pipe"] });
+    CUDDLY_WINNER_VIRTUAL_DISPLAY: "", CUDDLY_WINNER_BROWSER_MAX_WAIT_MS: "1500", CUDDLY_WINNER_BROWSER_MAX_UPLOAD_BYTES: "1024", ...env }, stdio: ["pipe", "pipe", "pipe"] });
   const exited = once(child, "exit");
   let id = 0, stderr = "";
   const pending = new Map();
@@ -106,7 +106,8 @@ for (const executionMode of ["headless", "virtual-display"]) {
     try {
       const tools = (await c.rpc("tools/list")).tools;
       assert.ok(tools.some(tool => tool.name === "browser_upload_image"));
-      assert.equal((await c.call("browser_navigate", { url: site.base })).isError, undefined);
+      const nav = await c.call("browser_navigate", { url: site.base });
+      assert.equal(nav.isError, undefined, text(nav));
       assert.equal(JSON.parse(text(await c.call("browser_status"))).authenticationVerification, "pending");
       assert.equal((await c.call("browser_evaluate", { expression: "document.cookie" })).isError, true);
       const uploadControls = text(await c.call("browser_interactive_elements"));
