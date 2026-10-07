@@ -98,18 +98,54 @@ test("premature stops continue repeatedly, with duplicate idle events deduplicat
   assert.equal(f.continuations.length, 2);
 }));
 
-test("blocked and malformed validator results remain incomplete", async () => {
+test("observed blockers stop but malformed completed reports return to repair", async () => {
   for (const response of [{ status: "checked", checks: {} }, { status: "blocked", reason: "Required game is unavailable" }]) {
     await fixture(async f => {
       f.setResponse(response);
       const result = await f.cycle();
-      assert.equal(result.status, "blocked");
+      assert.equal(result.status, response.status === "blocked" ? "blocked" : "failed");
       f.finish(result);
       await f.idle();
-      assert.equal(f.continuations.length, 0);
+      assert.equal(f.continuations.length, response.status === "blocked" ? 0 : 1);
     });
   }
 });
+
+test("evidence-free orchestration blocker is repaired across repeated cycles", async () => fixture(async f => {
+  f.setRun(async input => {
+    if (input.body.parts[0].text.includes("Perform only your assigned validator phase")) {
+      f.history.set(input.path.id, [{ info: {}, parts: [{ type: "tool", tool: "goal_verdict", state: {
+        status: "completed", output: JSON.stringify({ status: "blocked", reason: "goal_cycle is unavailable", checks: {} }),
+      } }] }]);
+    }
+    return { data: { info: {} } };
+  });
+  for (let i = 0; i < 6; i++) {
+    const result = await f.cycle();
+    assert.equal(result.status, "failed");
+    assert.match(result.reason, /without inspecting/);
+    f.finish(result);
+    await f.idle();
+  }
+  assert.equal(f.continuations.length, 6);
+  assert.equal(new Set(f.calls.map(c => c.id)).size, 12);
+  assert.ok(f.prompts.every(p => /ROLE BOUNDARY/.test(p.body.parts[0].text)));
+}));
+
+test("ordinary rejected inputs and cancelled test assertions do not imply user denial", async () => fixture(async f => {
+  f.setRun(async input => {
+    f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "bash", state: { status: "error", error: "test rejected input: expected cancelled job, got running" } });
+    if (input.body.parts[0].text.includes("Perform only your assigned validator phase")) {
+      f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: { status: "completed", output: JSON.stringify(verdict(false)) } });
+    }
+    return { data: { info: {} } };
+  });
+  const result = await f.cycle();
+  assert.equal(result.status, "failed");
+  f.finish(result);
+  await f.idle();
+  assert.equal(f.continuations.length, 1);
+}));
 
 test("cancellation aborts the active child and never starts validation", async () => fixture(async f => {
   f.setRun(async () => {

@@ -10,7 +10,7 @@ import { publishGoalAgentFile } from "../../tools/publish_goal_agent.ts";
 
 const repo = path.resolve(import.meta.dirname, "../..");
 
-test("OpenCode V1 resumes a premature stop, builds, independently rejects, repairs and validates", { timeout: 120_000 }, async () => {
+test("OpenCode V1 repairs an unsupported child-orchestration blocker and failed validation", { timeout: 120_000 }, async () => {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "goal-runtime-live-")));
   let processHandle;
   let serverLog = "";
@@ -32,10 +32,13 @@ test("OpenCode V1 resumes a premature stop, builds, independently rejects, repai
       if (user.includes("Perform only your assigned builder phase")) {
         if (!tools.length) {
           builds++;
-          call = { name: "write", arguments: JSON.stringify({ filePath: path.join(root, "counter.txt"), content: builds === 1 ? "bad\n" : "good\n" }) };
+          call = { name: "write", arguments: JSON.stringify({ filePath: path.join(root, "counter.txt"), content: builds < 3 ? "bad\n" : "good\n" }) };
         }
       } else if (user.includes("Perform only your assigned validator phase")) {
-        if (!tools.length) {
+        if (!tools.length && builds === 1) {
+          checks++;
+          call = { name: "goal_verdict", arguments: JSON.stringify({ status: "blocked", reason: "goal_cycle unavailable to validator", checks: {} }) };
+        } else if (!tools.length) {
           call = { name: "read", arguments: JSON.stringify({ filePath: path.join(root, "counter.txt") }) };
         } else if (!messages.some(m => m.role === "assistant" && m.tool_calls?.some(t => t.function.name === "goal_verdict"))) {
           checks++;
@@ -115,8 +118,8 @@ test("OpenCode V1 resumes a premature stop, builds, independently rejects, repai
       }
       await new Promise(r => setTimeout(r, 100));
     }
-    assert.equal(builds, 2);
-    assert.equal(checks, 2);
+    assert.equal(builds, 3);
+    assert.equal(checks, 3);
     const phaseModels = role => requests
       .filter(input => input.messages?.some(message => message.role === "user" && JSON.stringify(message.content).includes(`Perform only your assigned ${role} phase`)))
       .map(input => input.model);
@@ -127,8 +130,8 @@ test("OpenCode V1 resumes a premature stop, builds, independently rejects, repai
     }
     assert.ok(rootTurns >= 3, "premature stop must have resumed");
     const children = await api(`/session/${session.id}/children`);
-    assert.equal(children.length, 4);
-    assert.equal(new Set(children.map(c => c.id)).size, 4);
+    assert.equal(children.length, 6);
+    assert.equal(new Set(children.map(c => c.id)).size, 6);
     for (const child of children) {
       assert.equal(child.parentID, session.id);
       const messages = await api(`/session/${child.id}/message`);

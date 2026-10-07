@@ -120,24 +120,34 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
         if (context.abort.aborted || stopped.has(id)) { cancel(); throw new Error("Goal cancelled."); }
         const prompt = role === "builder"
           ? `Pursue the goal below within its exact edit paths. Explore relevant evidence as needed, complete the requested work, and run its verification. Do not change acceptance criteria or the generated definition. Ordinary failures require diagnosis and repair. Report actual changes and any genuine blocker.\nPrevious independent findings:\n${JSON.stringify(previous ?? null)}`
-          : `Independently validate the CURRENT project against EVERY criterion below. Obtain fresh evidence; do not trust implementation claims. Do not edit product code or acceptance criteria, including through shell commands. Run the declared checks and required live/user-journey checks. Mark unmet criteria false with actionable findings. Use blocked only for a genuine stop condition or external dependency, not ordinary test failures. Call goal_verdict before finishing with concrete evidence (commands, outcomes and artifact paths) per criterion, using these keys: ${JSON.stringify(Object.fromEntries(goal.criteria.map((c, i) => [`c${i}`, c])))}. You have not been given the builder's conversation.`;
+           : `Independently validate the CURRENT project against EVERY criterion below. Obtain fresh evidence; do not trust implementation claims. Do not edit product code or acceptance criteria, including through shell commands. Run the declared checks and required live/user-journey checks. Mark unmet criteria false with actionable findings. Use blocked only for an observed genuine stop condition or external dependency, not ordinary test failures or unfinished implementation. Call goal_verdict before finishing with concrete evidence (commands, outcomes and artifact paths) per criterion, using these keys: ${JSON.stringify(Object.fromEntries(goal.criteria.map((c, i) => [`c${i}`, c])))}. You have not been given the builder's conversation.`;
         const model = (role === "builder" ? goal.builderModel : goal.validatorModel) ?? goal.model;
         const result = data(await client.session.prompt({ path: { id: child.id }, body: {
           agent: "general",
           model,
-          parts: [{ type: "text", text: `${prompt}\n\nThe following is the goal definition. Its coordinator instructions apply to the parent, not you. Perform only your assigned ${role} phase.\n${goal.text}` }],
+          parts: [{ type: "text", text: `${prompt}\n\nThe following is the goal definition. Its coordinator instructions apply to the parent, not you. Perform only your assigned ${role} phase.\n${goal.text}\n\nROLE BOUNDARY: You are the ${role} child, NOT the coordinator. goal_cycle, publication and delegation are intentionally unavailable to you. Do not attempt orchestration or call their absence a blocker. ${role === "validator" ? "Inspect files and run checks using your own tools, then call goal_verdict. Missing implementation is a failed criterion for the next builder to repair." : "Implement and verify the product using your own tools, then report progress to the coordinator."}` }],
         } }));
         if (result.info?.error || context.abort.aborted || stopped.has(id)) throw new Error("Child execution interrupted or failed; inspect its session before resuming.");
         // A denied tool may be handled by the model without an assistant error.
         const history = data(await client.session.messages({ path: { id: child.id } }));
-        if (history.some((m: any) => m.info.error || m.parts.some((p: any) => p.type === "tool" && p.state.status === "error" && /reject|denied|abort|cancel/i.test(p.state.error)))) {
+        if (history.some((m: any) => m.info.error || m.parts.some((p: any) => p.type === "tool" && p.state.status === "error" && /PermissionRejectedError|MessageAbortedError|^The user rejected|^User (?:denied|cancelled)|^Operation (?:aborted|cancelled)/i.test(p.state.error)))) {
           throw new Error("Child encountered a denied or interrupted action; explicit user input is required.");
         }
         if (role === "validator") {
           const report = history.flatMap((m: any) => m.parts).findLast((p: any) => p.type === "tool" && p.tool === "goal_verdict" && p.state.status === "completed");
           if (!report) return JSON.stringify({ status: "failed", children, reason: "Validator stopped without a verdict. Repeat the build/validate cycle and obtain criterion evidence." });
-          const validation = JSON.parse(report.state.output);
-          const status = verdict(validation, goal.criteria);
+          let validation;
+          let status;
+          try {
+            validation = JSON.parse(report.state.output);
+            status = verdict(validation, goal.criteria);
+          } catch (error) {
+            return JSON.stringify({ status: "failed", children, reason: `Invalid completed validator report; repair the validation protocol: ${error instanceof Error ? error.message : String(error)}` });
+          }
+          const inspected = history.some((m: any) => m.parts.some((p: any) => p.type === "tool" && p.tool !== "goal_verdict" && ["completed", "error"].includes(p.state.status)));
+          if (status === "blocked" && !inspected) {
+            return JSON.stringify({ status: "failed", children, validation, reason: "Validator declared a blocker without inspecting or attempting a check. Child orchestration tools are intentionally unavailable; obtain concrete external-stop evidence or mark unfinished work failed." });
+          }
           if (status === "blocked") stopped.add(id);
           if (status === "validated" && !history.some((m: any) => m.parts.some((p: any) => p.type === "tool" && p.tool !== "goal_verdict" && p.state.status === "completed"))) {
             return JSON.stringify({ status: "failed", children, reason: "Validator claimed success without obtaining tool evidence. Obtain independent evidence before reporting success." });

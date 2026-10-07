@@ -31,6 +31,10 @@ feeds findings to the next fresh builder. Only criterion-by-criterion validation
 with tool evidence establishes completion. A premature coordinator stop resumes
 automatically; cancellation, denied permissions, unknown API outcomes, and genuine
 blockers remain incomplete and require explicit user input before resuming.
+An unsupported blocker with no attempted inspection, or a malformed completed
+validator report, is repairable failed validation. Missing coordinator-only tools
+in a child is intentional, not a dependency failure. Ordinary rejected-input tool
+errors must not be mistaken for user permission rejection.
 Both builder and validator child sessions explicitly receive read, glob, grep, and
 list inspection permissions. The validator cannot use edit tools or delegate; when
 Bash is enabled, it receives an approval-gated verification channel and must not

@@ -12,6 +12,12 @@
 | Browser runtime | Existing Playwright integration tests cover headless, virtual-display, login handoff, state handling, uploads, downloads, and runtime configuration. |
 | Documentation | Tests require the durable browser policy and Goal-Agent contract to agree. |
 
+Goal regression coverage includes six consecutive evidence-free blocker cycles,
+malformed completed reports, rejected-input error text, and a real three-cycle
+journey (unsupported child orchestration blocker, failed criterion, validation).
+Cancellation, actual permission rejection and unknown API outcomes must still
+stop without replay.
+
 Run the repository checks with:
 
 ```sh

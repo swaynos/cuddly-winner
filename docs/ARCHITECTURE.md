@@ -115,7 +115,10 @@ The validator records structured evidence for every fixed criterion through
 goal_verdict, which accepts calls only from the active validator session. This
 avoids the pinned V1 structured-output API's session serialization failure. A
 missing verdict or evidence is incomplete, not success. Premature validator
-completion repeats the cycle; interrupted execution or an API failure blocks it.
+completion and malformed completed reports repeat the cycle; interrupted execution
+or an API failure blocks it. A validator blocker without any attempted inspection
+or check is repairable protocol failure, not an external stop. Child prompts end
+with their role boundary: coordinator-only tools are intentionally unavailable.
 Failed criteria cause another build/validate cycle. Validation success requires
 actual completed evidence-gathering tool use as well as the structured verdict;
 the runtime enforces the protocol, not the truthfulness of model judgments.
@@ -124,10 +127,13 @@ The goal plugin listens for root session idle events and submits a continuation
 when a goal has not passed or blocked. Cycle tool results and child sessions are
 the durable checkpoints; no registry or task-state file is created. In-memory
 sets only prevent concurrent cycles/continuations and track cancellation. Abort
-propagates to the active child. Errors, rejected permissions, and interrupted
+propagates to the active child. Session/API errors, actual rejected permissions, and interrupted
 cycle records are never automatically replayed. Explicit user input can resume
 after inspection. Restarting OpenCode does not launch background work by itself.
 Native agents and Goal Agent files without goal metadata do not enter this runtime.
+Ordinary tool errors containing words such as "rejected" or "cancelled" do not
+establish user denial. Permission events and explicit interruption signatures
+remain terminal; unknown non-idempotent outcomes are never automatically replayed.
 
 ### Decision Record
 
