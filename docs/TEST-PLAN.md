@@ -17,6 +17,9 @@ malformed completed reports, rejected-input error text, and a real three-cycle
 journey (unsupported child orchestration blocker, failed criterion, validation).
 Cancellation, actual permission rejection and unknown API outcomes must still
 stop without replay.
+Regression cases also require bookkeeping and unavailable-tool calls to return
+unsupported blockers to repair, failed external-resource inspection to preserve
+a terminal blocker, and invalid JSON in completed validator reports to retry.
 
 Run the repository checks with:
 

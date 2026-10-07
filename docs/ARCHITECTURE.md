@@ -119,6 +119,10 @@ completion and malformed completed reports repeat the cycle; interrupted executi
 or an API failure blocks it. A validator blocker without any attempted inspection
 or check is repairable protocol failure, not an external stop. Child prompts end
 with their role boundary: coordinator-only tools are intentionally unavailable.
+Blocker evidence requires a completed or errored read, glob, grep, list, Bash,
+webfetch, websearch, LSP, or managed browser tool attempt. Bookkeeping and
+unavailable-tool calls do not count as inspection. An attempted inspection that
+fails on an external dependency can still support a terminal blocker.
 Failed criteria cause another build/validate cycle. Validation success requires
 actual completed evidence-gathering tool use as well as the structured verdict;
 the runtime enforces the protocol, not the truthfulness of model judgments.

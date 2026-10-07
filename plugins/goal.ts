@@ -144,7 +144,9 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
           } catch (error) {
             return JSON.stringify({ status: "failed", children, reason: `Invalid completed validator report; repair the validation protocol: ${error instanceof Error ? error.message : String(error)}` });
           }
-          const inspected = history.some((m: any) => m.parts.some((p: any) => p.type === "tool" && p.tool !== "goal_verdict" && ["completed", "error"].includes(p.state.status)));
+          const inspected = history.some((m: any) => m.parts.some((p: any) => p.type === "tool"
+            && (["read", "glob", "grep", "list", "bash", "webfetch", "websearch", "lsp"].includes(p.tool) || p.tool.startsWith("cuddly-winner-browser_browser_"))
+            && ["completed", "error"].includes(p.state.status)));
           if (status === "blocked" && !inspected) {
             return JSON.stringify({ status: "failed", children, validation, reason: "Validator declared a blocker without inspecting or attempting a check. Child orchestration tools are intentionally unavailable; obtain concrete external-stop evidence or mark unfinished work failed." });
           }

@@ -132,6 +132,67 @@ test("evidence-free orchestration blocker is repaired across repeated cycles", a
   assert.ok(f.prompts.every(p => /ROLE BOUNDARY/.test(p.body.parts[0].text)));
 }));
 
+test("bookkeeping and unavailable tools do not establish blocker evidence", async () => {
+  for (const part of [
+    { type: "tool", tool: "todowrite", state: { status: "completed", output: "Validation pending" } },
+    { type: "tool", tool: "invalid", state: { status: "error", error: "Model tried to call unavailable tool goal_cycle" } },
+    { type: "tool", tool: "goal_cycle", state: { status: "error", error: "Tool unavailable" } },
+  ]) {
+    await fixture(async f => {
+      f.setRun(async input => {
+        if (input.body.parts[0].text.includes("Perform only your assigned validator phase")) {
+          f.history.set(input.path.id, [{ info: {}, parts: [part, { type: "tool", tool: "goal_verdict", state: {
+            status: "completed", output: JSON.stringify({ status: "blocked", reason: "goal_cycle is unavailable", checks: {} }),
+          } }] }]);
+        }
+        return { data: { info: {} } };
+      });
+      const result = await f.cycle();
+      assert.equal(result.status, "failed", part.tool);
+      assert.match(result.reason, /without inspecting/);
+      f.finish(result);
+      await f.idle();
+      assert.equal(f.continuations.length, 1);
+    });
+  }
+});
+
+test("failed inspection of an unavailable external resource remains terminal", async () => fixture(async f => {
+  f.setRun(async input => {
+    if (input.body.parts[0].text.includes("Perform only your assigned validator phase")) {
+      f.history.set(input.path.id, [{ info: {}, parts: [
+        { type: "tool", tool: "webfetch", state: { status: "error", error: "Required external service is unavailable: HTTP 503" } },
+        { type: "tool", tool: "goal_verdict", state: {
+          status: "completed", output: JSON.stringify({ status: "blocked", reason: "Required external service returned HTTP 503", checks: {} }),
+        } },
+      ] }]);
+    }
+    return { data: { info: {} } };
+  });
+  const result = await f.cycle();
+  assert.equal(result.status, "blocked");
+  f.finish(result);
+  await f.idle();
+  assert.equal(f.continuations.length, 0);
+}));
+
+test("invalid JSON in a completed validator report returns to repair", async () => fixture(async f => {
+  f.setRun(async input => {
+    if (input.body.parts[0].text.includes("Perform only your assigned validator phase")) {
+      f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: {
+        status: "completed", output: "{invalid JSON",
+      } });
+    }
+    return { data: { info: {} } };
+  });
+  const result = await f.cycle();
+  assert.equal(result.status, "failed");
+  assert.match(result.reason, /Invalid completed validator report/);
+  f.finish(result);
+  await f.idle();
+  assert.equal(f.continuations.length, 1);
+}));
+
 test("ordinary rejected inputs and cancelled test assertions do not imply user denial", async () => fixture(async f => {
   f.setRun(async input => {
     f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "bash", state: { status: "error", error: "test rejected input: expected cancelled job, got running" } });
