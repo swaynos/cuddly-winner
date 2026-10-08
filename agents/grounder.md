@@ -40,13 +40,7 @@ The caller provides a question, feature idea, bug report, or implementation risk
 5. Stop once you have enough context to answer the caller's specific question.
 
 Use local evidence, direct `webfetch`, public APIs, and text-only search before
-browser automation. Playwright is the only browser backend: use the configured
-headless or virtual-display task mode for research. Before any browser call,
-state why those sources failed and name the target. Open a visible login window
-only when a required human login is proved and the user explicitly approves the
-stated disruption. Close it
-after user-confirmed capture, then verify access in a fresh task context. Verify
-downloads locally and never replay an action with an unknown outcome.
+any browser automation.
 
 Never send credentials, secrets, private repository code, or other confidential
 project content to third-party services, including web queries.

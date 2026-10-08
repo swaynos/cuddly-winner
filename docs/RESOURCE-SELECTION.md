@@ -1,19 +1,16 @@
-# Resource Selection
+# Managed Browser Reference
 
-Use the least disruptive source that can complete the task:
+Workflow selection and shared safeguards live in `../rules/resource-selection.md`.
+Read the relevant tool procedures before using `cuddly-winner-browser`, including
+in user/project-selected workflows. Apply the managed mode and login procedures
+only when that policy selects the default managed workflow.
+The installer deploys it under `<config_dir>/docs/` without adding it to OpenCode's
+always-loaded instructions.
 
-1. Current conversation context and local project files.
-2. Direct web pages, public APIs, and raw documentation URLs.
-3. Text-only search when the exact page is unknown.
-4. Managed Playwright for rendered pages and browser actions.
-5. A visible Playwright window when a person must log in.
-
-## Browser Policy
-
-Playwright is the project's only browser backend. Task execution uses explicit
-`headless` or `virtual-display` mode for browsing, uploads, generation, downloads,
-and verification. A separate visible window serves human login only.
-Use the managed `cuddly-winner-browser` tools for browser actions.
+The managed Playwright runtime uses configured `headless` or `virtual-display`
+task mode and a separate headed human-login window. These mode and login
+procedures do not constrain user/project-selected workflows. Tool requirements
+still apply whenever those workflows use `cuddly-winner-browser`.
 
 ### Shared settings
 
@@ -72,7 +69,8 @@ physical desktop, not inside the task display.
 5. Load the saved state in a fresh task context, verify account or requested task
    access, and continue there. Do not complete the task in the login window.
 
-Use the same configuration root and state name for the handoff:
+Use the same configuration root and state name for the handoff. Substitute the
+selected config directory for `$HOME/.config/opencode` if it differs:
 
 ```sh
 node "$HOME/.config/opencode/opencode-browser-login.mjs" start --config-dir "$HOME/.config/opencode" --name site --url https://example.com/ --origin https://example.com

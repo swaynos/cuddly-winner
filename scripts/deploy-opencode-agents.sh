@@ -603,6 +603,7 @@ PLUGINS_DIR="${CONFIG_DIR}/plugins"
 TOOLS_DIR="${CONFIG_DIR}/tools"
 SKILLS_DIR="${CONFIG_DIR}/skills"
 RULES_DIR="${CONFIG_DIR}/rules"
+DOCS_DIR="${CONFIG_DIR}/docs"
 OPENCODE_JSON="${CONFIG_DIR}/opencode.json"
 LEGACY_OPENCODE_JSON="${CONFIG_DIR}/config.json"
 AGENT_STATE_FILE="${AGENTS_DIR}/cuddly-winner-managed.json"
@@ -634,6 +635,7 @@ AGENT_SOURCES=(
 PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/goal.ts")
 TOOL_SOURCES=("${REPO_ROOT}/tools/publish_goal_agent.ts")
 RULE_SOURCES=("${REPO_ROOT}/rules/resource-selection.md")
+DOC_SOURCES=("${REPO_ROOT}/docs/RESOURCE-SELECTION.md")
 
 assert_config_destination "$OPENCODE_JSON"
 assert_config_destination "$LEGACY_OPENCODE_JSON"
@@ -650,6 +652,7 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "copy" "${PLUGIN_SOURCES[@]}"
   sync_group "Tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
+  sync_group "Reference docs" "$DOCS_DIR" "$ACTION" "$MODE" "${DOC_SOURCES[@]}"
   sync_feedback_locator
   sync_rule_instructions
   if [[ "$ACTION" == "status" ]]; then
@@ -697,6 +700,7 @@ install_browser_control_file "$BROWSER_LOGIN_SOURCE" "$BROWSER_LOGIN_DEST"
 install_browser_control_file "$BROWSER_RUNTIME_SOURCE" "$BROWSER_RUNTIME_DEST"
 install_browser_control_file "$BROWSER_SERVICE_SOURCE" "$BROWSER_SERVICE_DEST"
 sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
+sync_group "Reference docs" "$DOCS_DIR" "$ACTION" "$MODE" "${DOC_SOURCES[@]}"
 sync_rule_instructions
 node "$MCP_HELPER" install --config "$OPENCODE_JSON"
 if [[ -f "$LEGACY_OPENCODE_JSON" ]]; then

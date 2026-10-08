@@ -67,6 +67,10 @@ test("installer deploys the Cuddly Winner profile and purges the retired publish
   assert.deepEqual((await readdir(path.join(config, "plugins"))).sort(), ["goal.ts", "immutability.ts"]);
   assert.deepEqual((await readdir(path.join(config, "tools"))).sort(), ["publish_goal_agent.ts"]);
   assert.deepEqual((await readdir(path.join(config, "rules"))).sort(), ["resource-selection.md"]);
+  const reference = path.join(config, "docs", "RESOURCE-SELECTION.md");
+  assert.equal(await readFile(reference, "utf8"), await readFile(path.join(repo, "docs", "RESOURCE-SELECTION.md"), "utf8"));
+  const instructions = JSON.parse(await readFile(path.join(config, "opencode.json"), "utf8")).instructions;
+  assert.ok(!instructions.includes(reference), "managed reference must be loaded on demand only");
   assert.equal(await exists(path.join(config, "skills")), false);
   for (const relative of legacy) assert.equal(await exists(path.join(config, relative)), false, relative);
   for (const name of BROWSER_CONTROL_FILES) await stat(path.join(config, name));

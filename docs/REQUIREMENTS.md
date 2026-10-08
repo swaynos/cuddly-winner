@@ -76,12 +76,9 @@ edit and Bash tool calls, not host filesystem effects produced by a command.
 
 ## Browser Runtime
 
-Playwright is the only supported browser backend. Task actions run in configured
-headless or virtual-display mode; a separate headed window serves human login
-only. Saved authentication state remains private, origin-scoped, and outside the
-repository. A page result is not a delivered file: downloads and generated files
-require local-byte validation. An existing page image is not success for a new
-generated result. Never automatically replay an action whose outcome is unknown.
+`rules/resource-selection.md` owns workflow precedence and shared safeguards.
+Managed runtime procedures live in the on-demand `docs/RESOURCE-SELECTION.md`,
+deployed beside the rule without inclusion in always-loaded instructions.
 
 ## Installation Safety
 

@@ -4,69 +4,59 @@ import path from "node:path";
 import { readFile } from "node:fs/promises";
 
 const repo = path.resolve(import.meta.dirname, "../..");
+const load = async file => (await readFile(path.join(repo, file), "utf8"))
+  .toLowerCase().replace(/\s+/g, " ");
 
-function normalize(text) {
-  return text.toLowerCase().replace(/\s+/g, " ");
-}
-
-test("deployed rule separates explicit task modes from visible human login", async () => {
-  const text = normalize(await readFile(path.join(repo, "rules", "resource-selection.md"), "utf8"));
-  const orderedSteps = [
-    "playwright is the project's only browser backend",
-    "task execution uses the configured `headless` or `virtual-display` mode",
-    "a visible login window opens only for a person to complete a required login",
-    "ask for approval",
-    "new task context",
-    "report the blocker",
-  ];
-
+test("rule selects user, project, then managed workflow without forcing its procedures", async () => {
+  const text = await load("rules/resource-selection.md");
   let previous = -1;
-  for (const step of orderedSteps) {
+  for (const step of ["explicit user direction", "project-local browser instructions", "managed `cuddly-winner-browser` defaults"]) {
     const current = text.indexOf(step);
-    assert.ok(current > previous, `missing or out-of-order browser rule: ${step}`);
+    assert.ok(current > previous, `missing or out-of-order precedence: ${step}`);
     previous = current;
   }
-  assert.match(text, /never switch modes or repeat a denied request automatically/);
+  assert.match(text, /may share a headed task window/);
+  assert.match(text, /read `\.\.\/docs\/resource-selection\.md`/);
+  assert.match(text, /apply its managed mode and login procedures only when using the default managed workflow/);
+  assert.doesNotMatch(text, /opencode-browser-login\.mjs|tools for every browser action/);
 });
 
-test("deployed rule keeps the Playwright login-state and safety safeguards", async () => {
-  const text = normalize(await readFile(path.join(repo, "rules", "resource-selection.md"), "utf8"));
+test("browser tool procedures apply in user/project-selected workflows", async () => {
+  const rule = await load("rules/resource-selection.md");
+  assert.match(rule, /when using `cuddly-winner-browser`, read `\.\.\/docs\/resource-selection\.md` relative to this rule before browser actions/);
+  assert.match(rule, /follow its relevant tool procedures even in user\/project-selected workflows/);
+  const reference = await load("docs/RESOURCE-SELECTION.md");
+  assert.match(reference, /relevant tool procedures.*before using `cuddly-winner-browser`, including in user\/project-selected workflows/);
+  assert.match(reference, /apply the managed mode and login procedures only when.*default managed workflow/);
+  assert.doesNotMatch(reference, /read this reference only when/);
+});
+
+test("compact rule retains shared safeguards", async () => {
+  const text = await load("rules/resource-selection.md");
   for (const clause of [
-    "mode 0600",
-    "state values must not appear in model context",
-    "a page preview is not a delivered file",
-    "mark the outcome unknown",
-    "never repeat an unknown non-idempotent action automatically",
-    "a wait timeout must leave the browser usable",
-    "treat http 401 or 403 and cloudflare challenges as access denial",
-  ]) {
-    assert.ok(text.includes(clause), `rule missing safeguard: ${clause}`);
-  }
+    "mode 0600", "never expose credentials", "pause agent actions during human control",
+    "recording requires explicit intent", "verify the saved artifact",
+    "visible, enabled controls", "verify entered values and attachment acceptance",
+    "validate downloads/generated files locally", "existing image is not a new generation result",
+    "mark the outcome unknown", "never automatically replay unknown actions",
+    "bounded waits", "report http 401/403 and challenges as access denial",
+  ]) assert.ok(text.includes(clause), `missing safeguard: ${clause}`);
 });
 
-test("deployed rule no longer references the retired fallback gate or image skill", async () => {
-  const text = normalize(await readFile(path.join(repo, "rules", "resource-selection.md"), "utf8"));
-  assert.doesNotMatch(text, /cuddly_winner_browser_fallback/, "rule still names the retired fallback env gate");
-  assert.doesNotMatch(text, /playwright-image-generation/, "rule still references the retired image-generation skill");
+test("managed reference retains login, state, transfer, and failure procedures", async () => {
+  const text = await load("docs/RESOURCE-SELECTION.md");
+  for (const clause of [
+    "headless", "virtual-display", "headed human-login", "do not complete the task in the login window",
+    "opencode-browser-login.mjs", "after the user's reply", "do not poll",
+    "mode-0600", "existing approved-origin tabs", "state values never enter model context",
+    "browser_upload_image", "browser_download", "browser_save_media",
+    "a page preview is not a delivered file", "an existing image is not success",
+    "never repeat an unknown action automatically",
+  ]) assert.ok(text.includes(clause), `missing managed procedure: ${clause}`);
 });
 
-test("durable browser documentation records the Playwright-only backend", async () => {
-  for (const file of ["docs/RESOURCE-SELECTION.md", "docs/ARCHITECTURE.md", "docs/REQUIREMENTS.md"]) {
-    const text = normalize(await readFile(path.join(repo, file), "utf8"));
-    assert.match(text, /playwright/, `${file}: missing Playwright backend`);
-    assert.match(text, /headless/, `${file}: missing headless mode`);
-    assert.match(text, /virtual-display/, `${file}: missing virtual-display mode`);
-    assert.match(text, /headed/, `${file}: missing headed login mode`);
-    assert.doesNotMatch(text, /cuddly_winner_browser_fallback/, `${file}: still references the retired fallback env gate`);
-  }
-});
-
-test("durable documentation keeps the image-generation and no-auto-replay safeguards", async () => {
-  const requirements = normalize(await readFile(path.join(repo, "docs", "REQUIREMENTS.md"), "utf8"));
-  assert.match(requirements, /never automatically replay/, "REQUIREMENTS lost the no-auto-replay safeguard");
-
-  for (const file of ["docs/RESOURCE-SELECTION.md", "docs/REQUIREMENTS.md"]) {
-    const text = normalize(await readFile(path.join(repo, file), "utf8"));
-    assert.match(text, /existing.*image is not success|existing page image|not an image\s*already present on the page/, `${file}: lost the new-output-image safeguard`);
-  }
+test("rule is bounded and does not restore retired workflows", async () => {
+  const text = await load("rules/resource-selection.md");
+  assert.ok(text.split(/\s+/).length <= 400, "always-loaded rule exceeded its context budget");
+  assert.doesNotMatch(text, /cuddly_winner_browser_fallback|playwright-image-generation/);
 });

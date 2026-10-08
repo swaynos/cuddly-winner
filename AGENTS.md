@@ -37,17 +37,9 @@
 
 ## Browser Boundary
 
-- **Backend**: Playwright is the only supported browser backend. Preserve the existing five-file Playwright runtime unless the user explicitly requests browser runtime changes.
-- **Rules Reference**: Strictly adhere to `docs/RESOURCE-SELECTION.md` and `rules/resource-selection.md`.
-- **Execution Modes**:
-  - Task execution MUST use configured `headless` or Linux `virtual-display` (Xvfb) mode.
-  - A visible (headed) browser window is strictly for human login via the login helper script; never use headed browser for autonomous task execution.
-- **Login & State Safety**:
-  - Never busy-wait, poll in a loop, or guess credentials for login.
-  - Saved authentication state is origin-scoped and stored outside the repository (mode 0600).
-- **Result Validation**:
-  - Downloads and generated assets require local byte and checksum validation.
-  - Never automatically replay a non-idempotent action whose outcome is unknown.
+Follow `rules/resource-selection.md` for workflow selection and shared safeguards.
+Follow that rule's reference-loading instructions for `docs/RESOURCE-SELECTION.md`.
+Preserve the existing five-file Playwright runtime unless explicitly asked to change it.
 
 ## Autonomous Execution & Verification Workflow
 
