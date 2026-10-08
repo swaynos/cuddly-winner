@@ -24,6 +24,13 @@ file must contain the schema-v1 embedded policy described in `ARCHITECTURE.md`.
 Its policy grants only exact worktree-relative edit paths and a boolean Bash
 capability.
 
+Inspect existing definitions before publication. Same-task revisions should keep
+the name and path stable. The publisher supports explicit inspect/update operations;
+updates require a complete validated definition and the inspected byte SHA-256.
+Stale, concurrent, colliding, malformed or symlinked updates fail safely. Default
+creation remains no-clobber. Restart OpenCode and use a fresh conversation after
+revision; prior success cannot validate a changed definition.
+
 Goal Agents coordinate the published task in a fresh OpenCode session. Each
 goal_cycle runs a build iteration AND a separate independent validation iteration,
 each in a new child session. Failed validation
@@ -31,6 +38,20 @@ feeds findings to the next fresh builder. Only criterion-by-criterion validation
 with tool evidence establishes completion. A premature coordinator stop resumes
 automatically; cancellation, denied permissions, unknown API outcomes, and genuine
 blockers remain incomplete and require explicit user input before resuming.
+Unresolved independent findings persist across cycles and are supplied to fresh
+validators without the builder conversation. A previous failure becoming passed
+requires an explicit evidence-backed `resolution`; unrelated passing tests do
+not resolve it. Required unavailable historical evidence remains a blocker.
+Cycle records are bound to the exact definition fingerprint. Changed or unbound
+records cannot authorize continuation or descendant mutation in the old session.
+Outcome and side-effect constraints must distinguish executable implementation,
+offline verification and live execution. Completion reports must distinguish
+these evidence classes and actual goal achievement.
+
+Goal execution displays bounded, event-derived parent activity while child phases
+run, including cycle, phase, public milestone, waiting, failure, completion and
+cancellation. Child-reported progress is not validation evidence. Preserve native
+session behavior, user TUI settings and modified assets during installation/removal.
 An unsupported blocker with no attempted inspection, or a malformed completed
 validator report, is repairable failed validation. Missing coordinator-only tools
 in a child is intentional, not a dependency failure. Ordinary rejected-input tool
@@ -52,6 +73,21 @@ restriction. Only the selected root Prometheus or Build session may publish a Go
 A malformed Goal-Agent policy fails closed. Browser tools that save screenshots,
 downloads, or media locally obey the same exact edit-path policy as edit tools.
 
+## Goal Progress Visibility
+
+While `goal_cycle` runs, the terminal TUI must show a persistent, bounded Goal-only
+activity panel identifying cycle, builder/independent validator, current actual
+tool activity and concise child-reported milestones. It must remain visible in
+narrow terminals with the sidebar hidden and during approval waits. Progress
+reports are not evidence or success; show failed validation/retry, independent
+completion, interruption and cancellation honestly. Preserve native Build/Plan
+prompts, session isolation, cancellation and unknown-action safeguards.
+
+The installer manages the separate TUI module and registration without replacing
+user themes, keybindings, plugin options, JSONC comments or disable preferences.
+Verification must observe terminal-rendered updates before the child finishes,
+not just completed output or metadata values. Restart OpenCode after deployment.
+
 ## No Legacy Support
 
 The old generated-agent registry, manifest, brief, task-loop, Ralph,
@@ -61,7 +97,8 @@ path. A recognized old package fails closed until Prometheus republishes it as a
 Goal Agent.
 This retirement does not prohibit the current single-file Goal Agent runtime or
 user-requested automation in other projects. Older Goal Agent definitions without
-goal metadata do not silently acquire autonomous continuation; publish a new name.
+goal metadata do not silently acquire autonomous continuation; explicitly revise
+a valid single-file definition through the publisher, then restart in a fresh session.
 
 ## Native Compatibility
 

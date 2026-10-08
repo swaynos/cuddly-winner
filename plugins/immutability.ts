@@ -2,6 +2,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import {
   hasGoalAgentFile,
+  goalDefinitionFingerprint,
   isGeneratedGoalAgentPath,
   isGoalAgentName,
   isProtectedControlPath,
@@ -102,11 +103,18 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
   const sessionAgents = new Map<string, string>();
   const invalidAncestry = new Set<string>();
 
-  type GoalAgentRegistration = { goalAgent: boolean; legacy?: boolean; policy?: GoalAgentPolicy };
+  type GoalAgentRegistration = { goalAgent: boolean; legacy?: boolean; policy?: GoalAgentPolicy; fingerprint?: string };
   const goalAgentPolicies = new Map<string, GoalAgentRegistration>();
   function goalAgentPolicy(agent: string): GoalAgentRegistration {
     const cached = goalAgentPolicies.get(agent);
-    if (cached) return cached;
+    if (cached) {
+      if (cached.fingerprint) {
+        try {
+          if (goalDefinitionFingerprint(root, agent) !== cached.fingerprint) return { goalAgent: true };
+        } catch { return { goalAgent: true }; }
+      }
+      return cached;
+    }
     if (hasLegacyGeneratedPackage(root, agent)) {
       const registration = { goalAgent: true, legacy: true };
       goalAgentPolicies.set(agent, registration);
@@ -114,7 +122,7 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
     }
     if (!hasGoalAgentFile(root, agent)) return { goalAgent: false };
     try {
-      const registration = { goalAgent: true, policy: readGoalAgentPolicy(root, agent) };
+      const registration = { goalAgent: true, policy: readGoalAgentPolicy(root, agent), fingerprint: goalDefinitionFingerprint(root, agent) };
       goalAgentPolicies.set(agent, registration);
       return registration;
     } catch {
@@ -151,6 +159,17 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
         }
       }
       const current = sessionAgents.get(sessionID) ?? (typeof session.agent === "string" && session.agent ? session.agent : undefined);
+      if (current && goalAgentPolicy(current).goalAgent && !session.parentID && client.session.messages) {
+        const history = await client.session.messages({ path: { id: sessionID } });
+        if (history.error || !Array.isArray(history.data)) throw new Error("unresolved Goal history");
+        const fingerprint = goalDefinitionFingerprint(root, current);
+        for (const message of history.data) for (const part of message.parts) {
+          if (part.tool !== "goal_cycle") continue;
+          const bound = part.state?.status === "completed" ? JSON.parse(part.state.output).definition_sha256
+            : part.state?.status === "running" ? part.state.metadata?.definition_sha256 : undefined;
+          if ((part.state?.status === "completed" || bound) && bound !== fingerprint) throw new Error("Goal definition changed; use a fresh conversation");
+        }
+      }
       const agents = [...(parent?.agents ?? [])];
       if (current && isManaged(current)) agents.push(current);
       return { valid: true, agents, current, hasParent: Boolean(session.parentID) };

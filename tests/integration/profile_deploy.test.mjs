@@ -64,7 +64,9 @@ test("installer deploys the Cuddly Winner profile and purges the retired publish
     (await readdir(path.join(config, "agents"))).filter((name) => name.endsWith(".md")).sort(),
     ["ask.md", "grounder.md", "prometheus.md"],
   );
-  assert.deepEqual((await readdir(path.join(config, "plugins"))).sort(), ["goal.ts", "immutability.ts"]);
+  assert.deepEqual((await readdir(path.join(config, "plugins"))).sort(), ["goal.ts", "immutability.ts", "tui"]);
+  assert.deepEqual((await readdir(path.join(config, "plugins/tui"))).sort(), ["goal-progress.tsx", "progress.ts"]);
+  assert.deepEqual(JSON.parse(await readFile(path.join(config, "tui.json"), "utf8")).plugin, ["./plugins/tui/goal-progress.tsx"]);
   assert.deepEqual((await readdir(path.join(config, "tools"))).sort(), ["publish_goal_agent.ts"]);
   assert.deepEqual((await readdir(path.join(config, "rules"))).sort(), ["resource-selection.md"]);
   const reference = path.join(config, "docs", "RESOURCE-SELECTION.md");
@@ -74,6 +76,26 @@ test("installer deploys the Cuddly Winner profile and purges the retired publish
   assert.equal(await exists(path.join(config, "skills")), false);
   for (const relative of legacy) assert.equal(await exists(path.join(config, relative)), false, relative);
   for (const name of BROWSER_CONTROL_FILES) await stat(path.join(config, name));
+}));
+
+test("deployment status distinguishes current, stale, linked, foreign and missing entries", async () => fixture(async root => {
+  await deployFixture(root);
+  const config = path.join(root, "config");
+  await writeFile(path.join(config, "agents/ask.md"), "stale copy");
+  await rm(path.join(config, "agents/grounder.md"));
+  await symlink(path.join(repo, "agents/grounder.md"), path.join(config, "agents/grounder.md"));
+  await rm(path.join(config, "agents/prometheus.md"));
+  await symlink(path.join(repo, "agents/ask.md"), path.join(config, "agents/prometheus.md"));
+  await rm(path.join(config, "plugins/goal.ts"));
+  await assert.rejects(deployFixture(root, "status"), error => {
+    assert.equal(error.code, 1);
+    assert.match(error.stdout, /\[stale or modified copy\].*agents\/ask.md/);
+    assert.match(error.stdout, /\[current link\].*agents\/grounder.md/);
+    assert.match(error.stdout, /\[foreign link\].*agents\/prometheus.md/);
+    assert.match(error.stdout, /\[missing\].*plugins\/goal.ts/);
+    assert.match(error.stdout, /\[current copy\].*plugins\/immutability.ts/);
+    return true;
+  });
 }));
 
 test("installer purges a customized retired publisher but preserves unrelated retired assets", async () => fixture(async root => {
@@ -153,6 +175,33 @@ test("retirement refuses a symlinked asset parent", async () => fixture(async ro
     /symlinked retired asset parent/,
   );
   assert.equal(await exists(preserved), true);
+}));
+
+test("Goal TUI installs and removes without rewriting unrelated JSONC configuration", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  await mkdir(config);
+  await writeFile(path.join(config, "tui.jsonc"), '{\n // keep my settings\n "theme":"mine", "plugin":[["user-plugin",{"value":1}]],\n}\n');
+  await deployFixture(root);
+  assert.match(await readFile(path.join(config, "tui.jsonc"), "utf8"), /keep my settings/);
+  await deployFixture(root, "status");
+  await deployFixture(root, "remove");
+  assert.equal(await exists(path.join(config, "plugins/tui/goal-progress.tsx")), false);
+  assert.equal(await exists(path.join(config, "plugins/tui/progress.ts")), false);
+  const remaining = await readFile(path.join(config, "tui.jsonc"), "utf8");
+  assert.match(remaining, /keep my settings/);
+  assert.match(remaining, /user-plugin/);
+  assert.doesNotMatch(remaining, /goal-progress\.tsx/);
+}));
+
+test("removing the profile preserves modified TUI assets and their registration", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  await deployFixture(root);
+  const file = path.join(config, "plugins/tui/goal-progress.tsx");
+  await writeFile(file, "user-owned customization\n");
+  await deployFixture(root, "remove");
+  assert.equal(await readFile(file, "utf8"), "user-owned customization\n");
+  assert.equal(await exists(path.join(config, "plugins/tui/progress.ts")), true);
+  assert.match(await readFile(path.join(config, "tui.json"), "utf8"), /goal-progress\.tsx/);
 }));
 
 test("durable docs describe the enforced Goal Agent boundaries", async () => {

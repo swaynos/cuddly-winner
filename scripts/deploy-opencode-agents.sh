@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SDK_VERSION="1.18.31"
 PLAYWRIGHT_VERSION="1.58.2"
 YAML_VERSION="2.9.0"
+JSONC_VERSION="3.3.1"
 MANAGED_ENTRY_DRIFT=0
 STATUS_DRIFT=0
 
@@ -258,6 +259,31 @@ sync_group() {
   done
 }
 
+sync_tui() {
+  local destination="${PLUGINS_DIR}/tui"
+  assert_config_destination "${CONFIG_DIR}/tui.json"
+  assert_config_destination "${CONFIG_DIR}/tui.jsonc"
+  case "$ACTION" in
+    install)
+      node "$TUI_CONFIG_HELPER" install --config-dir "$CONFIG_DIR"
+      sync_group "Goal TUI" "$destination" install copy "${TUI_SOURCES[@]}"
+      ;;
+    status)
+      sync_group "Goal TUI" "$destination" status copy "${TUI_SOURCES[@]}"
+      if ! node "$TUI_CONFIG_HELPER" status --config-dir "$CONFIG_DIR"; then mark_status_drift; fi
+      ;;
+    remove)
+      if node "$TUI_CONFIG_HELPER" can-remove --config-dir "$CONFIG_DIR" "${TUI_SOURCES[@]}"; then
+        node "$TUI_CONFIG_HELPER" remove --config-dir "$CONFIG_DIR"
+        sync_group "Goal TUI" "$destination" remove copy "${TUI_SOURCES[@]}"
+        rmdir "$destination" 2>/dev/null || true
+      else
+        printf 'Preserved customized Goal TUI assets and configuration.\n'
+      fi
+      ;;
+  esac
+}
+
 sync_retired_agents() {
   local state_file="$1"
   local name source expected_sha256 dst output state_failed=0
@@ -401,9 +427,11 @@ install_tool_sdk() {
   local vendored_package="${vendored_modules}/@opencode-ai/plugin/package.json"
   local vendored_playwright="${vendored_modules}/playwright/package.json"
   local vendored_yaml="${vendored_modules}/yaml/package.json"
+  local vendored_jsonc="${vendored_modules}/jsonc-parser/package.json"
   local vendored_version=""
   local vendored_playwright_version=""
   local vendored_yaml_version=""
+  local vendored_jsonc_version=""
   local stage_root stage_runtime
   assert_managed_destination "${config_dir}/node_modules/@opencode-ai/plugin/package.json"
   assert_managed_destination "${config_dir}/node_modules/playwright/package.json"
@@ -416,17 +444,20 @@ install_tool_sdk() {
   if [[ -f "$vendored_yaml" ]]; then
     vendored_yaml_version="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$vendored_yaml")"
   fi
+  if [[ -f "$vendored_jsonc" ]]; then
+    vendored_jsonc_version="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$vendored_jsonc")"
+  fi
   stage_root="$(mktemp -d "${config_dir}/.cuddly-winner-runtime-stage.XXXXXX")"
   stage_runtime="${stage_root}/node_modules"
   assert_managed_destination "$stage_runtime"
-  if [[ "$vendored_version" == "$SDK_VERSION" && "$vendored_playwright_version" == "$PLAYWRIGHT_VERSION" && "$vendored_yaml_version" == "$YAML_VERSION" ]]; then
+  if [[ "$vendored_version" == "$SDK_VERSION" && "$vendored_playwright_version" == "$PLAYWRIGHT_VERSION" && "$vendored_yaml_version" == "$YAML_VERSION" && "$vendored_jsonc_version" == "$JSONC_VERSION" ]]; then
     if ! mkdir -p "$stage_runtime" || ! cp -R "${vendored_modules}/." "${stage_runtime}/"; then
       rm -rf "$stage_root"
       die "Unable to copy the pinned OpenCode tool runtime into a clean staging directory"
     fi
   else
     command -v npm >/dev/null 2>&1 || die "npm is required to install the OpenCode tool runtime"
-    if ! PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix "$stage_root" --no-save --no-audit --no-fund "@opencode-ai/plugin@${SDK_VERSION}" "playwright@${PLAYWRIGHT_VERSION}" "yaml@${YAML_VERSION}" >/dev/null; then
+    if ! PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix "$stage_root" --no-save --no-audit --no-fund "@opencode-ai/plugin@${SDK_VERSION}" "playwright@${PLAYWRIGHT_VERSION}" "yaml@${YAML_VERSION}" "jsonc-parser@${JSONC_VERSION}" >/dev/null; then
       rm -rf "$stage_root"
       die "Unable to install the OpenCode tool runtime in a clean staging directory"
     fi
@@ -434,10 +465,10 @@ install_tool_sdk() {
   if ! node -e '
     const { readFileSync } = require("node:fs");
     const { join } = require("node:path");
-    const [root, sdk, playwright, yaml] = process.argv.slice(1);
+    const [root, sdk, playwright, yaml, jsonc] = process.argv.slice(1);
     const version = name => JSON.parse(readFileSync(join(root, name, "package.json"), "utf8")).version;
-    process.exit(version("@opencode-ai/plugin") === sdk && version("playwright") === playwright && version("yaml") === yaml ? 0 : 1);
-  ' "$stage_runtime" "$SDK_VERSION" "$PLAYWRIGHT_VERSION" "$YAML_VERSION"; then
+    process.exit(version("@opencode-ai/plugin") === sdk && version("playwright") === playwright && version("yaml") === yaml && version("jsonc-parser") === jsonc ? 0 : 1);
+  ' "$stage_runtime" "$SDK_VERSION" "$PLAYWRIGHT_VERSION" "$YAML_VERSION" "$JSONC_VERSION"; then
     rm -rf "$stage_root"
     die "Clean runtime staging did not produce the pinned package versions"
   fi
@@ -538,6 +569,7 @@ runtime_status() {
   runtime_package_status "@opencode-ai/plugin" "$SDK_VERSION"
   runtime_package_status "playwright" "$PLAYWRIGHT_VERSION"
   runtime_package_status "yaml" "$YAML_VERSION"
+  runtime_package_status "jsonc-parser" "$JSONC_VERSION"
   if ! node -e '
     const { existsSync } = require("node:fs");
     const { chromium } = require(process.argv[1]);
@@ -615,6 +647,7 @@ MCP_HELPER="${SCRIPT_DIR}/opencode-mcp-config.mjs"
 AGENT_STATE_HELPER="${SCRIPT_DIR}/opencode-agent-state.mjs"
 RETIRED_ASSETS_HELPER="${SCRIPT_DIR}/opencode-retired-assets.mjs"
 RUNTIME_INTEGRITY_HELPER="${SCRIPT_DIR}/opencode-runtime-integrity.mjs"
+TUI_CONFIG_HELPER="${SCRIPT_DIR}/opencode-tui-config.mjs"
 
 BROWSER_MCP_SERVER_SOURCE="${SCRIPT_DIR}/opencode-playwright-mcp.mjs"
 BROWSER_MCP_SERVER_DEST="${CONFIG_DIR}/opencode-playwright-mcp.mjs"
@@ -633,6 +666,7 @@ AGENT_SOURCES=(
   "${REPO_ROOT}/agents/prometheus.md"
 )
 PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/goal.ts")
+TUI_SOURCES=("${REPO_ROOT}/plugins/tui/goal-progress.tsx" "${REPO_ROOT}/plugins/tui/progress.ts")
 TOOL_SOURCES=("${REPO_ROOT}/tools/publish_goal_agent.ts")
 RULE_SOURCES=("${REPO_ROOT}/rules/resource-selection.md")
 DOC_SOURCES=("${REPO_ROOT}/docs/RESOURCE-SELECTION.md")
@@ -650,6 +684,7 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_retired_assets
   sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
   sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "copy" "${PLUGIN_SOURCES[@]}"
+  sync_tui
   sync_group "Tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
   sync_group "Reference docs" "$DOCS_DIR" "$ACTION" "$MODE" "${DOC_SOURCES[@]}"
@@ -694,6 +729,7 @@ record_agent_state
 sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "copy" "${PLUGIN_SOURCES[@]}"
 sync_group "Tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
+sync_tui
 install_browser_control_file "$BROWSER_MCP_SERVER_SOURCE" "$BROWSER_MCP_SERVER_DEST"
 install_browser_control_file "$BROWSER_STATE_SOURCE" "$BROWSER_STATE_DEST"
 install_browser_control_file "$BROWSER_LOGIN_SOURCE" "$BROWSER_LOGIN_DEST"

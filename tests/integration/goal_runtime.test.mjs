@@ -31,19 +31,26 @@ test("OpenCode V1 repairs an unsupported child-orchestration blocker and failed 
       let text = "Phase complete.";
       if (user.includes("Perform only your assigned builder phase")) {
         if (!tools.length) {
+          call = { name: "goal_progress", arguments: JSON.stringify({ summary: "Preparing counter implementation" }) };
+        } else if (!messages.some(m => m.role === "assistant" && m.tool_calls?.some(t => t.function.name === "write"))) {
+          await new Promise(resolve => setTimeout(resolve, 300));
           builds++;
           call = { name: "write", arguments: JSON.stringify({ filePath: path.join(root, "counter.txt"), content: builds < 3 ? "bad\n" : "good\n" }) };
         }
       } else if (user.includes("Perform only your assigned validator phase")) {
-        if (!tools.length && builds === 1) {
+        if (!tools.length) {
+          call = { name: "goal_progress", arguments: JSON.stringify({ summary: "Checking independent counter evidence" }) };
+        } else if (builds === 1 && !messages.some(m => m.role === "assistant" && m.tool_calls?.some(t => t.function.name === "goal_verdict"))) {
+          await new Promise(resolve => setTimeout(resolve, 300));
           checks++;
           call = { name: "goal_verdict", arguments: JSON.stringify({ status: "blocked", reason: "goal_cycle unavailable to validator", checks: {} }) };
-        } else if (!tools.length) {
+        } else if (builds !== 1 && !messages.some(m => m.role === "assistant" && m.tool_calls?.some(t => t.function.name === "read"))) {
+          await new Promise(resolve => setTimeout(resolve, 300));
           call = { name: "read", arguments: JSON.stringify({ filePath: path.join(root, "counter.txt") }) };
         } else if (!messages.some(m => m.role === "assistant" && m.tool_calls?.some(t => t.function.name === "goal_verdict"))) {
           checks++;
           const passed = (await readFile(path.join(root, "counter.txt"), "utf8")) === "good\n";
-          call = { name: "goal_verdict", arguments: JSON.stringify({ status: "checked", reason: "", checks: { c0: { passed, evidence: `Read counter.txt: ${passed ? "good" : "bad; replace with good"}` } } }) };
+          call = { name: "goal_verdict", arguments: JSON.stringify({ status: "checked", reason: "", checks: { c0: { passed, evidence: `Read counter.txt: ${passed ? "good" : "bad; replace with good"}`, ...(passed ? { resolution: "Fresh read shows good, resolving previous bad content finding" } : {}) } } }) };
         }
       } else if (input.tools?.some(t => t.function.name === "goal_cycle")) {
         rootTurns++;
@@ -107,8 +114,14 @@ test("OpenCode V1 repairs an unsupported child-orchestration blocker and failed 
     const session = await api("/session", { title: "Goal fixture" });
     await api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Execute this goal." }] });
     let history;
+    const livePhases = new Set();
     for (let i = 0; i < 300; i++) {
       history = await api(`/session/${session.id}/message`);
+      for (const part of history.flatMap(m => m.parts)) {
+        if (part.tool === "goal_cycle" && part.state.status === "running" && part.state.metadata?.goal_activity?.milestone) {
+          livePhases.add(part.state.metadata.goal_activity.phase);
+        }
+      }
       if (history.some(m => m.parts.some(p => p.type === "tool" && p.tool === "goal_cycle" && p.state.status === "completed" && JSON.parse(p.state.output).status === "validated"))) break;
       const blocked = history.flatMap(m => m.parts).find(p => p.type === "tool" && p.tool === "goal_cycle" && (p.state.status === "error" || (p.state.status === "completed" && JSON.parse(p.state.output).status === "blocked")));
       if (blocked || i === 299) {
@@ -120,6 +133,9 @@ test("OpenCode V1 repairs an unsupported child-orchestration blocker and failed 
     }
     assert.equal(builds, 3);
     assert.equal(checks, 3);
+    assert.deepEqual([...livePhases].sort(), ["builder", "validator"], "both phases must report while the parent tool is running: " + JSON.stringify(history.flatMap(m => m.parts).filter(p => p.tool === "goal_cycle").map(p => p.state.metadata)));
+    const completed = history.flatMap(m => m.parts).findLast(p => p.tool === "goal_cycle" && p.state.status === "completed");
+    assert.equal(completed.state.metadata.goal_activity.status, "validated");
     const phaseModels = role => requests
       .filter(input => input.messages?.some(message => message.role === "user" && JSON.stringify(message.content).includes(`Perform only your assigned ${role} phase`)))
       .map(input => input.model);

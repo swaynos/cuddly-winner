@@ -13,8 +13,10 @@ Its goal runtime is scoped to the single generated Goal-Agent format on OpenCode
 
 ## Managed Profile
 
-The installer deploys three agents, two plugins, one tool file, one shared rule, and
-the existing five-file Playwright browser runtime.
+The installer deploys three agents, two server plugins, a nested two-file TUI
+activity surface, one tool file, one shared rule, and the existing five-file
+Playwright browser runtime. TUI registration uses the separate `tui.json` or
+`tui.jsonc` configuration, preserving user settings and disabled preferences.
 
 | Component | Purpose |
 | --- | --- |
@@ -23,7 +25,8 @@ the existing five-file Playwright browser runtime.
 | Prometheus | Planning-only publisher for Goal Agents. |
 | `plugins/immutability.ts` | Enforces managed mutation and Bash boundaries. |
 | `plugins/goal.ts` | Supplies goal_cycle and resumes premature goal stops. |
-| `tools/publish_goal_agent.ts` | Creates one no-clobber Goal Agent. |
+| `tools/publish_goal_agent.ts` | Creates, inspects or explicitly revises one Goal Agent. |
+| `plugins/tui/goal-progress.tsx`, `progress.ts` | Displays bounded parent-session Goal activity. |
 | `rules/resource-selection.md` | Browser and source-selection policy. |
 
 The browser runtime remains Playwright-only. Task work uses configured
@@ -61,18 +64,31 @@ The policy contains only:
 ```
 
 The publisher rejects unsafe names and paths, symlinked agent directories,
-policy-marker injection, and any existing project-local agent name. It scans
+policy-marker injection, and (for creation) any existing project-local agent name. It scans
 nested local agent definitions by file name and frontmatter name. It writes
-through a temporary regular file and hard link, so it never replaces an existing
-generated agent.
+through a temporary regular file and hard link for no-clobber creation.
 
 ### Updating or removing a Goal Agent
 
-To update a Goal Agent, delete `.opencode/agents/generated/<name>.md`, run
-Prometheus again, and restart OpenCode. To remove one, delete the file and
-restart OpenCode. Publishing over an existing name fails with
-`agent name already exists: <name>`; the publisher never replaces an existing
-agent. This refusal is covered by `tests/plugins/publish_goal_agent.test.mjs`.
+Inspect existing definitions before creating another. Prefer revising the same
+identity when the user changes the same task. A new run-data namespace does not
+require a new agent. Separate work or an explicit request for both definitions
+can justify another identity. Existing obsolete files are not automatically deleted.
+
+Call `publish_goal_agent` with `operation: "inspect"` and `name` to obtain the
+definition and SHA-256 of its exact bytes. Then call it with `operation: "update"`,
+`expected_sha256` and the complete replacement definition. Updates validate both
+the existing target and new request, preserve identity/path, reject other local
+name collisions and symlinks, and reject stale fingerprints. An exclusive transient
+per-name lock serializes cooperating publishers; an interrupted lock requires
+inspection before removal. A synchronized temporary file is atomically renamed
+after a final fingerprint check. This is not a filesystem-wide compare-and-swap
+against arbitrary external writers. No registry or additional agent format exists.
+
+Creation remains the default no-clobber operation. After revision, quit and restart
+OpenCode and select the same agent in a fresh conversation. Prior validation does
+not establish success for a revised goal. To remove an agent, delete its file and
+restart OpenCode.
 
 `ImmutabilityGuard` reads this file only for the selected Goal Agent identity. It
 allows exact `edit_paths`, applies the boolean Bash decision, blocks generated
@@ -96,7 +112,8 @@ its workflow; it coordinates through goal_cycle and cannot edit project files, r
 or spawn arbitrary tasks. The tool creates a new native General child for each
 build and another new child for validation. It passes the goal definition to
 both, previous validation findings only to the builder, and never passes the
-builder conversation to the validator. Child parentID preserves the existing
+builder conversation to the validator. Unresolved independent criterion findings
+are passed to both roles, including the fresh validator. Child parentID preserves the existing
 Goal-Agent policy inheritance. Both builder and validator children explicitly receive
 read, glob, grep, and list inspection permissions. Children cannot delegate or
 publish agents. Validator edit tools are denied; shell verification remains
@@ -126,6 +143,26 @@ fails on an external dependency can still support a terminal blocker.
 Failed criteria cause another build/validate cycle. Validation success requires
 actual completed evidence-gathering tool use as well as the structured verdict;
 the runtime enforces the protocol, not the truthfulness of model judgments.
+If a previously failed criterion passes, its check must include a nonempty
+`resolution` identifying new evidence resolving that exact finding, or an
+evidence-backed correction of the earlier finding. Without it, the runtime keeps
+the previous finding failed. Unresolved findings are reconstructed from cycle
+records rather than stored in a second file. Unavailable required historical
+evidence is an observed evidence blocker, not something repetition can manufacture.
+
+Cycle results include `definition_sha256`. Changed or unbound previous cycle
+records block reuse in the old conversation. Definition changes during execution
+block success. The mutation guard freezes a cached changed definition and checks
+ancestor cycle fingerprints after reload, so changed permissions cannot silently
+authorize an old child. Fresh-session execution follows the revised definition.
+
+Before orchestration, confirm that the published outcome matches the requested
+deliverable and side-effect constraints. Implementing an executable loop, testing
+it offline and authorizing real execution are different objectives. A generation
+prohibition does not justify a preparation-only controller. Reports separate
+implemented behavior, offline verification, unverified behavior and actual goal
+achievement. Offline profile fixtures prove continuation and evidence continuity;
+they do not prove a separate product's hybrid image-generation implementation.
 
 The goal plugin listens for root session idle events and submits a continuation
 when a goal has not passed or blocked. Cycle tool results and child sessions are
@@ -139,6 +176,23 @@ Ordinary tool errors containing words such as "rejected" or "cancelled" do not
 establish user denial. Permission events and explicit interruption signatures
 remain terminal; unknown non-idempotent outcomes are never automatically replayed.
 
+### Live parent activity
+
+The active child reports concise public milestones through `goal_progress`; tool
+events supply generic activity categories. No reasoning or raw tool output is
+relayed. The existing `goal_cycle` part stores bounded activity metadata (cycle,
+phase, status, milestone and three recent entries). Child reports are labeled
+`Reported` and never count as independent validation evidence. Failure summaries
+identify failed criterion keys; the coordinator explains substantive retry findings.
+
+The pinned V1 custom-tool bridge leaves the metadata callback as a lazy Effect.
+The runtime therefore reuses its authenticated SDK transport to update the running
+part through the pinned V2 part API, serializing updates and awaiting completion.
+The TUI panel uses `app_bottom`, stays visible in narrow terminals and permission
+waits, hydrates on reattach, and hides on native sessions. Native Plan and Build
+behavior and prompt entry remain unchanged. Terminal integration observes actual
+in-flight builder/validator rendering, repair, completion and cancellation.
+
 ### Decision Record
 
 The previous registry, JSON manifest, Markdown brief, strategy vocabulary, task
@@ -148,6 +202,48 @@ small machine-enforced policy. Revisit this decision only when a concrete task
 cannot carry its required context and exact policy in one file. Do not restore a
 second format or compatibility layer without changing this document and
 `REQUIREMENTS.md`.
+
+## Goal Activity In The Terminal UI
+
+The server Goal runtime stores a bounded `goal_activity` snapshot on its existing
+`goal_cycle` tool part: session/agent identity, cycle, builder or validator phase,
+status, current tool category, last public milestone, timestamps and at most
+three recent summaries. Session records remain the checkpoint; no registry or
+second Goal-Agent format is added. `goal_progress` is callable only by the active
+child. Progress is child-reported activity, never independent validation evidence.
+Both success and blocker evidence gates exclude progress/bookkeeping tools.
+
+The pinned V1 registry passes custom-tool metadata as an unexecuted Effect.
+The runtime therefore reuses the plugin client's authenticated transport with the
+pinned V2 part-update API, serializing updates to the current running tool part.
+Final progress is also included in the completed tool result's metadata. Native
+tool inputs/output/error payloads and reasoning are not relayed; tool events map
+to public categories, and explicit milestones reject URLs/credential forms.
+Inactive/unrelated/finished child events do not update the parent.
+
+`plugins/tui/goal-progress.tsx` is a separate TUI-only module. It appends a compact
+four-line panel in the supported `app_bottom` slot, avoiding prompt replacement
+and sidebar-width dependence. It hydrates from synchronized parent message/part
+metadata on attachment and follows the current root Goal session and selected
+agent. Native Build/Plan, unrelated sessions and children have no panel. It shows
+phase, elapsed time, current activity, a labelled child milestone and recent
+transition; validated completion is labelled independently validated. Elapsed
+time is a clock, not evidence of progress or a guessed completion percentage.
+
+The installer copies both nested TUI assets and merges their registration into
+`tui.json` or `tui.jsonc`. The nested directory is outside flat server-plugin
+discovery. JSONC comments, other plugin tuples/settings and user disable choices
+are preserved. Ambiguous dual configs and symlinked configs fail safely. Removal
+preserves customized TUI assets/registration together. `jsonc-parser` is a pinned
+runtime dependency for this configuration lifecycle; the existing five-file
+Playwright runtime remains unchanged.
+
+The visibility journey is tested with the actual pinned CLI in Linux PTYs at
+80x24 and 60x24, rendering ANSI frames with a headless terminal emulator. Tests
+hold child execution open to observe live builder/validator milestones, actual
+permission waiting, failed-validation repair, completion, cancellation and
+re-attachment; they also check native prompt usability and session isolation.
+Metadata or final transcript tests alone do not establish visibility.
 
 ## Installation And Retirement
 

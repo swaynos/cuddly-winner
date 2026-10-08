@@ -1,6 +1,6 @@
-/** Publish one self-contained Goal Agent without replacing an existing definition. */
+/** Create, inspect or explicitly revise one self-contained Goal Agent. */
 import { tool } from "@opencode-ai/plugin";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { promises as fs, lstatSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -40,7 +40,7 @@ export type GoalAgentRequest = {
   instructions: string;
 };
 
-type PublishedAgent = { name: string; path: string };
+type PublishedAgent = { name: string; path: string; content?: string; sha256?: string; instruction?: string };
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -280,6 +280,9 @@ export function renderGoalAgent(request: GoalAgentRequest): string {
     "Do not implement in the coordinator, reuse child contexts, or declare completion from a builder's report.",
     "Only a validated goal_cycle result establishes completion. Report its criterion-by-criterion evidence.",
     "A blocked result is incomplete: report the specific blocker and ask for the needed decision. Never weaken the goal to finish.",
+    "Before orchestration, confirm that this outcome matches the user's requested deliverable and side-effect constraints. Preparing an executable loop is distinct from executing it; a generation prohibition does not justify a preparation-only controller.",
+    "Explain each repair cycle using its unresolved findings. Missing historical evidence cannot be manufactured by repetition; report an observed evidence blocker.",
+    "Report implemented behavior, offline verification, remaining unverified behavior, and whether the actual real-world goal was reached separately. Review the substance of criterion evidence, not only the tool status.",
     "",
     "# Outcome",
     request.outcome,
@@ -341,6 +344,12 @@ export function readGoalAgentPolicy(root: string, name: string): GoalAgentPolicy
   return parsePolicy(readFileSync(file, "utf8"), name);
 }
 
+export function goalDefinitionFingerprint(root: string, name: string): string {
+  const file = goalAgentPath(root, name);
+  assertSafeExistingPath(realpathSync(path.resolve(root)), file, true);
+  return createHash("sha256").update(readFileSync(file)).digest("hex");
+}
+
 export function hasGoalAgentFile(root: string, name: string): boolean {
   if (!isGoalAgentName(name)) return false;
   try {
@@ -354,7 +363,7 @@ export function hasGoalAgentFile(root: string, name: string): boolean {
   }
 }
 
-async function assertNameIsAvailable(root: string, name: string): Promise<void> {
+async function assertNameIsAvailable(root: string, name: string, excluded?: string): Promise<void> {
   const declaredName = (content: string): string | undefined => {
     const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);
     if (!frontmatter) return;
@@ -380,6 +389,7 @@ async function assertNameIsAvailable(root: string, name: string): Promise<void> 
       if (entry.isDirectory()) {
         await inspect(file);
       } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === ".md") {
+        if (file === excluded) continue;
         const fileName = path.basename(entry.name, path.extname(entry.name));
         if (fileName === name || declaredName(await fs.readFile(file, "utf8")) === name) {
           throw new Error(`agent name already exists: ${name}`);
@@ -388,11 +398,54 @@ async function assertNameIsAvailable(root: string, name: string): Promise<void> 
     }
   };
   for (const relative of [".opencode/agents", ".opencode/agent"]) {
+    assertSafeExistingPath(root, path.join(root, relative));
     await inspect(path.join(root, relative));
   }
 }
 
 export async function publishGoalAgentFile(root: string, value: unknown): Promise<PublishedAgent> {
+  if (record(value) && value.operation === "inspect") {
+    assertName(value.name);
+    if (Object.keys(value).some(key => !["operation", "name"].includes(key))) throw new Error("inspect accepts only operation and name");
+    readGoalAgentPolicy(root, value.name);
+    const bytes = readFileSync(goalAgentPath(root, value.name));
+    return { name: value.name, path: goalAgentRelativePath(value.name), content: bytes.toString("utf8"),
+      sha256: createHash("sha256").update(bytes).digest("hex") };
+  }
+  if (record(value) && value.operation === "update") {
+    const { operation, expected_sha256, ...definition } = value;
+    if (typeof expected_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(expected_sha256)) throw new Error("update requires the inspected expected_sha256");
+    const request = validateGoalAgentRequest(definition);
+    const realRoot = await fs.realpath(path.resolve(root));
+    const directory = await ensureSafeGeneratedDirectory(realRoot);
+    const target = goalAgentPath(realRoot, request.name);
+    const lock = path.join(directory, `.update-${request.name}.lock`);
+    // This exclusive, transient lock serializes cooperating publishers. It is not
+    // a filesystem-wide compare-and-swap against arbitrary external writers.
+    const handle = await fs.open(lock, "wx", 0o600).catch(() => { throw new Error("Goal revision already active or interrupted; inspect before retrying"); });
+    const temporary = path.join(directory, `.publish-${process.pid}-${randomBytes(12).toString("hex")}`);
+    try {
+      readGoalAgentPolicy(realRoot, request.name);
+      await assertNameIsAvailable(realRoot, request.name, target);
+      if (goalDefinitionFingerprint(realRoot, request.name) !== expected_sha256) throw new Error("Goal definition changed since inspection");
+      const file = await fs.open(temporary, "wx", 0o600);
+      try { await file.writeFile(renderGoalAgent(request)); await file.sync(); } finally { await file.close(); }
+      assertSafeExistingPath(realRoot, target, true);
+      if (goalDefinitionFingerprint(realRoot, request.name) !== expected_sha256) throw new Error("Goal definition changed since inspection");
+      await fs.rename(temporary, target);
+      return { name: request.name, path: goalAgentRelativePath(request.name), sha256: goalDefinitionFingerprint(realRoot, request.name),
+        instruction: "Quit and restart OpenCode, then select this agent in a fresh conversation. Prior validation does not validate this revision." };
+    } finally {
+      await handle.close();
+      await fs.rm(temporary, { force: true });
+      await fs.rm(lock, { force: true });
+    }
+  }
+  if (record(value) && value.operation !== undefined) {
+    if (value.operation !== "create") throw new Error("Unknown publisher operation");
+    const { operation, ...definition } = value;
+    value = definition;
+  }
   const request = validateGoalAgentRequest(value);
   const realRoot = await fs.realpath(path.resolve(root));
   await assertNameIsAvailable(realRoot, request.name);
@@ -421,21 +474,23 @@ export async function publishGoalAgentFile(root: string, value: unknown): Promis
 }
 
 export default tool({
-  description: "Publish one self-contained Goal Agent with an outcome and acceptance criteria, without replacing an existing definition.",
+  description: "Create, inspect, or explicitly update one Goal Agent. Updates require the inspected SHA-256 and complete definition; restart in a fresh session after publication.",
   args: {
+    operation: tool.schema.enum(["create", "inspect", "update"]).optional(),
+    expected_sha256: tool.schema.string().regex(/^[a-f0-9]{64}$/).optional(),
     builder_model: tool.schema.string().regex(/^[^\s/]+\/[^\s]+$/).optional(),
     validator_model: tool.schema.string().regex(/^[^\s/]+\/[^\s]+$/).optional(),
     name: tool.schema.string().regex(NAME_RE),
-    description: tool.schema.string().min(1),
-    outcome: tool.schema.string().min(1),
-    acceptance_criteria: tool.schema.array(tool.schema.string().min(1)).min(1),
-    durable_context: tool.schema.array(tool.schema.string().min(1)).min(1),
-    edit_paths: tool.schema.array(tool.schema.string().min(1)).min(1),
-    bash: tool.schema.boolean(),
-    verification_commands: tool.schema.array(tool.schema.string().min(1)).min(1),
-    stop_conditions: tool.schema.array(tool.schema.string().min(1)).min(1),
-    escalation_triggers: tool.schema.array(tool.schema.string().min(1)).min(1),
-    instructions: tool.schema.string().min(1),
+    description: tool.schema.string().min(1).optional(),
+    outcome: tool.schema.string().min(1).optional(),
+    acceptance_criteria: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
+    durable_context: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
+    edit_paths: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
+    bash: tool.schema.boolean().optional(),
+    verification_commands: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
+    stop_conditions: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
+    escalation_triggers: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
+    instructions: tool.schema.string().min(1).optional(),
   },
   async execute(args, context) {
     const root = context.directory ?? context.worktree ?? process.cwd();

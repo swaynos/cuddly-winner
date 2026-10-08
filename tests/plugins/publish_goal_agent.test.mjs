@@ -117,6 +117,39 @@ test("publisher rejects a name declared by another local agent", async () => fix
   );
 }));
 
+test("explicit fingerprint-bound revisions preserve identity and reject stale updates", async () => fixture(async root => {
+  const first = await publishGoalAgentFile(root, request());
+  const inspected = await publishGoalAgentFile(root, { operation: "inspect", name: "retry-fix" });
+  assert.match(inspected.sha256, /^[a-f0-9]{64}$/);
+  const update = { ...request({ outcome: "Updated policy", edit_paths: ["src/new.ts"], bash: false }), operation: "update", expected_sha256: inspected.sha256 };
+  const revised = await publishGoalAgentFile(root, update);
+  assert.equal(revised.path, first.path);
+  assert.notEqual(revised.sha256, inspected.sha256);
+  assert.match(revised.instruction, /fresh conversation/);
+  assert.deepEqual(readGoalAgentPolicy(root, "retry-fix").edit_paths, ["src/new.ts"]);
+  const content = await readFile(path.join(root, first.path), "utf8");
+  await assert.rejects(publishGoalAgentFile(root, update), /changed since inspection/);
+  assert.equal(await readFile(path.join(root, first.path), "utf8"), content);
+  await assert.rejects(publishGoalAgentFile(root, { ...update, expected_sha256: undefined }), /expected_sha256/);
+}));
+
+test("concurrent revisions permit one winner and preserve collisions and symlink checks", async () => fixture(async root => {
+  const first = await publishGoalAgentFile(root, request());
+  const inspected = await publishGoalAgentFile(root, { operation: "inspect", name: "retry-fix" });
+  const update = { ...request({ outcome: "New outcome" }), operation: "update", expected_sha256: inspected.sha256 };
+  const results = await Promise.allSettled([publishGoalAgentFile(root, update), publishGoalAgentFile(root, update)]);
+  assert.equal(results.filter(r => r.status === "fulfilled").length, 1);
+  const fresh = await publishGoalAgentFile(root, { operation: "inspect", name: "retry-fix" });
+  const collision = path.join(root, ".opencode/agents/other.md");
+  await writeFile(collision, "---\nname: retry-fix\n---\nother");
+  await assert.rejects(publishGoalAgentFile(root, { ...update, expected_sha256: fresh.sha256 }), /already exists/);
+  await rm(collision);
+  const target = path.join(root, first.path);
+  await rm(target);
+  await symlink(path.join(root, "missing"), target);
+  await assert.rejects(publishGoalAgentFile(root, { ...update, expected_sha256: fresh.sha256 }), /symlink/);
+}));
+
 test("publisher rejects a symlinked generated parent", async () => fixture(async root => {
   const outside = await mkdtemp(path.join(os.tmpdir(), "goal-agent-outside-"));
   try {
