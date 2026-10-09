@@ -47,6 +47,7 @@ test("real pinned TUI shows in-flight Goal activity at 80 and 60 columns without
           if (cancelMode) await cancelGate.promise;
           if (builds === 1 && !called("bash")) call = { name: "bash", arguments: JSON.stringify({ command: "pwd", description: "Check worktree" }) };
           else if (!called("write")) call = { name: "write", arguments: JSON.stringify({ filePath: path.join(root, "counter.txt"), content: builds === 1 ? "bad\n" : "good\n" }) };
+          else if (!called("goal_handoff")) call = { name: "goal_handoff", arguments: JSON.stringify({ status: "ready", evidence: "Counter written and inspection performed; ready for independent check", remaining: [] }) };
         }
       } else if (child && user.includes("Perform only your assigned validator phase")) {
         if (!called("goal_progress")) call = { name: "goal_progress", arguments: JSON.stringify({ summary: "Checking independent evidence" }) };
@@ -63,7 +64,8 @@ test("real pinned TUI shows in-flight Goal activity at 80 and 60 columns without
         else if (called("goal_cycle") && !JSON.stringify(lastUser).includes("The goal is not yet validated")) {
           await retryGate.promise;
           text = "Repair required.";
-        } else call = { name: "goal_cycle", arguments: "{}" };
+        } else call = { name: "goal_cycle", arguments: JSON.stringify({ alignment: "confirmed", completion_target: "Counter implementation verified offline", authorized_actions: "Write counter.txt and run checks. No generation.", max_cycles: 3, max_stalled_cycles: 2,
+          finding: "c0 bad counter content", repair: "Replace bad counter with good", expected_evidence: "Fresh read returns good" }) };
       } else text = "Visibility fixture";
       const delta = call ? { tool_calls: [{ index: 0, id: `call-${Date.now()}-${Math.random()}`, type: "function", function: call }] } : { content: text };
       res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -188,7 +190,8 @@ test("real pinned TUI shows in-flight Goal activity at 80 and 60 columns without
     retryGate.release();
     await wait(async () => (await state(session.id))?.state.metadata?.goal_activity?.cycle === 2 &&
       (await state(session.id)).state.metadata.goal_activity.phase === "validator", "Fresh repair/validation cycle");
-    await wait(() => wide.text().includes("activity 2") && wide.text().includes("Validator"), "Second cycle rendered");
+     await wait(() => wide.text().includes("activity 2") && wide.text().includes("Validator"), "Second cycle rendered");
+     await wait(() => wide.text().includes("Verdict: failed (c0)") && wide.text().includes("Replace bad counter"), "Prior failed verdict and repair reason remain visible");
     finalGate.release();
     await wait(() => wide.text().includes("validated") && wide.text().includes("Independently validated"), "Visible validated completion");
     assert.doesNotMatch(wide.text(), /PRIVATE_SENTINEL/);

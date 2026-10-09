@@ -40,13 +40,74 @@ publish it as `builder_model` and/or `validator_model`; leave both unset by
 default.
 
 The generated agent owns repeated build and validation iterations. Each phase
-runs in a fresh child session through goal_cycle. Failed validation means repair
+runs in a fresh child session through goal_cycle. A builder must record a ready
+goal_handoff before independent validation starts. Unfinished work resumes in a
+fresh bounded builder attempt, not an inspection-only validation cycle.
+Failed validation means repair
 and revalidation, not completion or a request for permission to continue. Describe
 task-specific verification and evidence precisely enough for a fresh validator.
+
+Prerequisite preparation belongs inside the published run. Explore and resolve
+material feasibility questions before publication, using read-only research or
+spike evidence within your permissions; do not build preparation artifacts in
+the planning session. Ask Grounder, when useful, to identify required inputs,
+dependencies, preparation procedures, readiness checks and evidence locations.
+Carry those findings and applicable tool/skill usage instructions into the goal's
+existing instructions, durable context and criteria. Include exact preparation
+output paths and needed capabilities in the published policy.
+
+The builder must inspect existing prerequisites, prepare missing or stale inputs,
+verify readiness, then continue directly into the authorized iterative work in
+the same run. Specify what depends on each preparation and how to verify reuse;
+changed inputs require refreshing affected preparation and invalidating dependent
+evidence while preserving unaffected work and history. A fresh child must be able
+to resume from durable evidence without manual reconciliation. Preparation alone
+is not completion unless the user explicitly requested that finish line. A
+scaffolding-only deliverable must implement and test this transition without
+performing unauthorized execution. Genuine missing authority or dependencies
+remain blockers; automatic continuation never expands permissions.
 
 Before publishing, establish the requested outcome, exact edit paths, acceptance
 criteria, durable context, final verification commands, stop conditions, and
 escalation triggers. The named files must be worktree-relative, exact paths.
+State the completion target in the outcome and instructions. Distinguish
+preparation, executable implementation checked offline, and a live domain result.
+State authorized side effects and evidence required for that target. Specify a
+task-appropriate maximum cycle count and consecutive unchanged-finding bound in
+stop conditions. Explain the diagnosis and stop procedure when either bound is
+reached. The coordinator records these values during goal_cycle admission.
+A later execution request cannot silently expand a preparation-only definition.
+Resolve the mismatch and authority before orchestration. Revise the same named
+definition with its inspected fingerprint when needed. Require a fresh loaded
+session after revision.
+
+Lead the existing instructions field with a short execution spine: finish line,
+authorized side effects, current implementation gap, first productive obligation,
+minimum required prerequisites, and the direct preparation-to-work transition.
+Map criteria to concrete implementation/artifact evidence and dependency gates
+without repeating the entire checklist. Missing implementation within policy is
+the builder's work, not a prerequisite that must already exist before publication.
+Mark optional dependencies as optional. Identify stale historical instructions
+in durable context, state their disposition, and assign permitted runbook updates
+to the builder; never silently disregard current project restrictions. Label
+verification commands that are requirements to implement rather than existing
+entry points. Keep complete historical evidence durable, not repeatedly copied
+into an oversized task prompt. Read-only spike evidence means inspecting existing
+evidence, not implementing a spike in this planning session.
+
+State runtime stop semantics precisely: the overall bound counts every attempt
+that creates a child, including builder-only attempts. The stalled bound limits
+consecutive unfinished builder attempts and exact repeated failed criterion/evidence
+reports; it does not detect semantic similarity between differently worded findings.
+The same bound limits coordinator continuation nudges. Do not publish a stronger
+"same material finding" guarantee than the runtime actually enforces.
+
+For visual tasks, define intended edits and protected anatomy in native source
+coordinates. Require separate evidence for each quality dimension. Synthetic
+checks verify control flow, not live visual quality. Once execution is authorized,
+prefer a small real experiment before extensive controller work. State the batch
+budget and stop procedure. Preserve accepted regions during targeted repair.
+
 Inspect existing definitions under `.opencode/agents/generated/` before choosing
 a name. Prefer revising the existing definition when the user changes the same
 task's approach, instructions, criteria or authorized paths. A different run-data

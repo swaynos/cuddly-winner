@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { deflateSync } from "node:zlib";
+import http from "node:http";
+import { once } from "node:events";
 import os from "node:os";
 import path from "node:path";
 import { Goal } from "../../plugins/goal.ts";
@@ -8,6 +12,8 @@ import { ImmutabilityGuard } from "../../plugins/immutability.ts";
 import { publishGoalAgentFile } from "../../tools/publish_goal_agent.ts";
 
 const model = { providerID: "local", modelID: "test" };
+const request = { alignment: "confirmed", completion_target: "Executable counter implementation verified offline", authorized_actions: "Edit counter.mjs and run offline checks. No generation.",
+  max_cycles: 10, max_stalled_cycles: 8, finding: "c0 remains unresolved", repair: "Repair the rejected counter result", expected_evidence: "Fresh independent check returns two" };
 const verdict = (passed) => ({ status: "checked", reason: "", checks: { c0: { passed, evidence: passed ? "node test.mjs passed against current files" : "node test.mjs failed: expected 2, got 1", ...(passed ? { resolution: "Fresh node test.mjs result now returns 2, resolving the earlier expected 2, got 1 finding" } : {}) } } });
 
 async function fixture(fn, options = {}) {
@@ -28,6 +34,7 @@ async function fixture(fn, options = {}) {
     const aborts = [];
     const metadata = [];
     let response = verdict(false);
+    let handoff = { status: "ready", evidence: "Fixture implementation and checks are ready for independent validation", remaining: [] };
     let run;
     const client = { session: {
       get: async ({ path }) => ({ data: sessions.get(path.id) }),
@@ -41,7 +48,14 @@ async function fixture(fn, options = {}) {
       prompt: async (input) => {
         prompts.push(input);
         history.set(input.path.id, [{ info: { role: "assistant" }, parts: [{ type: "tool", tool: "bash", state: { status: "completed", output: "test evidence" } }] }]);
-        if (run) return run(input);
+        const result = run ? await run(input) : { data: { info: {}, parts: [] } };
+        // Most fixtures model a ready builder; incident/handback tests override
+        // this checkpoint explicitly rather than relying on plain final text.
+        if (input.body.parts[0].text.includes("Perform only your assigned builder phase") && handoff
+          && !history.get(input.path.id).some(m => m.parts.some(p => p.tool === "goal_handoff"))) {
+          history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_handoff", state: { status: "completed", output: JSON.stringify(handoff) } });
+        }
+        if (run) return result;
         if (input.body.parts[0].text.includes("Perform only your assigned validator phase") && response) {
           history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: { status: "completed", output: JSON.stringify(response) } });
         }
@@ -56,12 +70,12 @@ async function fixture(fn, options = {}) {
       metadata(value) { metadata.push(structuredClone(value)); } };
     const finish = (result, extra = {}) => history.get("root").push({ info: { role: "assistant", finish: "stop", ...extra }, parts: result ? [{ type: "tool", tool: "goal_cycle", state: { status: "completed", output: JSON.stringify(result) } }] : [] });
     const idle = () => hooks.event({ event: { type: "session.idle", properties: { sessionID: "root" } } });
-    const cycle = async () => {
-      const result = await hooks.tool.goal_cycle.execute({}, context);
+    const cycle = async (args = request) => {
+      const result = await hooks.tool.goal_cycle.execute(args, context);
       return JSON.parse(typeof result === "string" ? result : result.output);
     };
-    await fn({ root, hooks, client, sessions, history, calls, prompts, continuations, aborts, metadata, controller, context, finish, idle, cycle,
-      setResponse(value) { response = value; }, setRun(value) { run = value; } });
+    await fn({ root, hooks, client, sessions, history, calls, prompts, continuations, aborts, metadata, controller, context, finish, idle, cycle, request,
+      setResponse(value) { response = value; }, setRun(value) { run = value; }, setHandoff(value) { handoff = value; } });
   } finally { await rm(root, { recursive: true, force: true }); }
 }
 
@@ -94,6 +108,118 @@ test("failed validation repairs in new sessions; only independent validation com
   assert.equal(f.continuations.length, 1);
 }));
 
+test("metadata-only builder hands back unfinished implementation without starting validation", async () => fixture(async f => {
+  f.setHandoff(undefined);
+  await writeFile(path.join(f.root, "counter.mjs"), "missing implementation");
+  f.setRun(async input => {
+    assert.match(input.body.parts[0].text, /Acceptance criteria are implementation and verification obligations/);
+    await writeFile(path.join(f.root, "readiness.json"), '{"inventory":"available"}');
+    const handoff = { status: "unfinished", evidence: "Inventory is available, but counter.mjs still lacks the execution path", remaining: ["Implement the missing execution path and exercise it through the HTTP fixture"] };
+    const output = await f.hooks.tool.goal_handoff.execute(handoff, { ...f.context, sessionID: input.path.id });
+    f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_handoff", state: { status: "completed", output } });
+    return { data: { info: {} } };
+  });
+  const first = await f.cycle({ ...request, max_cycles: 3, max_stalled_cycles: 2 });
+  assert.equal(first.status, "failed");
+  assert.equal(first.children.length, 1);
+  assert.equal(first.validation, undefined);
+  assert.equal(await readFile(path.join(f.root, "counter.mjs"), "utf8"), "missing implementation");
+  assert.match(f.metadata.at(-1).metadata.goal_activity.activity, /Builder unfinished; validation not started/);
+  f.finish(first);
+  const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
+  f.setHandoff({ status: "ready", evidence: "Execution path implemented and checked", remaining: [] });
+  f.setRun(async input => {
+    if (input.body.parts[0].text.includes("assigned builder phase")) {
+      assert.match(input.body.parts[0].text, /UNFINISHED BUILDER CHECKPOINT.*Implement the missing execution path/);
+      await writeFile(path.join(f.root, "counter.mjs"), "implemented");
+    } else {
+      assert.equal(await readFile(path.join(f.root, "counter.mjs"), "utf8"), "implemented");
+      assert.doesNotMatch(input.body.parts[0].text, /UNFINISHED BUILDER CHECKPOINT|Inventory is available/);
+      f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: { status: "completed", output: JSON.stringify(verdict(true)) } });
+    }
+    return { data: { info: {} } };
+  });
+  // No fabricated independent finding is necessary to resume unfinished work.
+  const raw = await reload.tool.goal_cycle.execute({}, f.context);
+  const second = JSON.parse(typeof raw === "string" ? raw : raw.output);
+  assert.equal(second.status, "validated");
+  assert.deepEqual(second.initial_worktree, first.initial_worktree);
+  assert.deepEqual(second.admission, first.admission);
+  assert.deepEqual(f.calls.map(c => c.title.split(":")[0]), ["Goal builder", "Goal builder", "Goal validator"]);
+  assert.equal(new Set(f.calls.map(c => c.id)).size, 3);
+}));
+
+test("missing, malformed and honest zero-progress handoffs stop within existing bounds after reload", async () => {
+  for (const handoff of [undefined, { status: "ready", evidence: "Not implemented", remaining: ["Implement"] },
+    { status: "unfinished", evidence: "No product changes yet", remaining: ["Implement the authorized counter"] }]) {
+    await fixture(async f => {
+      f.setHandoff(handoff);
+      const first = await f.cycle({ ...request, max_cycles: 3, max_stalled_cycles: 2 });
+      assert.equal(first.status, "failed");
+      assert.equal(first.builder_handoff.status, "unfinished");
+      f.finish(first);
+      const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
+      const raw = await reload.tool.goal_cycle.execute({}, f.context);
+      const second = JSON.parse(typeof raw === "string" ? raw : raw.output);
+      assert.equal(second.status, "blocked");
+      assert.match(second.reason, /2 consecutive unfinished builder attempts/);
+      assert.equal(second.validation, undefined);
+      assert.equal(f.calls.length, 2, "not a single validator is started");
+      f.finish(second);
+      await reload.event({ event: { type: "session.idle", properties: { sessionID: "root" } } });
+      assert.equal(f.continuations.length, 0);
+    });
+  }
+});
+
+test("builder handoffs are active-role scoped, shaped and evidence-gated", async () => fixture(async f => {
+  const ready = { status: "ready", evidence: "Inspected product and checks", remaining: [] };
+  await assert.rejects(f.hooks.tool.goal_handoff.execute(ready, f.context), /Only the active/);
+  f.setHandoff(undefined);
+  f.setRun(async input => {
+    const context = { ...f.context, sessionID: input.path.id };
+    await assert.rejects(f.hooks.tool.goal_handoff.execute({ ...ready, remaining: ["Missing implementation"] }, context), /Ready handoffs/);
+    await assert.rejects(f.hooks.tool.goal_handoff.execute({ ...ready, status: "unfinished" }, context), /next action/);
+    const output = await f.hooks.tool.goal_handoff.execute(ready, context);
+    f.history.set(input.path.id, [{ info: {}, parts: [{ type: "tool", tool: "goal_handoff", state: { status: "completed", output } }] }]);
+    return { data: { info: {} } };
+  });
+  const result = await f.cycle();
+  assert.equal(result.status, "failed");
+  assert.match(result.builder_handoff.evidence, /without attempting/);
+  await assert.rejects(f.hooks.tool.goal_handoff.execute(ready, { ...f.context, sessionID: f.calls[0].id }), /Only the active/);
+}));
+
+test("observed builder dependency blocker stops, bookkeeping-only blocker resumes implementation", async () => {
+  for (const observed of [true, false]) await fixture(async f => {
+    f.setHandoff({ status: "blocked", evidence: "Required external input returned HTTP 503", remaining: ["Restore access to the required input"] });
+    f.setRun(async input => {
+      f.history.set(input.path.id, [{ info: {}, parts: [{ type: "tool", tool: observed ? "webfetch" : "goal_progress",
+        state: observed ? { status: "error", error: "HTTP 503" } : { status: "completed", output: "Pending" } }] }]);
+      return { data: { info: {} } };
+    });
+    const result = await f.cycle();
+    assert.equal(result.status, observed ? "blocked" : "failed");
+    assert.equal(f.calls.length, 1);
+    assert.equal(result.validation, undefined);
+    f.finish(result);
+    await f.idle();
+    assert.equal(f.continuations.length, observed ? 0 : 1);
+  });
+});
+
+test("unfinished attempts consume total bound even when mixed with failed validations", async () => fixture(async f => {
+  f.finish(await f.cycle({ ...request, max_cycles: 2, max_stalled_cycles: 2 }));
+  f.setHandoff({ status: "unfinished", evidence: "Repair still needs implementation", remaining: ["Finish the repair"] });
+  const second = await f.cycle();
+  assert.equal(second.status, "blocked");
+  assert.match(second.reason, /Cycle bound reached/);
+  assert.equal(f.calls.length, 3);
+  f.finish(second);
+  await f.idle();
+  assert.equal(f.continuations.length, 0);
+}));
+
 test("prior findings survive unrelated passing evidence until explicitly resolved", async () => fixture(async f => {
   const first = await f.cycle();
   f.finish(first);
@@ -102,11 +228,66 @@ test("prior findings survive unrelated passing evidence until explicitly resolve
   f.setResponse({ status: "checked", reason: "", checks: { c0: { passed: true, evidence: "Unrelated legacy tests passed" } } });
   const drift = await f.cycle();
   assert.equal(drift.status, "failed");
-  assert.equal(drift.validation.checks.c0.evidence, first.validation.checks.c0.evidence);
+  assert.match(drift.reason, /Resolution required.*c0/);
+  assert.equal(drift.validation, undefined, "invalid verdict is rejected, not silently rewritten");
   assert.match(f.prompts.at(-1).body.parts[0].text, /expected 2, got 1.*second independent defect/);
   f.finish(drift);
   f.setResponse(verdict(true));
   assert.equal((await f.cycle()).status, "validated");
+}));
+
+test("validator corrects missing resolution in its own active session instead of silent verdict rewriting", async () => fixture(async f => {
+  f.finish(await f.cycle());
+  let corrected = false;
+  f.setRun(async input => {
+    if (input.body.parts[0].text.includes("assigned validator phase")) {
+      const context = { ...f.context, sessionID: input.path.id };
+      await assert.rejects(f.hooks.tool.goal_handoff.execute({ status: "ready", evidence: "Validator cannot hand off", remaining: [] }, context), /Only the active Goal builder/);
+      const invalid = { status: "checked", reason: "", checks: { c0: { passed: true, evidence: "Counter now returns two" } } };
+      await assert.rejects(f.hooks.tool.goal_verdict.execute(invalid, context), /Resolution required.*c0.*has not been accepted/);
+      assert.equal(invalid.checks.c0.passed, true, "reject without mutating independent input");
+      const output = await f.hooks.tool.goal_verdict.execute(verdict(true), context);
+      f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: { status: "completed", output } });
+      corrected = true;
+    }
+    return { data: { info: {} } };
+  });
+  assert.equal((await f.cycle()).status, "validated");
+  assert.ok(corrected);
+}));
+
+test("child prompts do not duplicate prior cycle output or the initial baseline", async () => fixture(async f => {
+  const first = await f.cycle();
+  first.initial_worktree.limitations.push("unique-baseline-sentinel");
+  first.reason = "previous-result-only-sentinel";
+  f.finish(first);
+  await f.cycle();
+  for (const prompt of f.prompts.slice(-2)) {
+    const text = prompt.body.parts[0].text;
+    assert.equal(text.split("unique-baseline-sentinel").length - 1, 1);
+    assert.doesNotMatch(text, /previous-result-only-sentinel/);
+    assert.match(text, /expected 2, got 1/);
+  }
+}));
+
+test("fresh roles receive preparation ownership and scoped readiness checks on every cycle", async () => fixture(async f => {
+  f.finish(await f.cycle());
+  await f.cycle();
+  for (const index of [0, 2]) {
+    const prompt = f.prompts[index].body.parts[0].text;
+    assert.match(prompt, /PREREQUISITES: Preparation is part of this run/);
+    assert.match(prompt, /verify readiness, then continue directly into authorized iterative work/);
+    assert.match(prompt, /Record dependencies and readiness evidence so fresh children can resume/);
+    assert.match(prompt, /invalidate dependent evidence while preserving unaffected work and history/);
+    assert.match(prompt, /For scaffolding-only scope, implement and test/);
+    assert.match(prompt, /unknown side effects require inspection before any retry/);
+  }
+  for (const index of [1, 3]) {
+    const prompt = f.prompts[index].body.parts[0].text;
+    assert.match(prompt, /PREREQUISITES: Independently check preparation readiness and dependency evidence against current inputs/);
+    assert.match(prompt, /respect explicit preparation-only scope and do not perform unauthorized execution/);
+    assert.match(prompt, /Missing or stale preparation that the builder can repair within policy is a failed criterion/);
+  }
 }));
 
 test("changed definitions invalidate previous success across runtime reload", async () => fixture(async f => {
@@ -115,7 +296,7 @@ test("changed definitions invalidate previous success across runtime reload", as
   const inspected = await publishGoalAgentFile(f.root, { operation: "inspect", name: "fix-counter" });
   await writeFile(path.join(f.root, inspected.path), inspected.content.replace("Counter works", "Counter works differently"));
   const reloaded = await Goal({ client: f.client, directory: f.root, worktree: f.root });
-  const result = await reloaded.tool.goal_cycle.execute({}, f.context);
+   const result = await reloaded.tool.goal_cycle.execute(request, f.context);
   assert.equal(JSON.parse(typeof result === "string" ? result : result.output).status, "blocked");
   assert.equal(f.calls.length, 2, "revised definition cannot reuse the old conversation");
   await reloaded.event({ event: { type: "session.idle", properties: { sessionID: "root" } } });
@@ -129,6 +310,198 @@ test("required historical evidence remains a terminal blocker without generation
   f.finish(result);
   await f.idle();
   assert.equal(f.continuations.length, 0);
+}));
+
+test("admission mismatch and missing admission stop before children, including after reload", async () => {
+  for (const args of [{}, { alignment: "clarification_required" }]) {
+    await fixture(async f => {
+      const result = await f.cycle(args);
+      assert.equal(result.status, "blocked");
+      assert.match(result.reason, /Admission required|Execution mismatch/);
+      assert.equal(f.calls.length, 0);
+      f.finish(result);
+      const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
+      await reload.event({ event: { type: "session.idle", properties: { sessionID: "root" } } });
+      assert.equal(f.continuations.length, 0);
+    });
+  }
+});
+
+test("executor enforces advertised request bounds before child creation", async () => {
+  for (const args of [{ ...request, repair: "x".repeat(161) }, { ...request, max_cycles: 101 },
+    { ...request, completion_target: "x".repeat(1001) }]) await fixture(async f => {
+    const result = await f.cycle(args);
+    assert.equal(result.status, "blocked");
+    assert.match(result.reason, /Invalid .*provide/);
+    assert.equal(f.calls.length, 0);
+  });
+});
+
+test("a mismatch resumes only after a real user decision and confirmed admission", async () => fixture(async f => {
+  f.finish(await f.cycle({ alignment: "clarification_required" }));
+  f.history.get("root").push({ info: { role: "user", agent: "fix-counter", model }, parts: [{ type: "text", text: "Implement and verify offline. Do not generate." }] });
+  await f.hooks["chat.message"]({ sessionID: "root" }, { parts: [{ type: "text", text: "Implement and verify offline. Do not generate." }] });
+  f.setResponse(verdict(true));
+  assert.equal((await f.cycle()).status, "validated");
+  assert.equal(f.calls.length, 2);
+}));
+
+test("repair admission requires a current finding and a concrete resolving hypothesis", async () => fixture(async f => {
+  f.finish(await f.cycle());
+  const result = await f.cycle({ finding: "c10", repair: "Repeat tests", expected_evidence: "Same test output" });
+  assert.equal(result.status, "blocked");
+  assert.match(result.reason, /Repair diagnosis required/);
+  assert.equal(f.calls.length, 2);
+  f.finish(result);
+  await f.idle();
+  assert.equal(f.continuations.length, 0);
+}));
+
+test("identical findings stop at the admitted bound without accepting or resetting it", async () => fixture(async f => {
+  for (let i = 0; i < 3; i++) {
+    const result = await f.cycle({ ...request, max_stalled_cycles: i === 0 ? 3 : 9 });
+    assert.equal(result.status, i === 2 ? "blocked" : "failed");
+    assert.equal(result.admission.max_stalled_cycles, 3, "later tool arguments cannot increase the admitted bound");
+    assert.equal(result.validation.checks.c0.passed, false);
+    if (i === 2) assert.match(result.reason, /Non-progress: 3 consecutive identical/);
+    f.finish(result);
+    await f.idle();
+  }
+  assert.equal(f.calls.length, 6);
+  assert.equal(f.continuations.length, 2);
+  const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
+  await reload.event({ event: { type: "session.idle", properties: { sessionID: "root" } } });
+  assert.equal(f.continuations.length, 2);
+}));
+
+test("a coordinator that never starts its repair cannot receive unbounded continuation prompts", async () => fixture(async f => {
+  f.finish(await f.cycle({ ...request, max_stalled_cycles: 2 }));
+  for (let i = 0; i < 3; i++) {
+    await f.idle();
+    if (i < 2) {
+      f.history.get("root").push({ info: { role: "user", agent: "fix-counter", model }, parts: f.continuations.at(-1).body.parts });
+      f.finish();
+    }
+  }
+  assert.equal(f.continuations.length, 2);
+  assert.equal(f.calls.length, 2);
+  const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
+  await reload.event({ event: { type: "session.idle", properties: { sessionID: "root" } } });
+  assert.equal(f.continuations.length, 2);
+  const raw = await reload.tool.goal_cycle.execute(request, f.context);
+  assert.match(JSON.parse(typeof raw === "string" ? raw : raw.output).reason, /Coordinator non-progress/);
+  assert.equal(f.calls.length, 2, "an explicit call cannot bypass a persisted stop without user handback");
+}));
+
+test("changing evidence for the same criterion continues until the overall cycle bound", async () => fixture(async f => {
+  for (let i = 0; i < 3; i++) {
+    f.setResponse({ status: "checked", checks: { c0: { passed: false, evidence: `Fresh check found defect ${i}` } } });
+    const result = await f.cycle({ ...request, max_cycles: 3, max_stalled_cycles: 2 });
+    assert.equal(result.status, i === 2 ? "blocked" : "failed");
+    if (i === 2) assert.match(result.reason, /Cycle bound reached/);
+    f.finish(result);
+  }
+  assert.equal(f.calls.length, 6);
+  await f.idle();
+  assert.equal(f.continuations.length, 0);
+}));
+
+test("non-progress stops retain failed findings across an explicit user handback", async () => fixture(async f => {
+  const stopped = await f.cycle({ ...request, max_cycles: 3, max_stalled_cycles: 1 });
+  assert.equal(stopped.status, "blocked");
+  f.finish(stopped);
+  f.history.get("root").push({ info: { role: "user", agent: "fix-counter", model }, parts: [{ type: "text", text: "I inspected the failure. Repair the actual counter defect within the remaining bound." }] });
+  await f.hooks["chat.message"]({ sessionID: "root" }, { parts: [{ type: "text", text: "Repair the actual counter defect." }] });
+  f.setResponse({ status: "checked", checks: { c0: { passed: true, evidence: "Unrelated tests passed" } } });
+  const drift = await f.cycle();
+  assert.notEqual(drift.status, "validated");
+  assert.match(drift.reason, /Resolution required.*c0/);
+  assert.equal(drift.validation, undefined);
+  assert.ok(drift.retry);
+}));
+
+test("interrupted metadata retains the original admission and baseline after reload", async () => fixture(async f => {
+  await writeFile(path.join(f.root, "counter.mjs"), "original bytes");
+  f.setRun(async () => {
+    await writeFile(path.join(f.root, "counter.mjs"), "partial action bytes");
+    throw new Error("Transport lost; outcome unknown");
+  });
+  const stopped = await f.cycle({ ...request, max_cycles: 2, max_stalled_cycles: 2 });
+  assert.equal(stopped.status, "blocked");
+  const metadata = f.metadata.at(-1).metadata;
+  f.history.get("root").push({ info: { role: "assistant", finish: "stop" }, parts: [{ type: "tool", tool: "goal_cycle", state: { status: "error", error: "interrupted", metadata } }] });
+  f.history.get("root").push({ info: { role: "user", agent: "fix-counter", model }, parts: [{ type: "text", text: "I inspected the partial action. Resume without replaying it." }] });
+  f.setRun(undefined);
+  f.setResponse(verdict(true));
+  const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
+  const raw = await reload.tool.goal_cycle.execute({ ...request, max_cycles: 10 }, f.context);
+  const resumed = JSON.parse(typeof raw === "string" ? raw : raw.output);
+  assert.equal(resumed.status, "validated");
+  assert.equal(resumed.admission.max_cycles, 2);
+  assert.deepEqual(resumed.initial_worktree, stopped.initial_worktree);
+  assert.equal(resumed.initial_worktree.files["counter.mjs"].sha256, createHash("sha256").update("original bytes").digest("hex"));
+}));
+
+test("initial status and hashes preserve attribution for an intentional deletion and untracked input", async () => fixture(async f => {
+  // Construct a tiny local Git fixture without running staging, commit or branch commands.
+  const object = async (type, content) => {
+    const bytes = Buffer.concat([Buffer.from(`${type} ${content.length}\0`), content]);
+    const hash = createHash("sha1").update(bytes).digest("hex");
+    const directory = path.join(f.root, ".git/objects", hash.slice(0, 2));
+    await mkdir(directory, { recursive: true });
+    await writeFile(path.join(directory, hash.slice(2)), deflateSync(bytes));
+    return hash;
+  };
+  const blob = await object("blob", Buffer.from("user intentionally removed this agent\n"));
+  const tree = await object("tree", Buffer.concat([Buffer.from("100644 retired.md\0"), Buffer.from(blob, "hex")]));
+  const commit = await object("commit", Buffer.from(`tree ${tree}\nauthor Fixture <fixture@localhost> 0 +0000\ncommitter Fixture <fixture@localhost> 0 +0000\n\nFixture snapshot\n`));
+  await writeFile(path.join(f.root, ".git/HEAD"), `${commit}\n`);
+  await mkdir(path.join(f.root, ".git/refs"));
+  await writeFile(path.join(f.root, ".git/config"), "[core]\nrepositoryformatversion = 0\nbare = false\n");
+  const input = path.join(f.root, "input.txt");
+  await writeFile(input, "pre-existing untracked source bytes");
+  let builds = 0;
+  f.setRun(async session => {
+    const prompt = session.body.parts[0].text;
+    if (prompt.includes("assigned builder phase") && ++builds === 2) await writeFile(input, "new out-of-scope edit");
+    if (prompt.includes("assigned validator phase")) {
+      const captured = f.metadata.at(-1).metadata.cycle_evidence.initial_worktree;
+      assert.ok(captured.status.some(entry => entry.path === "retired.md" && entry.status.includes("D")));
+      assert.ok(captured.status.some(entry => entry.path === "input.txt" && entry.status === "??"));
+      assert.equal(captured.files["retired.md"].state, "absent");
+      const unchanged = captured.files["input.txt"].sha256 === createHash("sha256").update(await readFile(input)).digest("hex");
+      const report = { status: "checked", checks: { c0: { passed: unchanged, evidence: unchanged
+        ? "Initial hash and status confirm existing untracked bytes and intentional deletion are preserved"
+        : "Fresh hash differs from initial input.txt hash: newly caused out-of-scope mutation" } } };
+      f.history.get(session.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: { status: "completed", output: JSON.stringify(report) } });
+    }
+    return { data: { info: {} } };
+  });
+  const first = await f.cycle();
+  assert.equal(first.status, "validated");
+  f.finish(first);
+  const changed = await f.cycle();
+  assert.equal(changed.status, "failed");
+  assert.match(changed.validation.checks.c0.evidence, /newly caused out-of-scope/);
+  assert.deepEqual(changed.initial_worktree, first.initial_worktree, "later cycles never replace the initial hashes");
+  await assert.rejects(readFile(path.join(f.root, "retired.md")), { code: "ENOENT" });
+}));
+
+test("failed independent verdict remains authoritative while a builder artifact says pending", async () => fixture(async f => {
+  const first = await f.cycle();
+  f.finish(first);
+  await writeFile(path.join(f.root, "validation.json"), JSON.stringify({ independent_validation: "pending" }));
+  f.setRun(async input => {
+    assert.match(f.metadata.at(-1).metadata.goal_activity.verdict, /failed \(c0\)/);
+    assert.equal(f.metadata.at(-1).metadata.goal_activity.retryReason, request.repair);
+    if (input.body.parts[0].text.includes("assigned validator phase")) {
+      f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: { status: "completed", output: JSON.stringify(verdict(false)) } });
+    }
+    return { data: { info: {} } };
+  });
+  const second = await f.cycle();
+  assert.equal(second.status, "failed");
+  assert.equal(JSON.parse(await readFile(path.join(f.root, "validation.json"))).independent_validation, "pending");
 }));
 
 test("offline executable continuation repairs only rejected work and preserves accepted bytes", async () => fixture(async f => {
@@ -171,6 +544,82 @@ test("offline executable continuation repairs only rejected work and preserves a
   assert.ok([...f.history.values()].flatMap(messages => messages.flatMap(m => m.parts)).every(part => !part.tool?.startsWith("cuddly-winner-browser")));
 }));
 
+test("scaffold verification makes zero live calls; authorized fixture submits, reviews, repairs and preserves accepted bytes", async () => {
+  const submissions = [];
+  const accepted = Buffer.from("accepted fixture region\0");
+  const service = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const input = JSON.parse(body);
+    submissions.push(input);
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ artifact: Buffer.concat([accepted, Buffer.from(input.repair ? "repaired" : "defective")]).toString("base64") }));
+  });
+  service.listen(0, "127.0.0.1");
+  await once(service, "listening");
+  const endpoint = `http://127.0.0.1:${service.address().port}`;
+  // This is a deterministic service contract, not GPU generation or live quality evidence.
+  const source = `export async function execute(submit, prior) {
+    const response = await submit({ repair: Boolean(prior) });
+    const bytes = Buffer.from(response.artifact, "base64");
+    if (prior && !bytes.subarray(0, ${accepted.length}).equals(prior.subarray(0, ${accepted.length}))) throw new Error("Accepted region changed");
+    return bytes;
+  }`;
+  try {
+    for (const live of [false, true]) {
+      await fixture(async f => {
+        const runner = path.join(f.root, "runner.mjs");
+        const artifact = path.join(f.root, "artifact.bin");
+        let builds = 0;
+        f.setRun(async input => {
+          const builder = input.body.parts[0].text.includes("assigned builder phase");
+          if (builder) {
+            builds++;
+            if (builds === 1) await writeFile(runner, source);
+            const { execute } = await import(runner);
+            await writeFile(path.join(f.root, "ready.txt"), createHash("sha256").update(await readFile(runner)).digest("hex"));
+            const prior = builds > 1 ? await readFile(artifact) : undefined;
+            const submit = live
+              ? async payload => {
+                const response = await fetch(endpoint, { method: "POST", body: JSON.stringify(payload), signal: AbortSignal.timeout(3000) });
+                return response.json();
+              }
+              : async payload => ({ artifact: Buffer.concat([accepted, Buffer.from(payload.repair ? "repaired" : "defective")]).toString("base64") });
+            await writeFile(artifact, await execute(submit, prior));
+          } else {
+            const bytes = await readFile(artifact);
+            assert.deepEqual(bytes.subarray(0, accepted.length), accepted);
+            assert.equal(await readFile(path.join(f.root, "ready.txt"), "utf8"), createHash("sha256").update(await readFile(runner)).digest("hex"));
+            const passed = bytes.subarray(accepted.length).toString() === "repaired";
+            const report = { status: "checked", checks: { c0: { passed,
+              evidence: passed ? "Fixture artifact: accepted prefix unchanged, rejected suffix repaired" : "Fixture rejected suffix is defective",
+              ...(passed ? { resolution: "Fresh fixture bytes resolve defective suffix while retaining the exact accepted prefix" } : {}) } } };
+            f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: { status: "completed", output: JSON.stringify(report) } });
+          }
+          return { data: { info: {} } };
+        });
+        const admission = { ...request, completion_target: live ? "Authorized deterministic service-fixture outcome" : "Executable scaffold verified offline",
+          authorized_actions: live ? "Local fixture HTTP submissions only. No GPU generation." : "Offline implementation and injected synthetic checks only. No live calls." };
+        const failed = await f.cycle(admission);
+        assert.equal(failed.status, "failed");
+        f.finish(failed);
+        const passed = await f.cycle(admission);
+        assert.equal(passed.status, "validated");
+        f.finish(passed);
+        await f.idle();
+        assert.equal(f.continuations.length, 0);
+        assert.equal(builds, 2);
+        assert.equal(submissions.length, live ? 2 : 0);
+      }, { edit_paths: ["runner.mjs", "artifact.bin", "ready.txt"], outcome: "Implement and verify fixture continuation without claiming live visual acceptance",
+        acceptance_criteria: ["The implemented fixture submission path repairs a rejected suffix, preserves accepted bytes and checks preparation readiness"] });
+    }
+    assert.deepEqual(submissions, [{ repair: false }, { repair: true }]);
+  } finally {
+    service.closeAllConnections();
+    await new Promise(resolve => service.close(resolve));
+  }
+});
+
 test("mutation guard freezes changed definitions before and after reload", async () => fixture(async f => {
   const invoke = hooks => hooks["tool.execute.before"]({ tool: "write", sessionID: "child", callID: "write" }, { args: { filePath: path.join(f.root, "counter.mjs") } });
   f.sessions.set("child", { id: "child", parentID: "root", agent: "general" });
@@ -202,13 +651,14 @@ test("a revision during an active build blocks mutation and never starts validat
   assert.equal(f.calls.length, 1);
 }));
 
-test("premature stops continue repeatedly, with duplicate idle events deduplicated", async () => fixture(async f => {
-  f.finish();
-  await Promise.all([f.idle(), f.idle()]);
-  assert.equal(f.continuations.length, 1);
-  f.finish();
-  await f.idle();
-  assert.equal(f.continuations.length, 2);
+test("no admission means idle cannot restart a clarification; failed admitted cycles still resume", async () => fixture(async f => {
+   f.finish();
+   await Promise.all([f.idle(), f.idle()]);
+   assert.equal(f.continuations.length, 0);
+   f.finish(await f.cycle());
+   f.finish();
+   await Promise.all([f.idle(), f.idle()]);
+   assert.equal(f.continuations.length, 1);
 }));
 
 test("observed blockers stop but malformed completed reports return to repair", async () => {
@@ -346,6 +796,7 @@ test("permission denial, API failure and assistant errors never auto-retry", asy
       });
       const result = await f.cycle();
       assert.equal(result.status, "blocked");
+      assert.match(result.reason, failure === "denied" ? /Observed permission denial/ : failure === "assistant" ? /Observed child abort/ : /outcome unknown/);
       assert.equal(f.calls.length, 1);
       f.finish(result);
       await f.idle();
@@ -469,7 +920,7 @@ test("live progress is parent scoped, bounded and survives completion metadata",
     return { data: { info: {} } };
   });
   await assert.rejects(f.hooks.tool.goal_progress.execute({ summary: "Root cannot report" }, f.context), /active Goal child/);
-  const result = await f.hooks.tool.goal_cycle.execute({}, f.context);
+   const result = await f.hooks.tool.goal_cycle.execute(request, f.context);
   assert.equal(JSON.parse(result.output).status, "validated");
   assert.equal(result.metadata.goal_activity.status, "validated");
   assert.equal(result.metadata.goal_activity.cycle, 1);
@@ -496,7 +947,7 @@ test("milestone reporting alone never establishes validation evidence", async ()
 
 test("cancelled cycles keep an honest final activity state", async () => fixture(async f => {
   f.setRun(async () => { f.controller.abort(); return { data: { info: {} } }; });
-  const result = await f.hooks.tool.goal_cycle.execute({}, f.context);
+   const result = await f.hooks.tool.goal_cycle.execute(request, f.context);
   assert.equal(JSON.parse(result.output).status, "blocked");
   assert.equal(result.metadata.goal_activity.status, "cancelled");
 }));

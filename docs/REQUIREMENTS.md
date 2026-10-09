@@ -32,26 +32,111 @@ creation remains no-clobber. Restart OpenCode and use a fresh conversation after
 revision; prior success cannot validate a changed definition.
 
 Goal Agents coordinate the published task in a fresh OpenCode session. Each
-goal_cycle runs a build iteration AND a separate independent validation iteration,
-each in a new child session. Failed validation
-feeds findings to the next fresh builder. Only criterion-by-criterion validation
-with tool evidence establishes completion. A premature coordinator stop resumes
+goal_cycle starts a fresh builder. A ready `goal_handoff` permits a separate fresh
+independent validator; unfinished builder work must continue before validation.
+Failed validation
+feeds findings to the next fresh builder within the admitted bounds. Only criterion-by-criterion validation
+with tool evidence establishes completion. After an admitted failed cycle, a premature coordinator stop resumes
 automatically; cancellation, denied permissions, unknown API outcomes, and genuine
 blockers remain incomplete and require explicit user input before resuming.
 Unresolved independent findings persist across cycles and are supplied to fresh
 validators without the builder conversation. A previous failure becoming passed
 requires an explicit evidence-backed `resolution`; unrelated passing tests do
-not resolve it. Required unavailable historical evidence remains a blocker.
+not resolve it. `goal_verdict` rejects missing resolutions with the exact keys so
+the active validator can correct its report before finishing; the runtime must not
+silently rewrite a passed check to an older failure. Required unavailable historical evidence remains a blocker.
 Cycle records are bound to the exact definition fingerprint. Changed or unbound
 records cannot authorize continuation or descendant mutation in the old session.
 Outcome and side-effect constraints must distinguish executable implementation,
 offline verification and live execution. Completion reports must distinguish
 these evidence classes and actual goal achievement.
 
+Before starting children, `goal_cycle` requires an explicit admission decision.
+The coordinator records the aligned `completion_target`, `authorized_actions`,
+`max_cycles` and `max_stalled_cycles`. Publication instructions must derive these
+bounds from task-specific stop conditions. `alignment: clarification_required`
+stops before children. Missing admission also stops. Idle continuation must not
+restart an outcome or authority clarification before the first cycle. Admission
+records the coordinator's judgment. It does not grant permissions or automatically
+interpret natural-language authorization. A changed target or authority must use
+the existing fingerprint-bound revision and fresh-session procedure.
+
+Each repair cycle requires `finding`, `repair` and `expected_evidence`. A criterion
+failure requires its exact criterion key in `finding`. The coordinator must state
+the concrete repair and the new evidence that can resolve it. The runtime stops
+incomplete at the admitted overall cycle bound or consecutive identical-finding
+bound. It compares failed criterion keys and exact evidence, not keys alone or
+semantic similarity. The stalled bound also counts consecutive unfinished builder
+attempts regardless of checkpoint wording. All attempts that create a child count
+against the overall bound, including builder-only and interrupted attempts. Changed
+independent findings can continue within the overall bound. Contradictions, inaccessible
+repairs and unavailable historical evidence require focused diagnosis. Later
+arguments cannot increase admitted bounds. Failed findings remain unresolved
+after a non-progress stop. Explicit user handback does not waive them.
+
+Builders record `goal_handoff` with `status` (ready, unfinished or blocked),
+concrete `evidence`, and `remaining` actions. Ready requires no remaining work
+before independent checking and completed inspection/check tool evidence; it is
+not a success verdict. Unfinished requires concrete next actions, permits honest
+zero progress, and returns an incomplete checkpoint without starting a validator.
+Missing/malformed handoffs are unfinished protocol work, not readiness. Fresh
+builder continuation uses that checkpoint without fabricating a failed criterion.
+Blocked handoffs require an attempted inspection of an observed genuine stop;
+missing authorized implementation and unavailable coordinator tools are not
+external blockers. Cancellation, denial and unknown action outcomes retain their
+terminal rules. Handoffs live in existing session tool records, not a second Goal
+format or project registry. The runtime enforces handoff structure and evidence
+use, not the truthfulness of the builder's judgments.
+
+Runtime stops are authoritative for idle nudges and explicit calls across reload.
+The coordinator-nudge bound persists even when the bridge cannot update completed
+metadata. Without explicit real user handback, later calls cannot bypass it.
+
+Before the first builder mutation, the runtime records bounded initial Git status
+and hashes for exact edit paths, durable-context files and dirty paths. Session
+records retain this evidence across fresh children and interrupted attempts.
+Validators must attribute scope against this snapshot, preserve pre-existing user
+changes and intentional deletions, and reject newly caused out-of-scope edits.
+Untracked does not mean created by this run. Missing or excluded byte evidence
+remains explicitly unavailable. A current snapshot cannot prove earlier history
+or concurrent authorship. No clean-worktree requirement or user-work restoration
+is permitted.
+
+Prerequisite preparation is owned by the published run. Prometheus resolves
+material feasibility uncertainty through permitted exploration and specifies
+required inputs, dependencies, procedures, tool/skill usage, readiness checks and
+durable evidence locations in the existing goal fields. It does not implement
+preparation artifacts. Exact edit paths and capabilities must cover preparation
+as well as subsequent work. The builder prepares missing or stale prerequisites,
+verifies readiness and proceeds directly into authorized iteration. Fresh children
+reuse verified preparation from durable evidence; changed inputs refresh affected
+preparation and invalidate dependent evidence without discarding unaffected work
+or history. The independent validator checks readiness and the transition against
+the requested outcome. Repairable preparation failures continue through the normal
+build/validation cycle. Preparation-only scope may end at readiness; scaffolding-only
+scope must implement and test the transition without unauthorized execution.
+Genuine missing authority/dependencies and unknown side effects retain their
+existing stop rules. No new agent format, phase, registry or policy capability is needed.
+
+Published instructions lead with a short execution spine: finish line, authority,
+current implementation gap, first productive obligation, minimum required
+prerequisites and direct continuation. Criteria are implementation/artifact
+obligations with evidence, not only inspection questions. Optional dependencies
+must not become mandatory handoff gates. Reconcile superseded historical workflow
+instructions explicitly and assign permitted documentation updates to the builder.
+Commands that do not exist yet are labeled requirements to implement. Child
+prompts carry the current definition, baseline, relevant unresolved findings and
+immediate checkpoint once, not a duplicate full previous-cycle serialization.
+
 Goal execution displays bounded, event-derived parent activity while child phases
 run, including cycle, phase, public milestone, waiting, failure, completion and
 cancellation. Child-reported progress is not validation evidence. Preserve native
 session behavior, user TUI settings and modified assets during installation/removal.
+Show the latest independent verdict and failed keys while a repair runs, alongside
+the retry reason. Builder-maintained task artifacts cannot override session
+verdicts. Report observed permission denial, cancellation, child failure and
+unknown action outcomes distinctly. Unknown outcomes require inspection before
+explicit resumption. No interruption permits automatic action replay.
 An unsupported blocker with no attempted inspection, or a malformed completed
 validator report, is repairable failed validation. Missing coordinator-only tools
 in a child is intentional, not a dependency failure. Ordinary rejected-input tool

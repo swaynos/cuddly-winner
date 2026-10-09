@@ -47,6 +47,13 @@ test("publishes one self-contained goal-oriented agent", async () => fixture(asy
   assert.deepEqual(options.goal, { criteria: ["The retry policy has focused coverage."] });
   assert.match(content, /# Outcome\nRetry scheduling follows the requested policy\./);
   assert.match(content, /# Verification\n- `node --test tests\/retry\.test\.mjs`/);
+  assert.match(content, /Own prerequisite preparation within this run through the builder/);
+  assert.match(content, /Preparation alone is not completion unless explicitly requested/);
+  assert.match(content, /refresh affected preparation and invalidate dependent evidence/);
+  assert.match(content, /only after a ready goal_handoff/);
+  assert.match(content, /Acceptance criteria are implementation and verification obligations/);
+  assert.match(content, /Consecutive unfinished builder attempts and exact repeated/);
+  assert.match(content, /semantic similarity is not automatically detected/);
 
   const policy = readGoalAgentPolicy(root, "retry-fix");
   assert.deepEqual(policy, {

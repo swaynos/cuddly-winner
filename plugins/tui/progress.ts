@@ -10,6 +10,8 @@ export type GoalActivity = {
   phaseStartedAt: number;
   updatedAt: number;
   recent: string[];
+  verdict?: string;
+  retryReason?: string;
 };
 
 export function publicSummary(value: unknown): string {
@@ -34,6 +36,7 @@ export function toolActivity(name: string): string {
   if (["webfetch", "websearch"].includes(name)) return "Researching references";
   if (name.startsWith("cuddly-winner-browser")) return "Using managed browser";
   if (name === "goal_verdict") return "Recording independent verdict";
+  if (name === "goal_handoff") return "Recording builder readiness";
   return "Using a tool";
 }
 
@@ -55,8 +58,11 @@ export function goalActivityForSession(session: any, messages: readonly any[], p
         const cancelled = value.status === "cancelled" || ((message.info ?? message).error?.name === "MessageAbortedError"
           && (part.state.status === "error" || value.status !== "validated"));
         return { ...value, activity: publicSummary(value.activity), milestone: value.milestone ? publicSummary(value.milestone) : "",
+          ...(value.verdict ? { verdict: publicSummary(value.verdict) } : {}),
+          ...(value.retryReason ? { retryReason: publicSummary(value.retryReason) } : {}),
           recent: Array.isArray(value.recent) ? value.recent.slice(-3).map(publicSummary) : [],
           ...(cancelled ? { status: "cancelled", activity: "Cancelled; inspect before resuming" }
+            : part.state.metadata?.coordinator_stop ? { status: "blocked", activity: "Coordinator non-progress; diagnosis required" }
             : part.state.status === "error" ? { status: "blocked", activity: "Execution interrupted; inspect before resuming" } : {}) };
       } catch { return; }
     }

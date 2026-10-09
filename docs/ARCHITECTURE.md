@@ -107,11 +107,63 @@ mutation and Bash and tells the user to republish it as a Goal Agent.
 
 ### Goal Execution
 
+Admission uses arguments on the existing `goal_cycle` tool, not another agent
+format or a task registry. The first call supplies `alignment: confirmed`,
+`completion_target`, `authorized_actions`, `max_cycles` and
+`max_stalled_cycles`. Both bounds are positive integers, at most 100, and the
+stalled bound cannot exceed the overall bound. Prometheus specifies task-specific
+bounds and stop procedures in existing outcome, instruction and stop-condition
+fields. Admission records the coordinator's alignment judgment. The runtime
+enforces the decision protocol, not semantic interpretation of arbitrary user
+instructions. Missing admission or `alignment: clarification_required` returns
+blocked before child creation. A clarification needs a real user decision before
+confirmed resumption. A changed definition still needs a fresh loaded session.
+
+Repair calls supply `finding`, `repair` and `expected_evidence`. A current failed
+criterion must match an exact criterion key in `finding`. The short repair
+summary also appears in parent activity. Admission and retry hypotheses persist
+in cycle results. Later arguments cannot replace the admitted limits or authority.
+At the overall bound, or the admitted number of consecutive identical failed
+criterion/evidence reports, the runtime returns blocked with the latest failed
+validation intact. Protocol failures use their failure reason for comparison.
+Consecutive unfinished builder checkpoints count against the same stalled bound
+regardless of their evidence wording; every builder-only attempt with a child
+also consumes the overall bound. This is not semantic stagnation classification.
+Different evidence under the same key is not automatically stagnation. The
+overall bound still limits alternation. Explicit handback after diagnosis can
+resume within remaining bounds, but cannot discard unresolved findings.
+The same stalled bound limits continuation prompts when the coordinator never
+starts the required repair. The stop persists in completed tool metadata without
+rewriting the independent verdict. Hydrated activity displays that stop. Prompt
+history also preserves the limit across runtime reload.
+Explicit calls consult that persisted nudge history when completed-part updates
+are unavailable, and cannot bypass a recorded stop without real user handback.
+
+Before creating children, the runtime records `initial_worktree` in tool metadata
+and completed cycle output. It obtains read-only NUL-delimited Git status through
+`execFile`, with optional locks and filesystem-monitor hooks disabled. This is
+fixed runtime provenance collection, not root Bash access. It never stages,
+commits, restores or cleans the worktree. Capture limits are a ten-second status
+timeout, one MiB of status output, 512 paths and 16 MiB of file bytes. Hashes cover
+exact edit paths, publisher-rendered durable-context paths and initial dirty
+paths. Raw file bytes are not stored. Symlinks, directories, unavailable files and
+files beyond the byte budget do not receive hashes. Missing status and capture
+limits are explicit limitations. A rename records both path names.
+
+Both children receive the same initial evidence. Validators compare current
+evidence with that baseline and must not infer task ownership from dirty status
+alone. The snapshot does not establish pre-run history or concurrent authorship.
+Initial evidence and admission survive interrupted attempts through existing tool
+metadata. Interrupted attempts with created children count against the overall
+bound. A prior run without admission/provenance cannot acquire a new historical
+baseline by resuming. It requires a fresh session and honest evidence limitations.
+
 Publishing does not start goal execution. Selecting the generated root agent starts
 its workflow; it coordinates through goal_cycle and cannot edit project files, run Bash,
 or spawn arbitrary tasks. The tool creates a new native General child for each
-build and another new child for validation. It passes the goal definition to
-both, previous validation findings only to the builder, and never passes the
+build and, after a ready builder handoff, another new child for validation. It
+passes the goal definition, initial baseline and unresolved findings once to
+both, the immediate unfinished checkpoint only to the next builder, and never passes the
 builder conversation to the validator. Unresolved independent criterion findings
 are passed to both roles, including the fresh validator. Child parentID preserves the existing
 Goal-Agent policy inheritance. Both builder and validator children explicitly receive
@@ -119,6 +171,36 @@ read, glob, grep, and list inspection permissions. Children cannot delegate or
 publish agents. Validator edit tools are denied; shell verification remains
 permission-controlled and must not change product code. An approval-gated Bash
 permission is not a command allowlist or shell sandbox.
+
+The active builder alone may call `goal_handoff`, an internal tool protocol stored
+in existing child/cycle records. It records ready, unfinished or blocked status,
+concrete evidence and at most eight remaining actions. Ready requires an empty
+remaining list and completed inspection/check tool use; it permits validation but
+cannot establish acceptance. Unfinished or malformed/missing handoffs return a
+failed builder checkpoint with no validator. The next bounded attempt uses a
+fresh builder and the persisted actions without needing an invented independent
+criterion failure. A blocked handoff with no attempted evidence is unfinished;
+observed external stops, denial, cancellation and unknown outcomes remain terminal.
+The runtime does not inspect natural-language final text to infer readiness or
+guarantee that model evidence claims are true. Independent validation remains
+essential. No new phase, agent-file schema or project registry is introduced.
+
+Preparation runs inside the existing builder phase, not a separate handoff or
+runtime phase. Prometheus may use read-only Grounder research to specify inputs,
+dependencies, preparation procedures and readiness checks, retaining sufficient
+exploration to resolve material feasibility uncertainty. The publisher's existing
+instructions field carries this contract and applicable tool/skill usage; exact
+edit paths include preparation outputs. The rendered coordinator and runtime child
+prompts assign preparation through execution to the same Goal run. Builders inspect,
+prepare, verify readiness and continue into authorized work; validators independently
+check current readiness and the preparation-to-work transition. Task evidence in
+authorized project artifacts records dependencies and readiness for fresh children.
+When inputs change, builders refresh affected preparation and invalidate dependent
+evidence, preserving unaffected work and history. This is instruction-level behavior,
+not an automatic dependency scheduler or a new machine-enforced readiness schema.
+Explicit preparation-only and scaffolding-only limits still apply, as do permission,
+cancellation and unknown-outcome stops. A repairable missing prerequisite is normal
+unfinished work, not a reason to end the run or require manual reconciliation.
 
 When a Goal Agent policy enables Bash, the generated root exposes it as `ask` so a
 child can inherit the approval-gated capability. `ImmutabilityGuard` still denies
@@ -140,13 +222,15 @@ Blocker evidence requires a completed or errored read, glob, grep, list, Bash,
 webfetch, websearch, LSP, or managed browser tool attempt. Bookkeeping and
 unavailable-tool calls do not count as inspection. An attempted inspection that
 fails on an external dependency can still support a terminal blocker.
-Failed criteria cause another build/validate cycle. Validation success requires
+Failed criteria cause another diagnosed build/validate cycle within admitted bounds. Validation success requires
 actual completed evidence-gathering tool use as well as the structured verdict;
 the runtime enforces the protocol, not the truthfulness of model judgments.
 If a previously failed criterion passes, its check must include a nonempty
 `resolution` identifying new evidence resolving that exact finding, or an
-evidence-backed correction of the earlier finding. Without it, the runtime keeps
-the previous finding failed. Unresolved findings are reconstructed from cycle
+evidence-backed correction of the earlier finding. Without it, goal_verdict rejects
+the report with the offending keys so the active validator can correct it. A
+malformed completed report is a protocol failure, not a silent rewrite of the
+independent checks. Unresolved findings are reconstructed from cycle
 records rather than stored in a second file. Unavailable required historical
 evidence is an observed evidence blocker, not something repetition can manufacture.
 
@@ -165,7 +249,8 @@ achievement. Offline profile fixtures prove continuation and evidence continuity
 they do not prove a separate product's hybrid image-generation implementation.
 
 The goal plugin listens for root session idle events and submits a continuation
-when a goal has not passed or blocked. Cycle tool results and child sessions are
+only after a completed failed cycle. It does not restart a pre-admission stop.
+Cycle tool results and child sessions are
 the durable checkpoints; no registry or task-state file is created. In-memory
 sets only prevent concurrent cycles/continuations and track cancellation. Abort
 propagates to the active child. Session/API errors, actual rejected permissions, and interrupted

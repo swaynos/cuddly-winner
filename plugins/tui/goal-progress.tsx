@@ -29,7 +29,7 @@ function GoalPanel(props: { api: TuiPluginApi }) {
       </text>
       <text height={1} wrapMode="none" fg={props.api.theme.current.text}>{clip(`Now: ${value().activity}`)}</text>
       <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(value().milestone ? `Reported: ${value().milestone}` : "Reported: awaiting a child milestone")}</text>
-      <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(`Recent: ${value().recent.at(-2) ?? "Cycle started"}`)}</text>
+      <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(`Verdict: ${value().verdict ?? "none"}${value().retryReason ? ` | Repair: ${value().retryReason}` : ""}`)}</text>
     </box>;
   }}</Show>;
 }

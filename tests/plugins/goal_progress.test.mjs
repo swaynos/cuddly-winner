@@ -32,3 +32,12 @@ test("malformed or interrupted metadata never claims successful progress", () =>
   assert.equal(goalActivityForSession({ id: "root" }, [{ ...messages[0], error: { name: "MessageAbortedError" } }], parts("error")).status, "cancelled");
   assert.equal(goalActivityForSession({ id: "root" }, messages, () => [{ type: "tool", tool: "goal_cycle", state: { metadata: { goal_activity: { ...snapshot, cycle: -1 } } } }]), undefined);
 });
+
+test("coordinator non-progress stops preserve the failed verdict during hydration", () => {
+  const value = goalActivityForSession({ id: "root" }, [{ id: "m", role: "user", agent: "fix-counter" }], () => [{ type: "tool", tool: "goal_cycle", state: {
+    status: "completed", metadata: { coordinator_stop: "Coordinator non-progress", goal_activity: { ...snapshot, verdict: "failed (c0)", retryReason: "Repair counter" } },
+  } }]);
+  assert.equal(value.status, "blocked");
+  assert.equal(value.verdict, "failed (c0)");
+  assert.match(value.activity, /Coordinator non-progress/);
+});
