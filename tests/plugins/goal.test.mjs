@@ -34,7 +34,7 @@ async function fixture(fn, options = {}) {
     const aborts = [];
     const metadata = [];
     let response = verdict(false);
-    let handoff = { status: "ready", evidence: "Fixture implementation and checks are ready for independent validation", remaining: [] };
+    let handoff = { status: "ready", evidence: "Fixture implementation and checks are ready for independent validation", remaining: [], checks: { c0: { evidence: "counter.mjs: node test.mjs returns two; offline implementation" } } };
     let run;
     const client = { session: {
       status: async () => ({ data: {} }),
@@ -128,7 +128,7 @@ test("metadata-only builder hands back unfinished implementation without startin
   assert.match(f.metadata.at(-1).metadata.goal_activity.activity, /Builder unfinished; validation not started/);
   f.finish(first);
   const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
-  f.setHandoff({ status: "ready", evidence: "Execution path implemented and checked", remaining: [] });
+  f.setHandoff({ status: "ready", evidence: "Execution path implemented and checked", remaining: [], checks: { c0: { evidence: "counter.mjs execution path implemented; node test.mjs passed" } } });
   f.setRun(async input => {
     if (input.body.parts[0].text.includes("assigned builder phase")) {
       assert.match(input.body.parts[0].text, /UNFINISHED BUILDER CHECKPOINT.*Implement the missing execution path/);
@@ -173,7 +173,7 @@ test("missing and malformed handoffs stop as repeated protocol failures after re
 });
 
 test("builder handoffs are active-role scoped, shaped and evidence-gated", async () => fixture(async f => {
-  const ready = { status: "ready", evidence: "Inspected product and checks", remaining: [] };
+  const ready = { status: "ready", evidence: "Inspected product and checks", remaining: [], checks: { c0: { evidence: "counter.mjs: node test.mjs returned two" } } };
   await assert.rejects(f.hooks.tool.goal_handoff.execute(ready, f.context), /Only the active/);
   f.setHandoff(undefined);
   f.setRun(async input => {
@@ -188,6 +188,73 @@ test("builder handoffs are active-role scoped, shaped and evidence-gated", async
   assert.equal(result.status, "failed");
   assert.match(result.builder_handoff.evidence, /without attempting/);
   await assert.rejects(f.hooks.tool.goal_handoff.execute(ready, { ...f.context, sessionID: f.calls[0].id }), /Only the active/);
+}));
+
+test("ready coverage is corrected in the active builder; fixture claims cannot validate a live criterion", async () => fixture(async f => {
+  f.setHandoff(undefined);
+  f.setRun(async input => {
+    const context = { ...f.context, sessionID: input.path.id };
+    if (input.body.parts[0].text.includes("assigned builder phase")) {
+      const ready = { status: "ready", evidence: "Offline fixture passed", remaining: [] };
+      await assert.rejects(f.hooks.tool.goal_handoff.execute(ready, context), /every criterion.*c0, c1/);
+      await assert.rejects(f.hooks.tool.goal_handoff.execute({ ...ready, checks: { c0: { evidence: "node fixture.mjs passed" } } }, context), /missing\/invalid: c1/);
+      await assert.rejects(f.hooks.tool.goal_handoff.execute({ ...ready, checks: { c0: { evidence: "" }, c1: { evidence: "claimed" } } }, context), /missing\/invalid: c0/);
+      await assert.rejects(f.hooks.tool.goal_handoff.execute({ ...ready, checks: { c0: { evidence: "checked" }, c1: { evidence: "checked" }, c2: { evidence: "extra" } } }, context), /unexpected keys/);
+      assert.equal(f.calls.length, 1, "correction stays in the active child");
+      const output = await f.hooks.tool.goal_handoff.execute({ ...ready, checks: {
+        c0: { evidence: "node fixture.mjs passed; offline implementation" },
+        c1: { evidence: "Synthetic live.png claimed to establish live quality" },
+      } }, context);
+      f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_handoff", state: { status: "completed", output } });
+    } else {
+      await assert.rejects(readFile(path.join(f.root, "live.png")), /ENOENT/);
+      const output = await f.hooks.tool.goal_verdict.execute({ status: "checked", reason: "", checks: {
+        c0: { passed: true, evidence: "Offline fixture passed" },
+        c1: { passed: false, evidence: "live.png absent: no real generated output; fixture cannot establish visual quality" },
+      } }, context);
+      f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: { status: "completed", output } });
+    }
+    return { data: { info: {} } };
+  });
+  const result = await f.cycle();
+  assert.equal(result.status, "failed");
+  assert.equal(result.validation.checks.c1.passed, false);
+  assert.equal(result.children.length, 2);
+  assert.equal(result.runtime_contract, "goal-criterion-readiness-v1");
+}, { acceptance_criteria: ["Executable offline fixture", "Real output passes visual review"] }));
+
+test("Build inspects recorded Goal history without executing or changing checkpoints", async () => fixture(async f => {
+  const result = await f.cycle();
+  f.finish(result);
+  f.history.get("root").push({ info: { role: "user", agent: "build", model }, parts: [] });
+  f.history.get("root").push({ info: { role: "assistant" }, parts: [{ type: "tool", tool: "goal_cycle",
+    state: { status: "error", error: "goal_cycle requires a selected root Goal Agent." } }] });
+  const before = structuredClone(f.history.get("root"));
+  const inspection = await f.cycle({ operation: "inspect" });
+  assert.equal(inspection.goal_agent, "fix-counter");
+  assert.equal(inspection.selected_agent, "build");
+  assert.equal(inspection.execution_selected, false);
+  assert.equal(inspection.run_state, "validation_failed");
+  assert.equal(inspection.attempts_used, 1);
+  assert.equal(inspection.latest_verdict.checks.c0.passed, false);
+  assert.equal(inspection.runtime_contract, "goal-criterion-readiness-v1");
+  assert.match(inspection.next_action, /Select the recorded Goal/);
+  assert.deepEqual(f.history.get("root"), before);
+  await assert.rejects(f.cycle(), /selected root Goal/);
+  assert.equal(f.calls.length, 2);
+}));
+
+test("unstarted Goal reports no execution evidence without admitting work", async () => fixture(async f => {
+  const notifications = [];
+  f.client.tui = { showToast: async input => notifications.push(input.body) };
+  f.finish();
+  await f.idle();
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.continuations.length, 0);
+  assert.match(notifications[0].message, /Not started; no execution or validation evidence/);
+  const inspection = await f.cycle({ operation: "inspect" });
+  assert.equal(inspection.run_state, "not_started");
+  assert.equal(inspection.admission, undefined);
 }));
 
 test("observed builder dependency blocker stops, bookkeeping-only blocker resumes implementation", async () => {
@@ -236,7 +303,7 @@ test("multiple legitimate partial builders continue before independent validatio
   }
   assert.equal(f.continuations.length, 2);
   f.setRun(undefined);
-  f.setHandoff({ status: "ready", evidence: "All operations implemented and checked", remaining: [] });
+  f.setHandoff({ status: "ready", evidence: "All operations implemented and checked", remaining: [], checks: { c0: { evidence: "counter.mjs: node test.mjs returned two" } } });
   f.setResponse(verdict(true));
   assert.equal((await f.cycle()).status, "validated");
   assert.deepEqual(f.calls.map(c => c.title.split(":")[0]), ["Goal builder", "Goal builder", "Goal builder", "Goal validator"]);

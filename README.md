@@ -1,5 +1,14 @@
 # Cuddly Winner
 
+Goal readiness is evidence-backed: ready builders must account for every acceptance
+criterion before an independent validator starts. Publication and passing partial
+tests do not establish task completion. `goal_cycle(operation="inspect")` reports
+the loaded runtime contract, recorded state, verdict and allowance; it also reads
+historical Goal evidence after switching the same conversation to Build/Plan.
+An unstarted Goal is reported as not started, without inventing authorization.
+Installation status describes disk contents; restart OpenCode (and its server for
+`opencode attach`) before checking the loaded runtime through inspection.
+
 Cuddly Winner is a small optional OpenCode profile that works seamlessly with
 default OpenCode Plan and Build without altering their native behavior. The only
 addition to native Build is access to publish_goal_agent, so a Build session

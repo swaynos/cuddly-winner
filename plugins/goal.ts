@@ -11,6 +11,8 @@ import { evidenceTool, publicSummary, toolActivity, type GoalActivity } from "./
 
 // Session records are the checkpoint. No task registry or second agent format.
 const CONTINUE = "The goal is not yet validated. Diagnose the unresolved finding. Call goal_cycle with a concrete repair and expected new evidence within the admitted bounds. Do not finish from an implementation claim.";
+// Emitted by loaded code, not inferred from installed files or a source commit.
+const RUNTIME_CONTRACT = "goal-criterion-readiness-v1";
 
 type CycleRequest = {
   operation?: "execute" | "inspect";
@@ -24,9 +26,9 @@ type CycleRequest = {
   expected_evidence?: string;
 };
 
-type BuilderHandoff = { status: "ready" | "unfinished" | "blocked"; evidence: string; remaining: string[] };
+type BuilderHandoff = { status: "ready" | "unfinished" | "blocked"; evidence: string; remaining: string[]; checks?: Record<string, { evidence: string }> };
 
-function builderHandoff(value: any): BuilderHandoff {
+function builderHandoff(value: any, criteria: string[]): BuilderHandoff {
   if (!value || !["ready", "unfinished", "blocked"].includes(value.status)
     || typeof value.evidence !== "string" || !value.evidence.trim() || value.evidence.length > 4000
     || !Array.isArray(value.remaining) || value.remaining.length > 8
@@ -35,6 +37,14 @@ function builderHandoff(value: any): BuilderHandoff {
   }
   if ((value.status === "ready") !== (value.remaining.length === 0)) {
     throw new Error("Ready handoffs must have no remaining work; unfinished or blocked handoffs must name the next action or needed decision.");
+  }
+  if (value.status === "ready") {
+    const keys = criteria.map((_, i) => `c${i}`);
+    const missing = keys.filter(key => typeof value.checks?.[key]?.evidence !== "string"
+      || !value.checks[key].evidence.trim() || value.checks[key].evidence.length > 4000);
+    if (missing.length || !value.checks || Object.keys(value.checks).some(key => !keys.includes(key))) {
+      throw new Error(`Ready handoff requires concrete artifact/check references and observed results for every criterion (${keys.join(", ")}); missing/invalid: ${missing.join(", ") || "unexpected keys"}. Correct this report or continue authorized work; readiness is not acceptance.`);
+    }
   }
   return value;
 }
@@ -114,6 +124,8 @@ function cycleHistory(messages: any[], context?: any) {
       try { result = JSON.parse(part.state.output); } catch {}
       if (["inspected", "invalid_request"].includes(result?.status)) continue;
       const metadata = part.state?.metadata;
+      if (part.state?.status === "error" && part.state.error === "goal_cycle requires a selected root Goal Agent."
+        && !metadata?.children?.length) continue;
       const interrupted = part.state?.status !== "completed";
       records.push({ part, index, interrupted,
         children: result?.children ?? metadata?.children ?? [],
@@ -166,7 +178,7 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
   const stopped = new Set<string>();
   const interruptions = new Map<string, string>();
   const childParents = new Map<string, string>();
-  const builders = new Set<string>();
+  const builders = new Map<string, string[]>();
   const validators = new Map<string, { criteria: string[]; unresolved: Record<string, string[]> }>();
   const activity = new Map<string, { context: any; snapshot: GoalActivity; children: string[]; childID?: string; tools: Map<string, string>; published?: boolean; pending?: Promise<void>; error?: unknown }>();
 
@@ -205,12 +217,20 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
       ?? (status === "error" ? "Tool reported a failure; investigating" : "Tool finished; reviewing results") });
   }
 
-  async function definition(sessionID: string) {
+  async function definition(sessionID: string, historical = false) {
     const session = data(await client.session.get({ path: { id: sessionID } }));
     if (session.parentID) return;
     const messages = data(await client.session.messages({ path: { id: sessionID } }));
     const user = [...messages].reverse().find((m: any) => m.info.role === "user")?.info;
-    const agent = user?.agent ?? session.agent;
+    const selectedAgent = user?.agent ?? session.agent;
+    let agent = selectedAgent;
+    if (historical) {
+      const names = new Set(cycleHistory(messages).records.map(record => record.result.goal_agent
+        ?? record.part.state?.metadata?.goal_activity?.agent
+        ?? [...messages.slice(0, record.index + 1)].reverse().find(m => m.info.role === "user")?.info.agent));
+      if (names.size > 1 || (names.size && ![...names][0])) throw new Error("Goal history is ambiguous or lacks its recorded identity; inspection cannot infer an execution target.");
+      if (names.size) agent = [...names][0];
+    }
     if (!agent || !hasGoalAgentFile(root, agent)) return;
     const policy = readGoalAgentPolicy(root, agent);
     const text = readFileSync(goalAgentPath(root, agent), "utf8");
@@ -219,9 +239,10 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
     const criteria = goalOptions?.criteria;
     if (!Array.isArray(criteria) || !criteria.length || criteria.some((c: unknown) => typeof c !== "string" || !c.trim())) return;
     const model = user?.model;
-    if (!model?.providerID || !model?.modelID) throw new Error("Goal requires a selected execution model.");
+    if (!historical && (!model?.providerID || !model?.modelID)) throw new Error("Goal requires a selected execution model.");
     return {
       agent,
+      selectedAgent,
       fingerprint: goalDefinitionFingerprint(root, agent),
       text,
       criteria: criteria as string[],
@@ -255,8 +276,12 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
   }
 
   async function inspect(context: any) {
-    const goal = await definition(context.sessionID);
-    if (!goal) throw new Error("goal_cycle requires a selected root Goal Agent.");
+    let goal;
+    try { goal = await definition(context.sessionID, true); }
+    catch (error) { return JSON.stringify({ status: "inspected", runtime_contract: RUNTIME_CONTRACT, run_state: "unknown",
+      reason: error instanceof Error ? error.message : String(error), next_action: "Resolve recorded Goal identity/definition; inspection authorizes no execution." }); }
+    if (!goal) return JSON.stringify({ status: "inspected", runtime_contract: RUNTIME_CONTRACT, run_state: "unknown",
+      reason: "No inspectable Goal definition in this root conversation.", next_action: "Select the intended Goal or inspect its original conversation; no work was started." });
     const history = cycleHistory(goal.messages, context);
     const children = await interruptedChildren(history, context.sessionID);
     let latestVerdict = [...history.results].reverse().find(r => r.validation)?.validation;
@@ -265,7 +290,13 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
       try { latestVerdict = JSON.parse(report?.output); } catch {}
     }
     const matches = history.records.every(r => r.fingerprint === goal.fingerprint);
-    return JSON.stringify({ status: "inspected", definition_sha256: goal.fingerprint,
+    return JSON.stringify({ status: "inspected", runtime_contract: RUNTIME_CONTRACT, goal_agent: goal.agent,
+      selected_agent: goal.selectedAgent, execution_selected: goal.agent === goal.selectedAgent,
+      run_state: !matches ? "definition_mismatch" : active.has(context.sessionID) ? "working"
+        : history.latest?.interrupted ? "interrupted" : history.previous?.status === "validated" ? "validated"
+          : history.previous?.status === "blocked" ? "blocked" : history.previous?.builder_handoff?.status === "unfinished" ? "unfinished"
+            : history.previous?.status === "failed" ? "validation_failed" : "not_started",
+      definition_sha256: goal.fingerprint,
       definition_matches: matches,
       admission: history.admission, attempts_used: history.attempts,
       attempts_remaining: history.admission ? Math.max(0, history.admission.max_cycles - history.attempts) : undefined,
@@ -280,7 +311,9 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
         ? "A child is active; do not create another writer."
         : children.some(c => c.status === "unknown") ? "Child activity is unknown; establish inactivity before resumption."
           : history.previous?.status === "blocked" ? "Inspect the recorded stop and task action evidence; explicit user handback and confirmed resumption are required."
-            : "Continue within the recorded admission; inspection changes no execution state.",
+            : goal.agent !== goal.selectedAgent ? "Select the recorded Goal before executing; historical inspection grants no execution authority."
+              : !history.admission ? "Not started; resolve admission before children. No execution or validation evidence."
+                : "Continue within the recorded admission; inspection changes no execution state.",
     });
   }
 
@@ -430,7 +463,7 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
         current.childID = child.id;
         current.tools.clear();
         if (role === "validator") validators.set(child.id, { criteria: goal.criteria, unresolved });
-        else builders.add(child.id);
+        else builders.set(child.id, goal.criteria);
         update(id, { phase: role, status: "running", phaseStartedAt: Date.now(), milestone: "",
           activity: role === "builder" ? "Builder working" : "Independent validator checking criteria" }, true);
         await current.pending;
@@ -438,7 +471,7 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
         if (context.abort.aborted) { cancel(); throw new Error("Observed cancellation. Inspect before resuming."); }
         if (stopped.has(id)) throw new Error(interruptions.get(id) ?? "Child stopped. Inspect before resuming.");
         let prompt = role === "builder"
-          ? `Pursue the goal below within its exact edit paths. Acceptance criteria are implementation and verification obligations, not an inspection checklist. Complete authorized work, including required execution, before handing off as ready. Preparation, metadata edits and a report do not finish missing implementation. Do not change acceptance criteria or the generated definition. Ordinary failures require diagnosis and repair. Call goal_handoff before finishing: ready only when no authorized work remains before independent validation; unfinished with concrete next actions otherwise; blocked only for an observed genuine stop. Honest zero progress is allowed.\nUnresolved independent findings:\n${JSON.stringify(unresolved)}`
+          ? `Pursue the goal below within its exact edit paths. Acceptance criteria are implementation and verification obligations, not an inspection checklist. Complete authorized work, including required execution, before handing off as ready. Preparation, metadata edits and a report do not finish missing implementation. Passing tests, preparation and individual operations are milestones: continue with the next authorized action rather than returning just to report them. Do not change acceptance criteria or the generated definition. Ordinary failures require diagnosis and repair. Call goal_handoff before finishing: ready only when no authorized work remains before independent validation, with checks keyed c0 through c${goal.criteria.length - 1}, each containing evidence naming actual artifacts/checks and observed results. Distinguish offline fixtures from required live outputs; account for every criterion. Correct rejected handoff fields within this active builder. Use unfinished with concrete next actions otherwise; blocked only for an observed genuine stop. Honest zero progress is allowed.\nUnresolved independent findings:\n${JSON.stringify(unresolved)}`
             : `Independently validate the CURRENT project against EVERY criterion below. Obtain fresh evidence; do not trust implementation claims. Do not edit product code or acceptance criteria, including through shell commands. Run the declared checks and required live/user-journey checks. Mark unmet criteria false with actionable findings. Use blocked only for an observed genuine stop condition or external dependency, not ordinary test failures or unfinished implementation. Missing required historical evidence is an evidence blocker, not something repetition can manufacture. Call goal_verdict before finishing with concrete evidence (commands, outcomes and artifact paths) per criterion. Number the acceptance criteria in their published order using keys c0 through c${goal.criteria.length - 1}. Unresolved independent findings: ${JSON.stringify(unresolved)}. For each previously failed criterion now passed, provide resolution identifying new evidence resolving that exact finding or an evidence-backed correction of the earlier finding. Passing unrelated tests is insufficient. You have not been given the builder's conversation.`;
         prompt += role === "builder"
           ? "\nPREREQUISITES: Preparation is part of this run. Inspect current inputs and durable readiness evidence; prepare missing or stale prerequisites within the goal's policy, verify readiness, then continue directly into authorized iterative work. Record dependencies and readiness evidence so fresh children can resume. Reuse verified preparation, refresh only affected dependencies when inputs change, and invalidate dependent evidence while preserving unaffected work and history. Do not stop at preparation unless explicitly requested as the finish line. For scaffolding-only scope, implement and test the preparation-to-work transition without unauthorized execution. Missing authority or an observed unavailable dependency is a blocker; unknown side effects require inspection before any retry."
@@ -468,7 +501,7 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
           const report = history.flatMap((m: any) => m.parts).findLast((p: any) => p.type === "tool" && p.tool === "goal_handoff" && p.state.status === "completed");
           let handoff: BuilderHandoff;
           let protocolFailure: string | undefined;
-          try { handoff = builderHandoff(report && JSON.parse(report.state.output)); }
+          try { handoff = builderHandoff(report && JSON.parse(report.state.output), goal.criteria); }
           catch (error) {
             protocolFailure = `Builder returned without a valid handoff: ${error instanceof Error ? error.message : String(error)}`;
             handoff = { status: "unfinished", evidence: protocolFailure,
@@ -546,6 +579,8 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
             const output = await cycle(args, executionContext);
             const result = JSON.parse(output);
             Object.assign(result, executionContext.cycleEvidence);
+            result.runtime_contract = RUNTIME_CONTRACT;
+            result.goal_agent = initialGoal?.agent;
             result.definition_sha256 ??= initialGoal?.fingerprint;
             if (result.status === "failed" && result.admission) {
               const history = executionContext.history;
@@ -598,18 +633,19 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
           }
         } }),
       goal_handoff: tool({
-        description: "Record a builder checkpoint before returning. Ready permits independent checking, not acceptance; unfinished work resumes in a fresh bounded attempt.",
+        description: "Record a builder checkpoint before returning. Ready requires checks c0..cN with concrete artifact/check evidence for every criterion; it permits independent checking, not acceptance. Correct rejected fields before returning. Unfinished work resumes in a fresh bounded attempt.",
         args: {
           status: tool.schema.enum(["ready", "unfinished", "blocked"]),
           evidence: tool.schema.string().min(1).max(4000),
           remaining: tool.schema.array(tool.schema.string().min(1).max(1000)).max(8),
+          checks: tool.schema.record(tool.schema.string(), tool.schema.object({ evidence: tool.schema.string().min(1).max(4000) })).optional(),
         },
         async execute(args, context) {
           const parent = childParents.get(context.sessionID);
           if (!builders.has(context.sessionID) || !parent || activity.get(parent)?.childID !== context.sessionID || stopped.has(parent)) {
             throw new Error("Only the active Goal builder may record a handoff.");
           }
-          return JSON.stringify(builderHandoff(args));
+          return JSON.stringify(builderHandoff(args, builders.get(context.sessionID)!));
         },
       }),
       goal_progress: tool({
@@ -689,7 +725,20 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
           await client.tui?.showToast?.({ body: { title: "Goal definition changed", message: "Restart OpenCode and use a fresh conversation. Previous validation is not applicable.", variant: "error" } });
           return;
         }
-        if (!result || result.status !== "failed") return;
+        if (!result) {
+          const checkpoint = { agent: goal.agent, parentID: id, cycle: 0, phase: "coordinator", status: "not_started",
+            activity: "Not started; no execution or validation evidence", milestone: "", recent: [],
+            phaseStartedAt: Date.now(), updatedAt: Date.now(), verdict: "none" };
+          const message = goal.messages.at(-1);
+          const text = message.parts.findLast((p: any) => p.type === "text");
+          if (partClient && text) {
+            const response = await partClient.part.update({ sessionID: id, messageID: message.info.id, partID: text.id,
+              directory: root, part: { ...text, metadata: { ...text.metadata, goal_activity: checkpoint, runtime_contract: RUNTIME_CONTRACT } } });
+            if (response.error) throw new Error("Not-started checkpoint failed.");
+          } else await client.tui?.showToast?.({ body: { title: "Goal not started", message: checkpoint.activity, variant: "warning" } });
+          return;
+        }
+        if (result.status !== "failed") return;
         const cycleIndex = history.latest!.index;
         const nudges = goal.messages.slice(cycleIndex + 1).filter((message: any) => message.info.role === "user" && message.parts.some((part: any) => part.type === "text" && part.text === CONTINUE)).length;
         if (result.admission && nudges >= result.admission.max_stalled_cycles) {

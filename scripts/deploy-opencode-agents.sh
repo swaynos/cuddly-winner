@@ -9,6 +9,7 @@ YAML_VERSION="2.9.0"
 JSONC_VERSION="3.3.1"
 MANAGED_ENTRY_DRIFT=0
 STATUS_DRIFT=0
+BACKUP=0
 
 mark_managed_entry_drift() {
   MANAGED_ENTRY_DRIFT=1
@@ -27,6 +28,7 @@ Usage:
 Options:
   --config-dir PATH      OpenCode configuration root
   --mode MODE            Install mode: copy (default) or symlink
+  --backup               Back up replaced entries during install
   -h, --help             Show this help
 
 Install deploys the Cuddly Winner profile. Status and remove inspect every managed entry.
@@ -186,6 +188,16 @@ backup_entry() {
   printf 'Backed up existing entry: %s -> %s\n' "$dst" "$backup"
 }
 
+replace_entry() {
+  local dst="$1"
+  if [[ "$BACKUP" == 1 ]]; then
+    backup_entry "$dst"
+  else
+    assert_managed_destination "$dst"
+    rm -rf "$dst"
+  fi
+}
+
 sync_entry() {
   local action="$1"
   local mode="$2"
@@ -222,7 +234,7 @@ sync_entry() {
       return
     fi
     if [[ -e "$dst" || -L "$dst" ]]; then
-      backup_entry "$dst"
+      replace_entry "$dst"
     fi
     ln -s "$src" "$dst"
     printf 'Linked: %s -> %s\n' "$dst" "$src"
@@ -234,7 +246,7 @@ sync_entry() {
     return
   fi
   if [[ -e "$dst" || -L "$dst" ]]; then
-    backup_entry "$dst"
+    replace_entry "$dst"
   fi
   if [[ -d "$src" ]]; then
     cp -R "$src" "$dst"
@@ -491,11 +503,15 @@ install_tool_sdk() {
       printf 'Runtime packages: unchanged clean tree\n'
       return
     fi
-    backup_entry "$runtime_root"
+    replace_entry "$runtime_root"
   fi
   if ! mv "$stage_runtime" "$runtime_root"; then
     rm -rf "$stage_root"
-    die "Unable to activate the clean OpenCode tool runtime; the prior tree remains in backups"
+    if [[ "$BACKUP" == 1 ]]; then
+      die "Unable to activate the clean OpenCode tool runtime; the prior tree remains in backups"
+    else
+      die "Unable to activate the clean OpenCode tool runtime"
+    fi
   fi
   rm -rf "$stage_root"
   node "$RUNTIME_INTEGRITY_HELPER" record --root "$runtime_root" --state "$RUNTIME_INTEGRITY_STATE"
@@ -511,7 +527,7 @@ install_browser_control_file() {
     return
   fi
   if [[ -e "$dst" || -L "$dst" ]]; then
-    backup_entry "$dst"
+    replace_entry "$dst"
   fi
   cp "$src" "$dst"
   printf 'Copied: %s -> %s\n' "$src" "$dst"
@@ -613,6 +629,10 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 && -n "$2" ]] || die "--mode requires copy or symlink"
       MODE="$2"
       shift 2
+      ;;
+    --backup)
+      BACKUP=1
+      shift
       ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1" ;;

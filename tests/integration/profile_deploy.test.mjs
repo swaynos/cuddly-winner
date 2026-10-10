@@ -23,12 +23,12 @@ async function fixture(fn) {
   try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
-async function deployFixture(root, action = "install") {
+async function deployFixture(root, action = "install", extraArgs = []) {
   const bin = path.join(root, "bin");
   const config = path.join(root, "config");
   await mkdir(bin, { recursive: true });
   await writeFile(path.join(bin, "opencode"), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
-  return run("bash", [deploy, action, "--config-dir", config], {
+  return run("bash", [deploy, action, "--config-dir", config, ...extraArgs], {
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
   });
 }
@@ -202,6 +202,26 @@ test("removing the profile preserves modified TUI assets and their registration"
   assert.equal(await readFile(file, "utf8"), "user-owned customization\n");
   assert.equal(await exists(path.join(config, "plugins/tui/progress.ts")), true);
   assert.match(await readFile(path.join(config, "tui.json"), "utf8"), /goal-progress\.tsx/);
+}));
+
+test("installer replaces entries without backups by default and preserves backups when --backup is passed", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  await deployFixture(root);
+
+  const targetAgent = path.join(config, "agents", "ask.md");
+  await writeFile(targetAgent, "locally modified ask\n");
+
+  await deployFixture(root, "install");
+  assert.equal(await exists(path.join(config, "backups")), false);
+  assert.notEqual(await readFile(targetAgent, "utf8"), "locally modified ask\n");
+
+  await writeFile(targetAgent, "locally modified again\n");
+  await deployFixture(root, "install", ["--backup"]);
+  assert.equal(await exists(path.join(config, "backups")), true);
+  const backupFiles = await readdir(path.join(config, "backups", "agents"));
+  assert.equal(backupFiles.length, 1);
+  assert.match(backupFiles[0], /^ask\.md\.bak\./);
+  assert.equal(await readFile(path.join(config, "backups", "agents", backupFiles[0]), "utf8"), "locally modified again\n");
 }));
 
 test("durable docs describe the enforced Goal Agent boundaries", async () => {

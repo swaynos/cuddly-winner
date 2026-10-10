@@ -285,7 +285,7 @@ export function renderGoalAgent(request: GoalAgentRequest): string {
     "After interruption or a process restart, inspect and explicitly resume the same conversation with the unchanged definition. Confirm prior children are inactive and reconcile task actions before new side effects. Never infer that no work occurred because a parent call did not return. A changed definition still requires fingerprint-checked publication, restart and a fresh conversation.",
     "Do not implement in the coordinator, reuse child contexts, or declare completion from a builder's report.",
     "Own prerequisite preparation within this run through the builder: inspect existing inputs, prepare missing or stale prerequisites, verify readiness, then continue directly into authorized iterative work. Preparation alone is not completion unless explicitly requested as the finish line.",
-    "Acceptance criteria are implementation and verification obligations, not an inspection checklist. Missing authorized implementation must be built. Partial implementation may span several bounded builders; their concrete remaining actions guide continuation. Ready means ready for independent checking, not that the builder already obtained the independent verdict.",
+    "Acceptance criteria are implementation and verification obligations, not an inspection checklist. Missing authorized implementation must be built. Partial implementation may span several bounded builders; their concrete remaining actions guide continuation. Ready handoffs require checks c0..cN containing concrete artifact/check evidence and observed results for every criterion. Ready means ready for independent checking, not that the builder already obtained the independent verdict.",
     "Use durable preparation and dependency evidence to resume across fresh children. Reuse verified prerequisites; refresh affected preparation and invalidate dependent evidence when inputs change, preserving unaffected work and history. Do not replay unknown side effects or expand permissions.",
     "Only a validated goal_cycle result establishes completion. Report its criterion-by-criterion evidence.",
     "A blocked result is incomplete: report the specific blocker and ask for the needed decision. Never weaken the goal to finish.",
@@ -293,7 +293,7 @@ export function renderGoalAgent(request: GoalAgentRequest): string {
     "Explain each repair cycle using its unresolved findings. Missing historical evidence cannot be manufactured by repetition. Report an observed evidence blocker. Diagnose repeated findings, contradictory requirements and repairs outside policy instead of repeating the same checks.",
     "Use the recorded initial worktree evidence to attribute changes. Preserve existing user work and intentional deletions. Untracked does not mean created by this task. Required missing provenance remains blocked.",
     "Read the latest independent verdict in session records. A builder-maintained artifact saying pending does not override a completed failed verdict. Milestones and passing test counts do not establish outcome acceptance.",
-    "Report implemented behavior, offline verification, remaining unverified behavior, and whether the actual real-world goal was reached separately. Review the substance of criterion evidence, not only the tool status.",
+    "Report implemented behavior, offline verification, remaining unverified behavior, and whether the actual real-world goal was reached separately. Review the substance of criterion evidence, not only the tool status. Publication is not implementation readiness. Use runtime inspection rather than guessing used attempts, action outcomes or restart readiness; the loaded runtime_contract is distinct from installed files. Do not recommend moving unfinished implementation to a separate Native Build session as a prerequisite for this run.",
     "",
     "# Outcome",
     request.outcome,
@@ -445,7 +445,7 @@ export async function publishGoalAgentFile(root: string, value: unknown): Promis
       if (goalDefinitionFingerprint(realRoot, request.name) !== expected_sha256) throw new Error("Goal definition changed since inspection");
       await fs.rename(temporary, target);
       return { name: request.name, path: goalAgentRelativePath(request.name), sha256: goalDefinitionFingerprint(realRoot, request.name),
-        instruction: "Quit and restart OpenCode, then select this agent in a fresh conversation. Prior validation does not validate this revision." };
+        instruction: "Definition published; implementation and outcome unverified. Quit and restart OpenCode, then select this agent in a fresh conversation. Prior validation does not validate this revision." };
     } finally {
       await handle.close();
       await fs.rm(temporary, { force: true });
@@ -478,7 +478,8 @@ export async function publishGoalAgentFile(root: string, value: unknown): Promis
       if (error?.code === "EEXIST") throw new Error(`agent already exists: ${request.name}`);
       throw error;
     }
-    return { name: request.name, path: goalAgentRelativePath(request.name) };
+    return { name: request.name, path: goalAgentRelativePath(request.name), sha256: createHash("sha256").update(content).digest("hex"),
+      instruction: "Definition published; implementation and outcome unverified. Quit and restart OpenCode, then select this agent in a fresh conversation." };
   } finally {
     await fs.rm(temporary, { force: true }).catch(() => undefined);
   }
@@ -499,7 +500,7 @@ export default tool({
     edit_paths: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
     bash: tool.schema.boolean().optional(),
     verification_commands: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Real verification entry points. Label commands that the builder must implement rather than implying they already exist.").optional(),
-    stop_conditions: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Task-specific overall attempt and stalled bounds with diagnosis/stop procedures. Stalls count unfinished builders or exact repeated failed evidence, not semantic similarity.").optional(),
+    stop_conditions: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Task-specific overall attempt and stalled bounds with diagnosis/stop procedures. Valid unfinished builders consume only overall allowance; stalls count exact repeated independent findings or protocol failures, not semantic similarity.").optional(),
     escalation_triggers: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
     instructions: tool.schema.string().min(1).describe("Lead with a short execution spine: finish line, authority, current gap, first productive obligation, minimum prerequisites and direct continuation. Reconcile stale context; describe readiness/reuse/invalidation and tool usage once. Respect preparation-only/scaffolding-only limits.").optional(),
   },

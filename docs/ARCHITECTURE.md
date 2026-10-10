@@ -1,5 +1,33 @@
 # Architecture
 
+## Evidence-backed Goal readiness and status
+
+The loaded Goal plugin emits `runtime_contract=goal-criterion-readiness-v1` in
+execution and inspection results. This is a behavior contract identifier from
+executing code, not a source/installation hash or proof of task completion.
+The schema-v1 Goal Agent file and exact-path policy remain unchanged.
+
+Ready handoffs contain `checks` keyed by the published criterion indexes (`c0`
+through `cN`), each with bounded concrete `evidence`. The runtime validates exact
+coverage both at handoff submission and before launching a validator. Rejected
+reports can be corrected within the active builder. Unfinished/blocked checkpoints
+keep their existing shape. The fresh independent validator receives no builder
+conversation and must obtain actual evidence; a fully populated handoff cannot
+make synthetic/offline checks establish a required live outcome.
+
+Read-only inspection resolves historical identity only from the same root
+conversation's cycle records, including when native Build/Plan is selected. It
+reports unknown on ambiguous/missing identity or definition; this does not select
+an execution agent, grant authority or migrate state. Execute still uses the
+selected Goal and existing fingerprint/admission checks.
+
+Existing cycle output/activity metadata drive the authoritative panel. For an
+idle selected Goal without a cycle, the part-update bridge attaches a bounded
+`not_started` checkpoint to the last assistant text part; a bridge without part
+updates uses a toast. It never starts a child or invents admission. Historical
+panels remain visible in the same conversation after switching to Build/Plan.
+Ordinary assistant final text is not an execution or acceptance record.
+
 ## Scope
 
 Cuddly Winner is an optional OpenCode profile designed to work seamlessly with
@@ -357,7 +385,9 @@ Metadata or final transcript tests alone do not establish visibility.
 
 `scripts/deploy-opencode-agents.sh` supports copy and symlink modes. Plugins and
 browser runtime files always install as copies. `install`, `status`, and `remove`
-operate under one configuration root.
+operate under one configuration root. `install` accepts an optional `--backup`
+flag; by default without `--backup`, replaced entries are overwritten in place
+without creating backup copies under `backups/`.
 
 The installer records managed agents and safely retires removed assets. It deletes
 only an exact known copy or a link to the repository source, except that install

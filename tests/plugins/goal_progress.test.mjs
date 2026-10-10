@@ -51,3 +51,28 @@ test("inspection and rejected arguments do not hide the latest execution panel",
   assert.equal(value.status, "failed");
   assert.match(value.activity, /Builder unfinished/);
 });
+
+test("historical Goal panel survives Build and ignores a misleading final claim", () => {
+  const messages = [{ id: "run", role: "user", agent: "fix-counter" }, { id: "build", role: "user", agent: "build" }, { id: "claim", role: "assistant" }];
+  const parts = id => id === "run" ? [{ type: "tool", tool: "goal_cycle", state: { status: "completed",
+    output: JSON.stringify({ status: "failed", children: ["child"], admission: { max_cycles: 3 } }),
+    metadata: { goal_activity: { ...snapshot, status: "failed", verdict: "failed (c0)" } },
+  } }] : [{ type: "text", text: "Ready. Restart to finish." }];
+  const value = goalActivityForSession({ id: "root" }, messages, parts);
+  assert.equal(value.status, "failed");
+  assert.equal(value.verdict, "failed (c0)");
+  assert.equal(value.attemptsRemaining, 2);
+  assert.equal(value.agent, "fix-counter");
+});
+
+test("not-started checkpoint and admission stop are visible without a builder", () => {
+  const messages = [{ id: "m", role: "user", agent: "fix-counter" }];
+  const checkpoint = { ...snapshot, cycle: 0, phase: "coordinator", status: "not_started", activity: "Not started; no execution or validation evidence" };
+  assert.equal(goalActivityForSession({ id: "root" }, messages, () => [{ type: "text", metadata: { goal_activity: checkpoint } }]).status, "not_started");
+  const value = goalActivityForSession({ id: "root" }, messages, () => [{ type: "tool", tool: "goal_cycle", state: {
+    status: "completed", output: JSON.stringify({ status: "blocked", goal_agent: "fix-counter", reason: "Execution mismatch" }), time: { start: 1, end: 2 },
+  } }]);
+  assert.equal(value.status, "blocked");
+  assert.equal(value.phase, "coordinator");
+  assert.match(value.activity, /Execution mismatch/);
+});

@@ -25,11 +25,11 @@ function GoalPanel(props: { api: TuiPluginApi }) {
     return <box width="100%" flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}
       backgroundColor={props.api.theme.current.backgroundPanel}>
       <text height={1} wrapMode="none" fg={props.api.theme.current.primary}>
-        {clip(`Goal activity ${value().cycle} | ${value().phase === "validator" ? "Validator" : "Builder"} | ${value().status} | ${Math.floor(elapsed() / 60)}:${String(elapsed() % 60).padStart(2, "0")}`)}
+        {clip(`Goal activity ${value().cycle} | ${value().phase === "validator" ? "Validator" : value().phase === "coordinator" ? "Coordinator" : "Builder"} | ${value().status} | ${Math.floor(elapsed() / 60)}:${String(elapsed() % 60).padStart(2, "0")}`)}
       </text>
       <text height={1} wrapMode="none" fg={props.api.theme.current.text}>{clip(`Now: ${value().activity}`)}</text>
       <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(value().milestone ? `Reported: ${value().milestone}` : "Reported: awaiting a child milestone")}</text>
-      <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(`Verdict: ${value().verdict ?? "none"}${value().retryReason ? ` | Repair: ${value().retryReason}` : ""}`)}</text>
+      <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(`Verdict: ${value().verdict ?? "none"}${value().attemptsRemaining !== undefined ? ` | Remaining attempts: ${value().attemptsRemaining}` : ""}${value().retryReason ? ` | Repair: ${value().retryReason}` : ""}`)}</text>
     </box>;
   }}</Show>;
 }

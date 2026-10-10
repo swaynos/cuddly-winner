@@ -3,8 +3,8 @@ export type GoalActivity = {
   agent: string;
   parentID: string;
   cycle: number;
-  phase: "builder" | "validator";
-  status: "running" | "waiting" | "failed" | "validated" | "blocked" | "cancelled";
+  phase: "coordinator" | "builder" | "validator";
+  status: "not_started" | "running" | "waiting" | "failed" | "validated" | "blocked" | "cancelled";
   activity: string;
   milestone: string;
   phaseStartedAt: number;
@@ -12,6 +12,7 @@ export type GoalActivity = {
   recent: string[];
   verdict?: string;
   retryReason?: string;
+  attemptsRemaining?: number;
 };
 
 export function publicSummary(value: unknown): string {
@@ -40,28 +41,51 @@ export function toolActivity(name: string): string {
   return "Using a tool";
 }
 
+function childBearing(part: any): boolean {
+  if (part.type !== "tool" || part.tool !== "goal_cycle" || part.state?.input?.operation === "inspect") return false;
+  if (part.state?.metadata?.children?.length) return true;
+  try { return !!JSON.parse(part.state?.output).children?.length; } catch { return false; }
+}
+
 export function goalActivityForSession(session: any, messages: readonly any[], parts: (id: string) => readonly any[]): GoalActivity | undefined {
   if (!session || session.parentID) return;
   const user = [...messages].reverse().find(m => (m.info ?? m).role === "user");
   const agent = (user?.info ?? user)?.agent ?? session.agent;
-  if (!agent || ["build", "plan", "general", "ask", "grounder", "prometheus"].includes(agent)) return;
   for (const message of [...messages].reverse()) {
     for (const part of [...parts((message.info ?? message).id)].reverse()) {
+      if (part.type === "text" && part.metadata?.goal_activity?.status === "not_started") {
+        const checkpoint = part.metadata.goal_activity;
+        if (checkpoint.agent === agent && checkpoint.parentID === session.id) return checkpoint;
+        continue;
+      }
       if (part.type !== "tool" || part.tool !== "goal_cycle") continue;
       if (part.state?.input?.operation === "inspect") continue;
+      let result;
       try {
-        if (["inspected", "invalid_request"].includes(JSON.parse(part.state?.output).status)) continue;
+        result = JSON.parse(part.state?.output);
+        if (["inspected", "invalid_request"].includes(result.status)) continue;
       } catch {}
-      const value = part.state?.metadata?.goal_activity;
-      if (!value || value.agent !== agent || value.parentID !== session.id
-          || !Number.isInteger(value.cycle) || value.cycle < 1
-          || !["builder", "validator"].includes(value.phase)
+      const value = part.state?.metadata?.goal_activity ?? (result?.goal_agent ? {
+        agent: result.goal_agent, parentID: session.id, cycle: result.children?.length ? 1 : 0,
+        phase: "coordinator", status: result.status, activity: result.reason ?? "Goal checkpoint recorded",
+        milestone: "", recent: [], phaseStartedAt: part.state.time?.start ?? 0, updatedAt: part.state.time?.end ?? 0,
+      } : undefined);
+      const historical = ["build", "plan"].includes(agent) && messages.some(m => {
+        const info = m.info ?? m;
+        return info.role === "user" && info.agent === value?.agent;
+      });
+      if (!value || (value.agent !== agent && !historical) || value.parentID !== session.id
+          || !Number.isInteger(value.cycle) || value.cycle < (value.phase === "coordinator" ? 0 : 1)
+          || !["coordinator", "builder", "validator"].includes(value.phase)
           || !["running", "waiting", "failed", "validated", "blocked", "cancelled"].includes(value.status)
           || !Number.isFinite(value.phaseStartedAt) || !Number.isFinite(value.updatedAt)) return;
       try {
         const cancelled = value.status === "cancelled" || ((message.info ?? message).error?.name === "MessageAbortedError"
           && (part.state.status === "error" || value.status !== "validated"));
         return { ...value, activity: publicSummary(value.activity), milestone: value.milestone ? publicSummary(value.milestone) : "",
+          ...(result?.admission ? { attemptsRemaining: Math.max(0, result.admission.max_cycles - messages.reduce((count, m) => count
+            + parts((m.info ?? m).id).filter(childBearing).length, 0)) } : {}),
+          ...(part.state.status === "completed" && result?.status ? { status: result.status } : {}),
           ...(value.verdict ? { verdict: publicSummary(value.verdict) } : {}),
           ...(value.retryReason ? { retryReason: publicSummary(value.retryReason) } : {}),
           recent: Array.isArray(value.recent) ? value.recent.slice(-3).map(publicSummary) : [],

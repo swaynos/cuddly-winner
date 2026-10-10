@@ -49,7 +49,7 @@ test("OpenCode V1 continues partial builders, corrects input and recovers the sa
             assert.match(user, /Reconcile recorded task actions/);
             call = { name: "read", arguments: JSON.stringify({ filePath: path.join(root, "readiness.json") }) };
           } else if (!messages.some(m => m.role === "assistant" && m.tool_calls?.some(t => t.function.name === "goal_handoff"))) {
-            call = { name: "goal_handoff", arguments: JSON.stringify({ status: "ready", evidence: "Existing action receipt reconciled without replay; counter already checked", remaining: [] }) };
+            call = { name: "goal_handoff", arguments: JSON.stringify({ status: "ready", evidence: "Existing action receipt reconciled without replay; counter already checked", remaining: [], checks: { c0: { evidence: "readiness.json receipt completed-once reconciled; counter.txt read good" } } }) };
           }
         } else {
         if (!tools.length) {
@@ -63,7 +63,7 @@ test("OpenCode V1 continues partial builders, corrects input and recovers the sa
         } else if (!messages.some(m => m.role === "assistant" && m.tool_calls?.some(t => t.function.name === "read"))) {
           call = { name: "read", arguments: JSON.stringify({ filePath: path.join(root, "counter.txt") }) };
         } else if (!messages.some(m => m.role === "assistant" && m.tool_calls?.some(t => t.function.name === "goal_handoff"))) {
-          call = { name: "goal_handoff", arguments: JSON.stringify({ status: "ready", evidence: "Counter implementation written and inspected; independent validation is required", remaining: [] }) };
+          call = { name: "goal_handoff", arguments: JSON.stringify({ status: "ready", evidence: "Counter implementation written and inspected; independent validation is required", remaining: [], checks: { c0: { evidence: "counter.txt written and read; independent content check still required" } } }) };
         }
         }
       } else if (user.includes("Perform only your assigned validator phase")) {
@@ -81,7 +81,11 @@ test("OpenCode V1 continues partial builders, corrects input and recovers the sa
           const passed = (await readFile(path.join(root, "counter.txt"), "utf8")) === "good\n";
           call = { name: "goal_verdict", arguments: JSON.stringify({ status: "checked", reason: "", checks: { c0: { passed, evidence: `Read counter.txt: ${passed ? "good" : "bad; replace with good"}`, ...(passed ? { resolution: "Fresh read shows good, resolving previous bad content finding" } : {}) } } }) };
         }
-      } else if (input.tools?.some(t => t.function.name === "goal_cycle")) {
+      } else if (user.includes("Inspect historical Goal")) {
+        if (!cycleStatuses.includes("inspected")) call = { name: "goal_cycle", arguments: JSON.stringify({ operation: "inspect" }) };
+        else text = "Historical inspection complete; no execution.";
+      } else if (user.includes("Premature before admission")) text = "Ready to restart; no work performed.";
+      else if (input.tools?.some(t => t.function.name === "goal_cycle")) {
          rootTurns++;
         if (user.includes("Generate real images")) {
           if (!tools.length) call = { name: "goal_cycle", arguments: JSON.stringify({ alignment: "clarification_required" }) };
@@ -207,6 +211,23 @@ test("OpenCode V1 continues partial builders, corrects input and recovers the sa
       assert.equal(messages.filter(m => m.info.role === "user" && !m.parts.every(p => p.synthetic)).length, 1, "each phase has fresh context");
     }
       assert.equal(await readFile(path.join(root, "counter.txt"), "utf8"), "good\n");
+      const historical = await api(`/session/${session.id}/message`, { agent: "build", parts: [{ type: "text", text: "Inspect historical Goal without executing." }] });
+      const historicalRecords = await api(`/session/${session.id}/message`);
+      const inspection = historicalRecords.flatMap(m => m.parts).findLast(p => p.tool === "goal_cycle" && p.state.status === "completed" && JSON.parse(p.state.output).status === "inspected");
+      assert.ok(inspection, JSON.stringify(historical));
+      assert.equal(JSON.parse(inspection.state.output).selected_agent, "build");
+      assert.equal(JSON.parse(inspection.state.output).runtime_contract, "goal-criterion-readiness-v1");
+      assert.equal((await api(`/session/${session.id}/children`)).length, 8);
+      const unstarted = await api("/session", { title: "Unstarted fixture" });
+      await api(`/session/${unstarted.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Premature before admission" }] });
+      for (let i = 0; i < 100; i++) {
+        const records = await api(`/session/${unstarted.id}/message`);
+        const checkpoint = records.flatMap(m => m.parts).find(p => p.metadata?.goal_activity?.status === "not_started");
+        if (checkpoint) { assert.match(checkpoint.metadata.goal_activity.activity, /no execution or validation evidence/); break; }
+        if (i === 99) throw new Error(`Missing not-started checkpoint: ${JSON.stringify(records)}\n${serverLog}`);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      assert.equal((await api(`/session/${unstarted.id}/children`)).length, 0);
       const recovery = await api("/session", { title: "Recovery fixture" });
       await api(`/session/${recovery.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Execute Recovery fixture." }] });
       for (let i = 0; !recoveryPaused; i++) {

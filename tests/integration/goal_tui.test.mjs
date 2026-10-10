@@ -47,7 +47,7 @@ test("real pinned TUI shows in-flight Goal activity at 80 and 60 columns without
           if (cancelMode) await cancelGate.promise;
           if (builds === 1 && !called("bash")) call = { name: "bash", arguments: JSON.stringify({ command: "pwd", description: "Check worktree" }) };
           else if (!called("write")) call = { name: "write", arguments: JSON.stringify({ filePath: path.join(root, "counter.txt"), content: builds === 1 ? "bad\n" : "good\n" }) };
-          else if (!called("goal_handoff")) call = { name: "goal_handoff", arguments: JSON.stringify({ status: "ready", evidence: "Counter written and inspection performed; ready for independent check", remaining: [] }) };
+          else if (!called("goal_handoff")) call = { name: "goal_handoff", arguments: JSON.stringify({ status: "ready", evidence: "Counter written and inspection performed; ready for independent check", remaining: [], checks: { c0: { evidence: "counter.txt written and read; independent counter content check required" } } }) };
         }
       } else if (child && user.includes("Perform only your assigned validator phase")) {
         if (!called("goal_progress")) call = { name: "goal_progress", arguments: JSON.stringify({ summary: "Checking independent evidence" }) };
@@ -207,7 +207,9 @@ test("real pinned TUI shows in-flight Goal activity at 80 and 60 columns without
      await wait(() => wide.text().includes("Goal activity") && wide.text().includes("Independently validated"), "Inspection retains validated execution panel");
      assert.equal(builds, 2, "inspection starts no builder");
      await api(`/session/${session.id}/prompt_async`, { agent: "build", parts: [{ type: "text", text: "Native session" }] });
-    await wait(() => wide.text().includes("Native session untouched") && !wide.text().includes("Goal activity"), "Switching to native Build hides old Goal panel");
+     await wait(() => wide.text().includes("Native session untouched") && wide.text().includes("Goal activity")
+       && wide.text().includes("Independently validated"), "Switching this conversation to Build retains its authoritative Goal checkpoint");
+     assert.equal(builds, 2, "native Build does not restart the historical Goal");
 
     cancelMode = true;
     const cancelled = await api("/session", { title: "Cancelled Goal" });

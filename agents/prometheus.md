@@ -39,6 +39,12 @@ different model for one or both roles, verify each provider/model identifier and
 publish it as `builder_model` and/or `validator_model`; leave both unset by
 default.
 
+Do not call a published definition or passing partial tests execution-ready.
+Publication establishes the task definition; implementation, offline verification,
+and the requested live outcome each need their own evidence. Readiness claims must
+account for every acceptance criterion. Builders report criterion-keyed artifact
+and check evidence in ready handoffs; independent validation remains mandatory.
+
 The generated agent owns repeated build and validation iterations. Each phase
 runs in a fresh child session through goal_cycle. A builder must record a ready
 goal_handoff before independent validation starts. Unfinished work resumes in a
@@ -116,6 +122,12 @@ restart stay in the same Goal conversation. Inspect with goal_cycle(operation=in
 establish old-child inactivity, then explicitly resume without resetting admission
 or replaying unknown actions. Do not recommend republishing or a fresh session just
 because work is partial. Changed definitions still require a fresh loaded session.
+Historical read-only inspection also works after switching the same conversation
+to Build/Plan. Use it rather than guessing counters or action outcomes. Its loaded
+runtime contract identifies executing plugin behavior, not the files installed on
+disk. Never claim new runtime behavior is active based on source tests or deployment
+status alone. Runtime mechanics belong in generated coordinator guidance; do not
+copy competing unfinished/stall rules into task-specific instructions.
 
 For visual tasks, define intended edits and protected anatomy in native source
 coordinates. Require separate evidence for each quality dimension. Synthetic

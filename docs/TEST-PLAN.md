@@ -30,6 +30,7 @@ traffic to deterministic localhost fixtures; it does not execute an image loop.
 | Goal Agent publisher | Unit tests cover one-file rendering, invalid input, recursive local-name collisions, no-clobber creation, inspection, same-name fingerprint-bound revision, stale/concurrent updates, and symlink rejection. |
 | In-run prerequisites | Publisher and runtime prompt-contract tests cover builder ownership of preparation, direct authorized continuation, durable reuse/invalidation guidance, independent readiness checks on fresh cycles, and preparation-only/scaffolding-only limits. These verify instructions delivered to agents, not autonomous task execution or a dependency scheduler. |
 | Builder handoff | Two valid partial builders continue before readiness/validation; honest zero progress remains overall-bounded. Missing/malformed handoffs are repeated protocol failures, not acceptance. Role isolation, observed blockers and mixed-attempt/reload limits remain covered. The real CLI journey exercises multiple partial implementations before ready. This is deterministic orchestration evidence, not a guarantee of model compliance. |
+| Criterion readiness and status | Ready requires exact criterion evidence; rejected coverage is corrected in the same active builder. A fully populated fixture-only readiness claim still fails independent live-output checking. Build inspects historical Goal records without children or state changes. The real CLI verifies historical inspection and an idle no-admission text checkpoint with zero children. Panel tests retain failed verdicts despite misleading final claims and show admission stops without a builder. |
 | Admission and convergence | Side-effect-free invalid argument/repair rejection, corrected input preserving user handback, immutable limits, identical findings, changing evidence and unresolved-finding continuity. The real CLI fixture corrects an overlong argument, covers mismatch with zero children and a two-cycle independent-finding stop. |
 | Same-run recovery | Read-only inspection cannot clear stops/start children/change accounting or hide the execution panel. Stale running records count once and retain admission/baseline; busy, retrying and unknown children prevent a new writer. The real CLI is killed after a task receipt is written, restarted with the same HOME/session, inspected and explicitly resumed without replay; independent validation completes within the original allowance. No direct database access or session migration is used. |
 | Initial attribution | A tiny local Git fixture covers an initial intentional deletion, untracked input hashes, byte preservation and a newly caused out-of-scope mutation. Interrupted metadata retains the original baseline and admission after reload. Missing historical evidence remains terminal. |
@@ -82,3 +83,22 @@ The browser integration suite is deterministic infrastructure coverage. It does
 not prove access to a live third-party site or a human's physical login session.
 Treat a failed virtual-display fixture as test evidence to investigate, not proof
 that the browser runtime is broken.
+
+Scripted-provider CLI/TUI journeys verify real orchestration and display mechanics,
+not sustained real-model judgment. A bounded real-model smoke run, when performed,
+must use a disposable local task, fixed allowance and independent validation; its
+transcript and actual artifacts must be reviewed separately. It cannot substitute
+for the user's external live outcome or prove all future model compliance.
+
+On 2026-10-10, an installed OpenCode 1.18.35 real-model smoke run with
+`openai/gpt-6.1-sol` implemented a disposable `counter.js`, executed it through a
+localhost evaluator returning 2, recorded separate ready evidence for c0/c1, and
+obtained a fresh independent validator read and second execution returning 2.
+It validated in one of three admitted cycles, with no shell or external service.
+The reviewed builder `ses_edbaa8e64ffene9N044YY2mi23` and validator
+`ses_edbaa1533ffeeGXp1WY1TkucDL` tool records corroborate the handoff and verdict.
+Local artifacts/transcript and two timestamped execution receipts are under
+`/tmp/opencode/goal-real-smoke-tANWCk/`; this temporary evidence is not a durable
+product artifact or proof of the separate mascara outcome. Initial isolated runs
+failed model discovery because the standard authentication plugin was disabled;
+the smoke used the existing configured provider with that plugin enabled.

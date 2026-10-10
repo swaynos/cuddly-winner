@@ -78,7 +78,13 @@ after a non-progress stop. Explicit user handback does not waive them.
 Builders record `goal_handoff` with `status` (ready, unfinished or blocked),
 concrete `evidence`, and `remaining` actions. Ready requires no remaining work
 before independent checking and completed inspection/check tool evidence; it is
-not a success verdict. Unfinished requires concrete next actions, permits honest
+not a success verdict. Ready also requires exactly one `checks.cN.evidence` entry
+per acceptance criterion, with actual artifact/check references and observed
+results. Missing, empty, excessive or unexpected criterion evidence is rejected
+in the active builder, which can correct the report before returning. Coverage
+does not establish truth or live quality; independent validation still checks
+the actual outputs. Passing tests and preparation are milestones, not reasons to
+stop the next authorized action. Unfinished requires concrete next actions, permits honest
 zero progress, and returns an incomplete checkpoint without starting a validator.
 Missing/malformed handoffs are unfinished protocol work, not readiness. Fresh
 builder continuation uses that checkpoint without fabricating a failed criterion.
@@ -103,11 +109,17 @@ remains explicitly unavailable. A current snapshot cannot prove earlier history
 or concurrent authorship. No clean-worktree requirement or user-work restoration
 is permitted.
 
-`goal_cycle(operation="inspect")` is a read-only operation scoped to the selected
-root Goal conversation and its recorded children. It reports the definition match,
+`goal_cycle(operation="inspect")` is a read-only operation scoped to the root
+conversation and its recorded Goal children. It can resolve the historical Goal
+after switching that same conversation to native Build/Plan; ambiguous identities,
+missing definitions and inaccessible history report unknown without execution.
+Execution still requires the selected root Goal. It reports the definition match,
 checkpoint, admission, attempts used/remaining, child activity and latest independent
 verdict without starting children, clearing stops or consuming allowance. Inspection
-and rejected requests cannot hide the latest execution checkpoint or alter user
+also reports the selected versus historical agent, authoritative run state and a
+`runtime_contract` identifier emitted by the loaded plugin. Installed/source files
+do not prove which runtime a running session has loaded.
+Inspection and rejected requests cannot hide the latest execution checkpoint or alter user
 handback detection. Invalid argument and repair-diagnosis requests are correctable;
 scope mismatches, cancellation, denial and unresolved action outcomes remain stops.
 
@@ -161,6 +173,12 @@ the retry reason. Builder-maintained task artifacts cannot override session
 verdicts. Report observed permission denial, cancellation, child failure and
 unknown action outcomes distinctly. Unknown outcomes require inspection before
 explicit resumption. No interruption permits automatic action replay.
+An idle selected Goal with no execution record displays `not_started`: no execution
+or validation evidence, no implicit admission and no automatic child. Admission
+stops are visible even without a builder. A conversation switched to Build/Plan
+retains its recorded Goal panel without changing native execution. Free-text
+completion/readiness claims cannot replace the recorded checkpoint/verdict. The
+panel displays remaining attempts when admission evidence is available.
 An unsupported blocker with no attempted inspection, or a malformed completed
 validator report, is repairable failed validation. Missing coordinator-only tools
 in a child is intentional, not a dependency failure. Ordinary rejected-input tool
@@ -229,6 +247,8 @@ deployed beside the rule without inclusion in always-loaded instructions.
 ## Installation Safety
 
 The installer must deploy the current profile without overwriting user changes.
+By default, overwritten managed entries are replaced in place without creating
+backup files; passing `--backup` to `install` preserves replaced entries in `backups/`.
 It may retire old managed assets only when an exact hash or repository-link target
 proves ownership, except that install and remove forcibly delete a file or symlink
 at the retired `tools/publish_direct_agent.ts` path. `status` reports that retired

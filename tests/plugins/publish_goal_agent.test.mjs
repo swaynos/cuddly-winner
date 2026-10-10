@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import publishGoalAgent, {
   publishGoalAgentFile,
@@ -32,14 +33,15 @@ function request(overrides = {}) {
 
 test("publishes one self-contained goal-oriented agent", async () => fixture(async root => {
   const result = await publishGoalAgentFile(root, request());
-  assert.deepEqual(result, {
-    name: "retry-fix",
-    path: ".opencode/agents/generated/retry-fix.md",
-  });
+  assert.equal(result.name, "retry-fix");
+  assert.equal(result.path, ".opencode/agents/generated/retry-fix.md");
+  assert.match(result.instruction, /Definition published; implementation and outcome unverified/);
+  assert.match(result.sha256, /^[a-f0-9]{64}$/);
 
   const file = path.join(root, result.path);
   assert.equal((await lstat(file)).isFile(), true);
   const content = await readFile(file, "utf8");
+  assert.equal(result.sha256, createHash("sha256").update(content).digest("hex"));
   assert.match(content, /^---\nname: retry-fix\n/m);
   assert.match(content, /\n  bash: ask\n/);
   assert.doesNotMatch(content, /^model:/m);
