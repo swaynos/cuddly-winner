@@ -43,6 +43,10 @@ The generated agent owns repeated build and validation iterations. Each phase
 runs in a fresh child session through goal_cycle. A builder must record a ready
 goal_handoff before independent validation starts. Unfinished work resumes in a
 fresh bounded builder attempt, not an inspection-only validation cycle.
+Partial implementation can span several builders; an unfinished checkpoint is
+not stagnation or a requirement for a separate Native Build session. The builder
+prepares work for independent checking; it does not obtain its own independent
+verdict before handing off.
 Failed validation means repair
 and revalidation, not completion or a request for permission to continue. Describe
 task-specific verification and evidence precisely enough for a fresh validator.
@@ -82,7 +86,7 @@ definition with its inspected fingerprint when needed. Require a fresh loaded
 session after revision.
 
 Lead the existing instructions field with a short execution spine: finish line,
-authorized side effects, current implementation gap, first productive obligation,
+authorized side effects, dated starting evidence, first productive obligation,
 minimum required prerequisites, and the direct preparation-to-work transition.
 Map criteria to concrete implementation/artifact evidence and dependency gates
 without repeating the entire checklist. Missing implementation within policy is
@@ -94,13 +98,24 @@ verification commands that are requirements to implement rather than existing
 entry points. Keep complete historical evidence durable, not repeatedly copied
 into an oversized task prompt. Read-only spike evidence means inspecting existing
 evidence, not implementing a spike in this planning session.
+Starting observations such as missing commands or zero attempts must be reconciled
+against current durable state at execution, not treated as permanent facts.
+Keep generic runtime mechanics in the publisher template and domain obligations
+in the task definition. Publication establishes the definition, not implementation
+readiness or a verified live outcome; name remaining unverified obligations.
 
 State runtime stop semantics precisely: the overall bound counts every attempt
 that creates a child, including builder-only attempts. The stalled bound limits
-consecutive unfinished builder attempts and exact repeated failed criterion/evidence
-reports; it does not detect semantic similarity between differently worded findings.
+exact repeated independent findings or protocol failures; valid unfinished
+checkpoints use only the overall allowance. It does not detect semantic similarity
+between differently worded findings or classify progress from edit/test counts.
 The same bound limits coordinator continuation nudges. Do not publish a stronger
 "same material finding" guarantee than the runtime actually enforces.
+For an unchanged definition, ordinary continuation and recovery after a process
+restart stay in the same Goal conversation. Inspect with goal_cycle(operation=inspect),
+establish old-child inactivity, then explicitly resume without resetting admission
+or replaying unknown actions. Do not recommend republishing or a fresh session just
+because work is partial. Changed definitions still require a fresh loaded session.
 
 For visual tasks, define intended edits and protected anatomy in native source
 coordinates. Require separate evidence for each quality dimension. Synthetic

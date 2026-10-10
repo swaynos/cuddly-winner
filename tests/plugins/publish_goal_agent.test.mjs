@@ -52,7 +52,10 @@ test("publishes one self-contained goal-oriented agent", async () => fixture(asy
   assert.match(content, /refresh affected preparation and invalidate dependent evidence/);
   assert.match(content, /only after a ready goal_handoff/);
   assert.match(content, /Acceptance criteria are implementation and verification obligations/);
-  assert.match(content, /Consecutive unfinished builder attempts and exact repeated/);
+  assert.match(content, /Valid unfinished checkpoints continue within that bound/);
+  assert.match(content, /operation=inspect/);
+  assert.match(content, /explicitly resume the same conversation/);
+  assert.match(content, /Invalid request arguments are correctable/);
   assert.match(content, /semantic similarity is not automatically detected/);
 
   const policy = readGoalAgentPolicy(root, "retry-fix");

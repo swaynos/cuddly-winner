@@ -13,6 +13,7 @@ import { evidenceTool, publicSummary, toolActivity, type GoalActivity } from "./
 const CONTINUE = "The goal is not yet validated. Diagnose the unresolved finding. Call goal_cycle with a concrete repair and expected new evidence within the admitted bounds. Do not finish from an implementation claim.";
 
 type CycleRequest = {
+  operation?: "execute" | "inspect";
   alignment?: "confirmed" | "clarification_required";
   completion_target?: string;
   authorized_actions?: string;
@@ -90,11 +91,11 @@ async function initialWorktree(root: string, files: string[]) {
   return baseline;
 }
 
-function failureSignature(result: any): string {
-  if (result.builder_handoff?.status === "unfinished") return "builder-unfinished";
+function failureSignature(result: any): string | undefined {
+  if (result.builder_handoff?.status === "unfinished" && !result.protocol_failure) return;
   return sha256(JSON.stringify(result.validation?.status === "checked" && Object.keys(result.validation.checks ?? {}).length
     ? Object.entries(result.validation.checks).filter(([, check]: any) => !check.passed).sort(([a], [b]) => a.localeCompare(b)).map(([key, check]: any) => [key, check.evidence])
-    : result.reason));
+    : result.protocol_failure ?? result.reason));
 }
 
 function data(response: any): any {
@@ -102,17 +103,35 @@ function data(response: any): any {
   return response.data;
 }
 
-function lastCycle(messages: any[]): any {
-  for (const message of [...messages].reverse()) {
-    for (const part of [...message.parts].reverse()) {
-      if (part.type !== "tool" || part.tool !== "goal_cycle") continue;
-      if (part.state.status !== "completed") return { status: "blocked", reason: "Previous cycle interrupted; inspect child sessions before resuming." };
-      try {
-        const result = JSON.parse(part.state.output);
-        return part.state.metadata?.coordinator_stop ? { ...result, status: "blocked", reason: part.state.metadata.coordinator_stop } : result;
-      } catch { return { status: "blocked", reason: "Invalid cycle result." }; }
+function cycleHistory(messages: any[], context?: any) {
+  const records: any[] = [];
+  messages.forEach((message, index) => {
+    for (const part of message.parts) {
+      if (part.type !== "tool" || part.tool !== "goal_cycle" || part.state?.input?.operation === "inspect"
+        || (message.info.id === context?.messageID && ["pending", "running"].includes(part.state?.status)
+          && (!context?.callID || part.callID === context.callID))) continue;
+      let result: any;
+      try { result = JSON.parse(part.state.output); } catch {}
+      if (["inspected", "invalid_request"].includes(result?.status)) continue;
+      const metadata = part.state?.metadata;
+      const interrupted = part.state?.status !== "completed";
+      records.push({ part, index, interrupted,
+        children: result?.children ?? metadata?.children ?? [],
+        fingerprint: result?.definition_sha256 ?? metadata?.definition_sha256,
+        result: interrupted ? { ...metadata?.cycle_evidence, status: "blocked",
+          reason: "Previous cycle interrupted; inspect child sessions and reconcile actions before resuming." }
+          : result ? metadata?.coordinator_stop ? { ...metadata?.cycle_evidence, ...result, status: "blocked", reason: metadata.coordinator_stop } : { ...metadata?.cycle_evidence, ...result }
+            : { status: "blocked", reason: "Invalid cycle result." },
+      });
     }
-  }
+  });
+  const latest = records.at(-1);
+  return { records, latest, previous: latest?.result,
+    results: records.filter(r => !r.interrupted).map(r => r.result),
+    attempts: records.filter(r => r.children.length).length,
+    admission: records.find(r => r.result.admission)?.result.admission,
+    baseline: records.find(r => r.result.initial_worktree)?.result.initial_worktree,
+  };
 }
 
 function verdict(result: any, criteria: string[]): "validated" | "failed" | "blocked" {
@@ -215,52 +234,98 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
     };
   }
 
+  async function interruptedChildren(history: ReturnType<typeof cycleHistory>, sessionID: string) {
+    const ids = [...new Set<string>(history.records.filter(r => r.interrupted || r.result.status === "blocked").flatMap(r => r.children))];
+    if (!ids.length) return [];
+    try {
+      const statuses = data(await client.session.status({ signal: AbortSignal.timeout(10000) }));
+      return await Promise.all(ids.map(async id => {
+        const session = data(await client.session.get({ path: { id }, signal: AbortSignal.timeout(10000) }));
+        if (session.parentID !== sessionID) throw new Error("Unexpected child ancestry");
+        const messages = data(await client.session.messages({ path: { id }, signal: AbortSignal.timeout(10000) }));
+        // The V1 status map omits idle sessions; confirm existence/ancestry first.
+        const status = statuses[id]?.type ?? "idle";
+        const reports = messages.flatMap((m: any) => m.parts).filter((p: any) => p.type === "tool"
+          && ["goal_handoff", "goal_verdict"].includes(p.tool) && p.state?.status === "completed");
+        return { id, status: ["busy", "retry", "idle"].includes(status) ? status : "unknown",
+          reports: reports.slice(-2).map((p: any) => ({ tool: p.tool, output: p.state.output })),
+          completed_tools: messages.flatMap((m: any) => m.parts).filter((p: any) => p.type === "tool" && p.state?.status === "completed").length };
+      }));
+    } catch { return ids.map(id => ({ id, status: "unknown", reports: [], completed_tools: undefined })); }
+  }
+
+  async function inspect(context: any) {
+    const goal = await definition(context.sessionID);
+    if (!goal) throw new Error("goal_cycle requires a selected root Goal Agent.");
+    const history = cycleHistory(goal.messages, context);
+    const children = await interruptedChildren(history, context.sessionID);
+    let latestVerdict = [...history.results].reverse().find(r => r.validation)?.validation;
+    if (history.latest?.interrupted) {
+      const report = children.flatMap(child => child.reports).findLast(report => report.tool === "goal_verdict");
+      try { latestVerdict = JSON.parse(report?.output); } catch {}
+    }
+    const matches = history.records.every(r => r.fingerprint === goal.fingerprint);
+    return JSON.stringify({ status: "inspected", definition_sha256: goal.fingerprint,
+      definition_matches: matches,
+      admission: history.admission, attempts_used: history.attempts,
+      attempts_remaining: history.admission ? Math.max(0, history.admission.max_cycles - history.attempts) : undefined,
+      checkpoint: history.previous ? { status: history.previous.status, reason: history.previous.reason,
+        builder_handoff: history.previous.builder_handoff } : undefined,
+      children: history.latest?.children ?? [], interrupted_children: children,
+      latest_verdict: latestVerdict,
+      next_action: !matches ? "Definition changed or historical evidence is unbound; inspect the mismatch before a fresh revised run."
+        : history.previous?.status === "validated" ? "Goal independently validated; no continuation is required."
+        : history.admission && history.attempts >= history.admission.max_cycles ? "Overall attempt allowance exhausted; report incomplete without creating another child."
+        : active.has(context.sessionID) || children.some(c => ["busy", "retry"].includes(c.status))
+        ? "A child is active; do not create another writer."
+        : children.some(c => c.status === "unknown") ? "Child activity is unknown; establish inactivity before resumption."
+          : history.previous?.status === "blocked" ? "Inspect the recorded stop and task action evidence; explicit user handback and confirmed resumption are required."
+            : "Continue within the recorded admission; inspection changes no execution state.",
+    });
+  }
+
   async function cycle(request: CycleRequest, context: any) {
     const id = context.sessionID;
     const goal = await definition(id);
     if (!goal) throw new Error("goal_cycle requires a selected root Goal Agent.");
-    const priorResults = goal.messages.flatMap((m: any) => m.parts).filter((p: any) => p.tool === "goal_cycle" && p.state?.status === "completed").map((p: any) => {
-      try { return JSON.parse(p.state.output); } catch { return {}; }
-    });
-    if (priorResults.some((result: any) => result.definition_sha256 !== goal.fingerprint)) {
+    const history = cycleHistory(goal.messages, context);
+    context.history = history;
+    const priorResults = history.results;
+    if (history.records.some(record => record.fingerprint !== goal.fingerprint && (!record.interrupted || record.children.length))) {
       stopped.add(id);
       return JSON.stringify({ status: "blocked", reason: "Goal definition changed or prior cycles are unbound. Restart OpenCode and use a fresh conversation; prior validation cannot validate this definition.", definition_sha256: goal.fingerprint });
     }
-    // The current running tool is not a previous interrupted cycle.
-    const previous = lastCycle(goal.messages.map((m: any) => ({ ...m, parts: m.parts.filter((p: any) => !(m.info.id === context.messageID && p.tool === "goal_cycle" && ["pending", "running"].includes(p.state?.status))) })));
+    const previous = history.previous;
     const block = (reason: string) => {
       stopped.add(id);
       return JSON.stringify({ status: "blocked", reason, definition_sha256: goal.fingerprint });
     };
+    const invalid = (reason: string) => JSON.stringify({ status: "invalid_request", reason, definition_sha256: goal.fingerprint });
+    if (request.operation !== undefined && request.operation !== "execute") return invalid("Invalid operation: use execute or inspect.");
+    if (request.alignment !== undefined && !["confirmed", "clarification_required"].includes(request.alignment)) return invalid("Invalid alignment: use confirmed or clarification_required.");
     // Custom-tool bridges do not uniformly enforce the advertised Zod bounds.
     for (const [key, limit] of [["completion_target", 1000], ["authorized_actions", 1000], ["finding", 1000], ["repair", 160], ["expected_evidence", 1000]] as const) {
       const value = request[key];
-      if (value !== undefined && (typeof value !== "string" || !value.trim() || value.length > limit)) return block(`Invalid ${key}: provide 1..${limit} characters.`);
+      if (value !== undefined && (typeof value !== "string" || !value.trim() || value.length > limit)) return invalid(`Invalid ${key}: provide 1..${limit} characters.`);
     }
     for (const key of ["max_cycles", "max_stalled_cycles"] as const) {
       const value = request[key];
-      if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 100)) return block(`Invalid ${key}: provide an integer from 1 to 100.`);
+      if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 100)) return invalid(`Invalid ${key}: provide an integer from 1 to 100.`);
     }
-    const parts = goal.messages.flatMap((message: any) => message.parts);
-    const recorded = parts.filter((part: any) => part.tool === "goal_cycle" && ["completed", "error"].includes(part.state?.status));
-    const checkpoint = recorded.find((part: any) => part.state.metadata?.cycle_evidence)?.state.metadata;
-    if (checkpoint && checkpoint.definition_sha256 !== goal.fingerprint) return block("Checkpoint definition changed. Restart OpenCode and use a fresh conversation.");
-    const admission = priorResults.find((result: any) => result.admission)?.admission ?? checkpoint?.cycle_evidence.admission;
+    const admission = history.admission;
     const first = !admission;
-    if (first && priorResults.some((result: any) => result.children?.length)) return block("Previous run lacks admission and initial provenance. Use a fresh session. A new snapshot cannot establish historical preservation.");
+    if (first && history.attempts) return block("Previous run lacks admission and initial provenance. Use a fresh session. A new snapshot cannot establish historical preservation.");
     if (request.alignment === "clarification_required") {
       return block("Execution mismatch. Resolve the requested completion target and authorized actions before orchestration. Revise the definition if needed, then restart in a fresh session.");
     }
     if (first && (request.alignment !== "confirmed" || !request.completion_target?.trim() || !request.authorized_actions?.trim()
       || !Number.isInteger(request.max_cycles) || request.max_cycles! < 1
       || !Number.isInteger(request.max_stalled_cycles) || request.max_stalled_cycles! < 1 || request.max_stalled_cycles! > request.max_cycles!)) {
-      return block("Admission required. State the aligned completion target, authorized actions, max_cycles and max_stalled_cycles. Resolve material ambiguity before starting children.");
+      return invalid("Admission required. State the aligned completion target, authorized actions, max_cycles and max_stalled_cycles. Resolve material ambiguity before starting children.");
     }
     const admitted = admission ?? { completion_target: request.completion_target, authorized_actions: request.authorized_actions,
       max_cycles: request.max_cycles, max_stalled_cycles: request.max_stalled_cycles };
-    const interruptedAttempts = recorded.filter((part: any) => part.state.status === "error" && part.state.metadata?.children?.length).length;
-    const completed = priorResults.filter((result: any) => result.admission && result.children?.length);
-    const priorIndex = goal.messages.findLastIndex((message: any) => message.parts.some((part: any) => part.tool === "goal_cycle" && !["pending", "running"].includes(part.state?.status)));
+    const priorIndex = history.latest?.index ?? -1;
     const handback = goal.messages.slice(priorIndex + 1).some((message: any) => message.info.role === "user" && message.parts.some((part: any) => part.type === "text" && !part.synthetic && part.text !== CONTINUE));
     // The fallback bridge cannot update completed tool metadata. Its persisted
     // continuation history must enforce the same stop on explicit calls/reload.
@@ -268,22 +333,37 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
       && message.parts.some((part: any) => part.type === "text" && part.text === CONTINUE)).length;
     if (!handback && nudges >= admitted.max_stalled_cycles) return block("Coordinator non-progress. Inspect before explicit resumption.");
     if (previous?.status === "blocked" && (!handback || request.alignment !== "confirmed")) return block("Previous outcome remains blocked or unknown. Inspect its evidence before explicit resumption.");
-    if (completed.length + interruptedAttempts >= admitted.max_cycles) return block("Cycle bound reached. Diagnose unresolved findings and report the needed decision. The goal remains incomplete.");
+    if (history.attempts >= admitted.max_cycles) return block("Cycle bound reached. Diagnose unresolved findings and report the needed decision. The goal remains incomplete.");
+    const recovered = await interruptedChildren(history, id);
+    if (recovered.some(child => child.status !== "idle")) return block("Previous child is active or its activity is unknown. Inspect before creating another writer.");
     const repairing = previous?.status === "failed" || (previous?.validation?.status === "checked" && Object.values(previous.validation.checks).some((check: any) => !check.passed));
     const unfinished = previous?.builder_handoff?.status === "unfinished";
     if (!first && repairing && !unfinished && (![request.finding, request.repair, request.expected_evidence].every(value => value?.trim())
       || (previous.validation?.status === "checked" && !Object.entries(previous.validation.checks).some(([key, check]: any) => !check.passed && new RegExp(`\\b${key}\\b`).test(request.finding!))))) {
-      return block("Repair diagnosis required. Identify an unresolved criterion key, a concrete repair and expected new resolving evidence. Do not repeat tests without a repair hypothesis.");
+      return invalid("Repair diagnosis required. Identify an unresolved criterion key, a concrete repair and expected new resolving evidence. Do not repeat tests without a repair hypothesis.");
     }
     const unresolved: Record<string, string[]> = {};
-    for (const result of priorResults) {
-      if (result.validation?.status !== "checked") continue;
-      for (let i = 0; i < goal.criteria.length; i++) {
-        const key = `c${i}`, check = result.validation?.checks?.[key];
-        if (check?.passed === false && typeof check.evidence === "string") {
-          const findings = unresolved[key] ??= [];
-          if (!findings.includes(check.evidence)) findings.push(check.evidence);
-        } else if (check?.passed === true && check.resolution?.trim()) delete unresolved[key];
+    for (const record of history.records) {
+      const validations = record.result.validation ? [record.result.validation] : [];
+      if (record.interrupted) {
+        for (const report of recovered.filter(child => record.children.includes(child.id)).flatMap(child => child.reports)) {
+          if (report.tool !== "goal_verdict") continue;
+          try {
+            const validation = JSON.parse(report.output);
+            verdict(validation, goal.criteria);
+            validations.push(validation);
+          } catch { /* An interrupted/malformed report cannot establish acceptance. */ }
+        }
+      }
+      for (const validation of validations) {
+        if (validation.status !== "checked") continue;
+        for (let i = 0; i < goal.criteria.length; i++) {
+          const key = `c${i}`, check = validation.checks?.[key];
+          if (check?.passed === false && typeof check.evidence === "string") {
+            const findings = unresolved[key] ??= [];
+            if (!findings.includes(check.evidence)) findings.push(check.evidence);
+          } else if (check?.passed === true && check.resolution?.trim()) delete unresolved[key];
+        }
       }
     }
     if (active.has(id)) throw new Error("A goal cycle is already running.");
@@ -292,21 +372,22 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
       finding: "Builder returned with unfinished authorized work; independent validation has not started.",
       repair: "Continue the unfinished builder work within the existing authority.",
       expected_evidence: previous.builder_handoff.remaining.join("\n"),
-    } : repairing ? { finding: request.finding, repair: request.repair, expected_evidence: request.expected_evidence } : undefined;
+    } : repairing ? { finding: request.finding, repair: request.repair, expected_evidence: request.expected_evidence }
+      : recovered.length ? { finding: "Previous orchestration was interrupted; external actions are not inferred from that interruption.",
+        repair: "Reconcile recorded task actions before any new side effects; never replay an unknown submission.",
+        expected_evidence: JSON.stringify(recovered) } : undefined;
     const retryReason = retry ? publicSummary(retry.repair!) : "";
     const latestVerdict = [...priorResults].reverse().find((result: any) => result.validation?.status === "checked"
       || (result.validation?.status === "blocked" && result.status === "blocked"));
     active.add(id);
     let childID: string | undefined;
     const children: string[] = [];
-    const baseline = priorResults.find((result: any) => result.initial_worktree)?.initial_worktree
-      ?? parts.find((part: any) => part.tool === "goal_cycle" && part.state?.metadata?.cycle_evidence?.initial_worktree)?.state.metadata.cycle_evidence.initial_worktree
-      ?? await initialWorktree(root, [...goal.policy.edit_paths, ...goal.contextPaths]);
+    const baseline = history.baseline ?? await initialWorktree(root, [...goal.policy.edit_paths, ...goal.contextPaths]);
     context.cycleEvidence = { admission: admitted, initial_worktree: baseline,
       ...(retry ? { retry } : {}) };
     activity.set(id, { context, children, tools: new Map(), snapshot: {
       agent: goal.agent, parentID: id,
-      cycle: goal.messages.flatMap((m: any) => m.parts).filter((p: any) => p.type === "tool" && p.tool === "goal_cycle" && ["completed", "error"].includes(p.state.status)).length + 1,
+      cycle: history.attempts + 1,
       phase: "builder", status: "running", activity: "Starting builder", milestone: "", recent: [],
       phaseStartedAt: Date.now(), updatedAt: Date.now(),
       verdict: latestVerdict?.validation?.status === "checked" ? `${latestVerdict.status === "validated" ? "validated" : "failed"} (${Object.entries(latestVerdict.validation.checks).filter(([, check]: any) => !check.passed).map(([key]) => key).join(", ")})`
@@ -386,19 +467,25 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
         if (role === "builder") {
           const report = history.flatMap((m: any) => m.parts).findLast((p: any) => p.type === "tool" && p.tool === "goal_handoff" && p.state.status === "completed");
           let handoff: BuilderHandoff;
+          let protocolFailure: string | undefined;
           try { handoff = builderHandoff(report && JSON.parse(report.state.output)); }
           catch (error) {
-            handoff = { status: "unfinished", evidence: `Builder returned without a valid handoff: ${error instanceof Error ? error.message : String(error)}`,
+            protocolFailure = `Builder returned without a valid handoff: ${error instanceof Error ? error.message : String(error)}`;
+            handoff = { status: "unfinished", evidence: protocolFailure,
               remaining: ["Inspect the builder's actual work, complete authorized implementation and verification, then record goal_handoff."] };
           }
           const inspected = history.some((m: any) => m.parts.some((p: any) => p.type === "tool" && evidenceTool(p.tool)
             && (p.state.status === "completed" || (handoff.status === "blocked" && p.state.status === "error"))));
-          if (handoff.status !== "unfinished" && !inspected) handoff = {
-            status: "unfinished", evidence: "Builder claimed readiness or a blocker without attempting the required inspection/checks.",
-            remaining: ["Obtain concrete tool evidence for readiness or an observed external stop; missing implementation is authorized unfinished work."] };
+          if (handoff.status !== "unfinished" && !inspected) {
+            protocolFailure = "Builder claimed readiness or a blocker without attempting the required inspection/checks.";
+            handoff = {
+              status: "unfinished", evidence: protocolFailure,
+              remaining: ["Obtain concrete tool evidence for readiness or an observed external stop; missing implementation is authorized unfinished work."] };
+          }
           if (handoff.status !== "ready") {
             if (handoff.status === "blocked") stopped.add(id);
             return JSON.stringify({ status: handoff.status === "blocked" ? "blocked" : "failed", children, builder_handoff: handoff,
+              ...(protocolFailure ? { protocol_failure: protocolFailure } : {}),
               reason: handoff.status === "blocked" ? handoff.evidence : "Builder unfinished; continue authorized work in a fresh builder before validation." });
           }
         }
@@ -440,7 +527,8 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
 
   return {
     tool: {
-      goal_cycle: tool({ description: "Run a fresh builder, then an independent validator only after a ready handoff. Unfinished builders resume within admitted bounds. First confirm target, authority and bounds; diagnose failed validation before repair.", args: {
+      goal_cycle: tool({ description: "Inspect this Goal run without side effects, or execute a fresh builder and then a ready-gated independent validator. Unfinished builders continue within the overall bound. Diagnose validation failures before repair.", args: {
+        operation: tool.schema.enum(["execute", "inspect"]).optional(),
         alignment: tool.schema.enum(["confirmed", "clarification_required"]).optional(),
         completion_target: tool.schema.string().min(1).max(1000).optional(),
         authorized_actions: tool.schema.string().min(1).max(1000).optional(),
@@ -451,6 +539,7 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
         expected_evidence: tool.schema.string().min(1).max(1000).optional(),
       },
         async execute(args, context) {
+          if (args.operation === "inspect") return inspect(context);
           const initialGoal = await definition(context.sessionID);
           const executionContext: any = { ...context, definitionFingerprint: initialGoal?.fingerprint, metadata: context.metadata.bind(context) };
           try {
@@ -459,22 +548,20 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
             Object.assign(result, executionContext.cycleEvidence);
             result.definition_sha256 ??= initialGoal?.fingerprint;
             if (result.status === "failed" && result.admission) {
-              const records = initialGoal!.messages.flatMap((message: any) => message.parts).filter((part: any) => part.tool === "goal_cycle");
-              const prior = records.filter((part: any) => part.state?.status === "completed").map((part: any) => {
-                try { return JSON.parse(part.state.output); } catch { return {}; }
-              });
-              let stalled = 1;
+              const history = executionContext.history;
+              const prior = history.results;
+              const signature = failureSignature(result);
+              let stalled = signature ? 1 : 0;
               for (const old of [...prior].reverse()) {
-                if (old.status !== "failed" || failureSignature(old) !== failureSignature(result)) break;
+                if (!signature || old.status !== "failed" || failureSignature(old) !== signature) break;
                 stalled++;
               }
-              const interrupted = records.filter((part: any) => part.state?.status === "error" && part.state.metadata?.children?.length).length;
-              const cycles = prior.filter((old: any) => old.admission && old.children?.length).length + interrupted + 1;
+              const cycles = history.attempts + (result.children?.length ? 1 : 0);
               if (stalled >= result.admission.max_stalled_cycles || cycles >= result.admission.max_cycles) {
                 const failure = result.reason;
                 result.status = "blocked";
                 result.reason = stalled >= result.admission.max_stalled_cycles
-                  ? `Non-progress: ${stalled} consecutive ${result.builder_handoff?.status === "unfinished" ? "unfinished builder attempts" : "identical independent findings"}. Diagnose contradictions, inaccessible repairs or missing evidence. Report a concrete resolving decision before resuming.`
+                  ? `Non-progress: ${stalled} consecutive ${result.protocol_failure ? "identical protocol failures" : "identical independent findings"}. Diagnose contradictions, inaccessible repairs or missing evidence. Report a concrete resolving decision before resuming.`
                    : "Cycle bound reached with unresolved findings. Diagnose remaining failures and report the needed decision.";
                 if (failure) result.reason += ` Last failure: ${failure}`;
                 stopped.add(context.sessionID);
@@ -595,21 +682,22 @@ export const Goal = async ({ client, directory, worktree }: { client: any; direc
         if (!goal || stopped.has(id)) return;
         const last = goal.messages.at(-1);
         if (last?.info.role !== "assistant" || last.info.error || !last.info.finish) return;
-        const result = lastCycle(goal.messages);
-        if (result && result.definition_sha256 !== goal.fingerprint) {
+        const history = cycleHistory(goal.messages);
+        const result = history.previous;
+        if (result && history.latest!.fingerprint !== goal.fingerprint) {
           stopped.add(id);
           await client.tui?.showToast?.({ body: { title: "Goal definition changed", message: "Restart OpenCode and use a fresh conversation. Previous validation is not applicable.", variant: "error" } });
           return;
         }
         if (!result || result.status !== "failed") return;
-        const cycleIndex = goal.messages.findLastIndex((message: any) => message.parts.some((part: any) => part.tool === "goal_cycle"));
+        const cycleIndex = history.latest!.index;
         const nudges = goal.messages.slice(cycleIndex + 1).filter((message: any) => message.info.role === "user" && message.parts.some((part: any) => part.type === "text" && part.text === CONTINUE)).length;
         if (result.admission && nudges >= result.admission.max_stalled_cycles) {
           stopped.add(id);
           const reason = "Coordinator non-progress. Repeated completion attempts did not start the required diagnosed repair. Inspect before explicit resumption.";
           if (partClient) {
             const message = goal.messages[cycleIndex];
-            const part = message.parts.findLast((part: any) => part.tool === "goal_cycle");
+            const part = history.latest!.part;
             const response = await partClient.part.update({ sessionID: id, messageID: message.info.id, partID: part.id,
               directory: root, part: { ...part, state: { ...part.state, metadata: { ...part.state.metadata, coordinator_stop: reason } } } });
             if (response.error) throw new Error("Coordinator stop checkpoint failed.");

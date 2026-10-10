@@ -48,6 +48,10 @@ export function goalActivityForSession(session: any, messages: readonly any[], p
   for (const message of [...messages].reverse()) {
     for (const part of [...parts((message.info ?? message).id)].reverse()) {
       if (part.type !== "tool" || part.tool !== "goal_cycle") continue;
+      if (part.state?.input?.operation === "inspect") continue;
+      try {
+        if (["inspected", "invalid_request"].includes(JSON.parse(part.state?.output).status)) continue;
+      } catch {}
       const value = part.state?.metadata?.goal_activity;
       if (!value || value.agent !== agent || value.parentID !== session.id
           || !Number.isInteger(value.cycle) || value.cycle < 1

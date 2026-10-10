@@ -32,10 +32,11 @@ unresolved requirements, then publishes one task-derived Goal Agent:
 ```
 
 The Goal Agent file contains the task instructions, verification, and embedded
-edit/Bash policy. Prometheus never replaces an existing generated agent. After
+edit/Bash policy. Creation is no-clobber; explicit revisions are fingerprint-checked. After
 publication, quit and restart OpenCode, start a new conversation in the target
 project, and select the named agent. The Goal Agent owns build AND validation: each cycle
-uses a fresh builder session and a separate fresh validator session. Failed
+uses a fresh builder session and, after a ready handoff, a separate fresh validator session. Partial
+builders continue within the overall attempt allowance; unfinished is not stagnation. Failed
 validation returns findings to another fresh builder; premature coordinator stops
 resume automatically. Only validated criteria complete the goal. Cancellation,
 denied permissions, and genuine blockers stop it as incomplete. It does not stage
@@ -48,11 +49,26 @@ the task-derived `<name>`, without a required prefix.
 
 ### Updating or removing a Goal Agent
 
-To update a Goal Agent, delete `.opencode/agents/generated/<name>.md`, run
-Prometheus again, and restart OpenCode. To remove one, delete the file and
-restart OpenCode. Publishing over an existing name fails with
-`agent name already exists: <name>`; the publisher never replaces an existing
-agent. The refusal is covered by `tests/plugins/publish_goal_agent.test.mjs`.
+To revise the same task, inspect the existing agent through `publish_goal_agent`,
+then update it with the returned `expected_sha256` and complete definition.
+Restart OpenCode and select the same agent in a fresh conversation; old validation
+does not validate the revision. Creation still refuses an existing name. To remove
+an agent, delete its file and restart OpenCode.
+
+### Continuing and recovering a run
+
+Ordinary unfinished work continues in the same Goal conversation with fresh
+builders. After interruption or a process restart, use
+`goal_cycle(operation="inspect")` in that conversation to see the checkpoint,
+child activity, latest verdict and remaining allowance. Inspection starts no work
+and clears no stop. Confirm old children are inactive and explicitly resume the
+unchanged definition, reconciling task actions before any new side effects.
+Unknown activity/actions remain incomplete; never replay an uncertain submission.
+There is no need to republish merely because implementation is partial.
+
+Invalid tool arguments can be corrected immediately without another authorization
+interview or a charged attempt. Publication establishes a task definition, not
+implementation readiness or a successful live outcome.
 
 ## Installation
 

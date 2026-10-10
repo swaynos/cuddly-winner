@@ -41,3 +41,13 @@ test("coordinator non-progress stops preserve the failed verdict during hydratio
   assert.equal(value.verdict, "failed (c0)");
   assert.match(value.activity, /Coordinator non-progress/);
 });
+
+test("inspection and rejected arguments do not hide the latest execution panel", () => {
+  const messages = [{ id: "run", role: "user", agent: "fix-counter" }, { id: "inspect", role: "assistant" }, { id: "invalid", role: "assistant" }];
+  const parts = id => id === "run"
+    ? [{ type: "tool", tool: "goal_cycle", state: { status: "completed", metadata: { goal_activity: { ...snapshot, status: "failed", activity: "Builder unfinished; validation not started" } } } }]
+    : [{ type: "tool", tool: "goal_cycle", state: { status: "completed", output: JSON.stringify({ status: id === "inspect" ? "inspected" : "invalid_request" }) } }];
+  const value = goalActivityForSession({ id: "root" }, messages, parts);
+  assert.equal(value.status, "failed");
+  assert.match(value.activity, /Builder unfinished/);
+});

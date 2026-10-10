@@ -37,6 +37,7 @@ async function fixture(fn, options = {}) {
     let handoff = { status: "ready", evidence: "Fixture implementation and checks are ready for independent validation", remaining: [] };
     let run;
     const client = { session: {
+      status: async () => ({ data: {} }),
       get: async ({ path }) => ({ data: sessions.get(path.id) }),
       messages: async ({ path }) => ({ data: history.get(path.id) ?? [] }),
       create: async ({ body }) => {
@@ -149,9 +150,8 @@ test("metadata-only builder hands back unfinished implementation without startin
   assert.equal(new Set(f.calls.map(c => c.id)).size, 3);
 }));
 
-test("missing, malformed and honest zero-progress handoffs stop within existing bounds after reload", async () => {
-  for (const handoff of [undefined, { status: "ready", evidence: "Not implemented", remaining: ["Implement"] },
-    { status: "unfinished", evidence: "No product changes yet", remaining: ["Implement the authorized counter"] }]) {
+test("missing and malformed handoffs stop as repeated protocol failures after reload", async () => {
+  for (const handoff of [undefined, { status: "ready", evidence: "Not implemented", remaining: ["Implement"] }]) {
     await fixture(async f => {
       f.setHandoff(handoff);
       const first = await f.cycle({ ...request, max_cycles: 3, max_stalled_cycles: 2 });
@@ -162,7 +162,7 @@ test("missing, malformed and honest zero-progress handoffs stop within existing 
       const raw = await reload.tool.goal_cycle.execute({}, f.context);
       const second = JSON.parse(typeof raw === "string" ? raw : raw.output);
       assert.equal(second.status, "blocked");
-      assert.match(second.reason, /2 consecutive unfinished builder attempts/);
+      assert.match(second.reason, /2 consecutive identical protocol failures/);
       assert.equal(second.validation, undefined);
       assert.equal(f.calls.length, 2, "not a single validator is started");
       f.finish(second);
@@ -218,6 +218,41 @@ test("unfinished attempts consume total bound even when mixed with failed valida
   f.finish(second);
   await f.idle();
   assert.equal(f.continuations.length, 0);
+}));
+
+test("multiple legitimate partial builders continue before independent validation", async () => fixture(async f => {
+  f.setHandoff({ status: "unfinished", evidence: "Partial implementation checked", remaining: ["Finish the next operation"] });
+  f.setRun(async input => {
+    await writeFile(path.join(f.root, "counter.mjs"), `implemented operation ${f.calls.length}`);
+    return { data: { info: {} } };
+  });
+  for (let i = 0; i < 2; i++) {
+    const result = await f.cycle({ ...request, max_cycles: 3, max_stalled_cycles: 2 });
+    assert.equal(result.status, "failed");
+    assert.equal(result.validation, undefined);
+    assert.equal(result.protocol_failure, undefined);
+    f.finish(result);
+    await f.idle();
+  }
+  assert.equal(f.continuations.length, 2);
+  f.setRun(undefined);
+  f.setHandoff({ status: "ready", evidence: "All operations implemented and checked", remaining: [] });
+  f.setResponse(verdict(true));
+  assert.equal((await f.cycle()).status, "validated");
+  assert.deepEqual(f.calls.map(c => c.title.split(":")[0]), ["Goal builder", "Goal builder", "Goal builder", "Goal validator"]);
+}));
+
+test("honest unfinished work is bounded by overall attempts, not a progress heuristic", async () => fixture(async f => {
+  f.setHandoff({ status: "unfinished", evidence: "No product change yet", remaining: ["Implement the authorized work"] });
+  for (let i = 0; i < 3; i++) {
+    const result = await f.cycle({ ...request, max_cycles: 3, max_stalled_cycles: 2 });
+    assert.equal(result.status, i === 2 ? "blocked" : "failed");
+    if (i === 2) assert.match(result.reason, /Cycle bound reached/);
+    f.finish(result);
+  }
+  assert.equal(f.calls.length, 3);
+  assert.equal((await f.cycle()).status, "blocked");
+  assert.equal(f.calls.length, 3);
 }));
 
 test("prior findings survive unrelated passing evidence until explicitly resolved", async () => fixture(async f => {
@@ -316,7 +351,7 @@ test("admission mismatch and missing admission stop before children, including a
   for (const args of [{}, { alignment: "clarification_required" }]) {
     await fixture(async f => {
       const result = await f.cycle(args);
-      assert.equal(result.status, "blocked");
+      assert.equal(result.status, args.alignment === "clarification_required" ? "blocked" : "invalid_request");
       assert.match(result.reason, /Admission required|Execution mismatch/);
       assert.equal(f.calls.length, 0);
       f.finish(result);
@@ -331,11 +366,33 @@ test("executor enforces advertised request bounds before child creation", async 
   for (const args of [{ ...request, repair: "x".repeat(161) }, { ...request, max_cycles: 101 },
     { ...request, completion_target: "x".repeat(1001) }]) await fixture(async f => {
     const result = await f.cycle(args);
-    assert.equal(result.status, "blocked");
+    assert.equal(result.status, "invalid_request");
     assert.match(result.reason, /Invalid .*provide/);
     assert.equal(f.calls.length, 0);
   });
 });
+
+test("input correction preserves explicit handback, admission and attempt accounting", async () => fixture(async f => {
+  f.finish(await f.cycle({ alignment: "clarification_required" }));
+  f.history.get("root").push({ info: { role: "user", agent: "fix-counter", model }, parts: [{ type: "text", text: "Implement and verify offline within the original policy." }] });
+  await f.hooks["chat.message"]({ sessionID: "root" }, { parts: [{ type: "text", text: "Implement and verify offline." }] });
+  const invalid = await f.cycle({ ...request, authorized_actions: "x".repeat(1001) });
+  assert.equal(invalid.status, "invalid_request");
+  f.finish(invalid);
+  const inspection = await f.cycle({ operation: "inspect" });
+  assert.equal(inspection.attempts_used, 0);
+  f.finish(inspection);
+  f.setResponse(verdict(true));
+  const valid = await f.cycle(request);
+  assert.equal(valid.status, "validated");
+  assert.deepEqual(valid.admission.authorized_actions, request.authorized_actions);
+  f.finish(valid);
+  const laterInvalid = await f.cycle({ repair: "x".repeat(161) });
+  assert.equal(laterInvalid.status, "invalid_request");
+  f.finish(laterInvalid);
+  assert.equal((await f.cycle({ operation: "inspect" })).attempts_used, 1);
+  assert.equal(f.calls.length, 2);
+}));
 
 test("a mismatch resumes only after a real user decision and confirmed admission", async () => fixture(async f => {
   f.finish(await f.cycle({ alignment: "clarification_required" }));
@@ -349,12 +406,12 @@ test("a mismatch resumes only after a real user decision and confirmed admission
 test("repair admission requires a current finding and a concrete resolving hypothesis", async () => fixture(async f => {
   f.finish(await f.cycle());
   const result = await f.cycle({ finding: "c10", repair: "Repeat tests", expected_evidence: "Same test output" });
-  assert.equal(result.status, "blocked");
+  assert.equal(result.status, "invalid_request");
   assert.match(result.reason, /Repair diagnosis required/);
   assert.equal(f.calls.length, 2);
   f.finish(result);
   await f.idle();
-  assert.equal(f.continuations.length, 0);
+  assert.equal(f.continuations.length, 1, "the failed execution remains available for a corrected repair request");
 }));
 
 test("identical findings stop at the admitted bound without accepting or resetting it", async () => fixture(async f => {
@@ -440,6 +497,89 @@ test("interrupted metadata retains the original admission and baseline after rel
   assert.equal(resumed.admission.max_cycles, 2);
   assert.deepEqual(resumed.initial_worktree, stopped.initial_worktree);
   assert.equal(resumed.initial_worktree.files["counter.mjs"].sha256, createHash("sha256").update("original bytes").digest("hex"));
+}));
+
+test("inspect and same-session recovery count stale running attempts without replay", async () => fixture(async f => {
+  let submissions = 0;
+  await writeFile(path.join(f.root, "counter.mjs"), "original");
+  f.setRun(async input => {
+    submissions++;
+    await writeFile(path.join(f.root, "counter.mjs"), "external action completed");
+    f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "bash", state: { status: "completed", output: "submission known complete" } });
+    throw new Error("Connection lost after action");
+  });
+  await f.cycle({ ...request, max_cycles: 2, max_stalled_cycles: 2 });
+  const metadata = f.metadata.at(-1).metadata;
+  f.history.get("root").push({ info: { role: "assistant", finish: "stop" }, parts: [{ type: "tool", tool: "goal_cycle", state: { status: "running", metadata } }] });
+  const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
+  const execute = async args => {
+    const raw = await reload.tool.goal_cycle.execute(args, f.context);
+    return JSON.parse(typeof raw === "string" ? raw : raw.output);
+  };
+  const inspect = await execute({ operation: "inspect" });
+  assert.equal(inspect.status, "inspected");
+  assert.equal(inspect.attempts_used, 1);
+  assert.equal(inspect.attempts_remaining, 1);
+  assert.equal(inspect.definition_matches, true);
+  assert.equal(inspect.interrupted_children[0].status, "idle");
+  assert.equal(inspect.interrupted_children[0].completed_tools, 2);
+  assert.equal(inspect.checkpoint.status, "blocked");
+  assert.equal(inspect.initial_worktree, undefined, "inspection does not dump baseline records");
+  f.finish(inspect);
+  assert.equal((await execute(request)).status, "blocked", "inspection alone cannot clear the interruption");
+  assert.equal(submissions, 1);
+  assert.equal(f.calls.length, 1);
+  f.history.get("root").push({ info: { role: "user", agent: "fix-counter", model }, parts: [{ type: "text", text: "I inspected the known action; resume without replay." }] });
+  await reload["chat.message"]({ sessionID: "root" }, { parts: [{ type: "text", text: "Resume without replay." }] });
+  f.setRun(async input => {
+    assert.equal(await readFile(path.join(f.root, "counter.mjs"), "utf8"), "external action completed");
+    if (input.body.parts[0].text.includes("assigned builder phase")) {
+      assert.match(input.body.parts[0].text, /Reconcile recorded task actions/);
+    } else f.history.get(input.path.id)[0].parts.push({ type: "tool", tool: "goal_verdict", state: { status: "completed", output: JSON.stringify(verdict(true)) } });
+    return { data: { info: {} } };
+  });
+  const resumed = await execute({ ...request, max_cycles: 10 });
+  assert.equal(resumed.status, "validated");
+  assert.equal(resumed.admission.max_cycles, 2);
+  assert.equal(resumed.initial_worktree.files["counter.mjs"].sha256, createHash("sha256").update("original").digest("hex"));
+  assert.equal(submissions, 1);
+  f.finish(resumed);
+  const finalInspection = await execute({ operation: "inspect" });
+  assert.equal(finalInspection.attempts_used, 2);
+  assert.match(finalInspection.next_action, /independently validated/);
+  assert.equal((await execute(request)).status, "blocked");
+  assert.equal(f.calls.length, 3);
+}));
+
+test("busy and unknown interrupted children prevent another writer", async () => {
+  for (const state of ["busy", "retry", "unknown"]) await fixture(async f => {
+    f.setRun(async () => { throw new Error("Connection lost"); });
+    await f.cycle(request);
+    f.history.get("root").push({ info: { role: "assistant", finish: "stop" }, parts: [{ type: "tool", tool: "goal_cycle", state: { status: "running", metadata: f.metadata.at(-1).metadata } }] });
+    f.client.session.status = async () => state === "unknown" ? { error: "Unavailable" } : { data: { "child-0": { type: state } } };
+    const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
+    const raw = await reload.tool.goal_cycle.execute({ operation: "inspect" }, f.context);
+    assert.equal(JSON.parse(raw).interrupted_children[0].status, state);
+    f.history.get("root").push({ info: { role: "user", agent: "fix-counter", model }, parts: [{ type: "text", text: "Resume if the old child is inactive." }] });
+    const result = await reload.tool.goal_cycle.execute(request, f.context);
+    assert.match(JSON.parse(typeof result === "string" ? result : result.output).reason, /active or its activity is unknown/);
+    assert.equal(f.calls.length, 1);
+  });
+});
+
+test("a recorded independent verdict survives an interrupted parent result", async () => fixture(async f => {
+  await f.cycle({ ...request, max_cycles: 4, max_stalled_cycles: 2 });
+  f.history.get("root").push({ info: { role: "assistant", finish: "stop" }, parts: [{ type: "tool", tool: "goal_cycle", state: { status: "running", metadata: f.metadata.at(-1).metadata } }] });
+  const reload = await Goal({ client: f.client, directory: f.root, worktree: f.root });
+  const inspection = JSON.parse(await reload.tool.goal_cycle.execute({ operation: "inspect" }, f.context));
+  assert.equal(inspection.latest_verdict.checks.c0.passed, false);
+  f.history.get("root").push({ info: { role: "user", agent: "fix-counter", model }, parts: [{ type: "text", text: "Resume and resolve the recorded independent failure." }] });
+  f.setResponse({ status: "checked", checks: { c0: { passed: true, evidence: "Unrelated check passed" } } });
+  const raw = await reload.tool.goal_cycle.execute(request, f.context);
+  const result = JSON.parse(typeof raw === "string" ? raw : raw.output);
+  assert.equal(result.status, "failed");
+  assert.match(result.reason, /Resolution required/);
+  assert.match(f.prompts.at(-1).body.parts[0].text, /expected 2, got 1/);
 }));
 
 test("initial status and hashes preserve attribution for an intentional deletion and untracked input", async () => fixture(async f => {

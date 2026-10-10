@@ -58,6 +58,10 @@ test("real pinned TUI shows in-flight Goal activity at 80 and 60 columns without
           call = { name: "goal_verdict", arguments: JSON.stringify({ status: "checked", reason: "", checks: { c0: { passed, evidence: passed ? "Read counter.txt: good" : "Read counter.txt: bad; repair it", ...(passed ? { resolution: "Fresh read shows good, resolving the earlier bad content finding" } : {}) } } }) };
         }
       } else if (JSON.stringify(lastUser).includes("Native session")) text = "Native session untouched";
+      else if (JSON.stringify(lastUser).includes("Inspect visibility goal")) {
+        if (messages.some(m => m.role === "tool" && JSON.stringify(m.content).includes("inspected"))) text = "Inspection complete.";
+        else call = { name: "goal_cycle", arguments: JSON.stringify({ operation: "inspect" }) };
+      }
       else if (input.tools?.some(t => t.function.name === "goal_cycle") && user.includes("Execute visibility goal")) {
         const outputs = messages.filter(m => m.role === "tool").map(m => JSON.stringify(m.content));
         if (outputs.some(s => s.includes('\\"validated\\"') || s.includes('"validated"'))) text = "Goal independently validated.";
@@ -194,8 +198,15 @@ test("real pinned TUI shows in-flight Goal activity at 80 and 60 columns without
      await wait(() => wide.text().includes("Verdict: failed (c0)") && wide.text().includes("Replace bad counter"), "Prior failed verdict and repair reason remain visible");
     finalGate.release();
     await wait(() => wide.text().includes("validated") && wide.text().includes("Independently validated"), "Visible validated completion");
-    assert.doesNotMatch(wide.text(), /PRIVATE_SENTINEL/);
-    await api(`/session/${session.id}/prompt_async`, { agent: "build", parts: [{ type: "text", text: "Native session" }] });
+     assert.doesNotMatch(wide.text(), /PRIVATE_SENTINEL/);
+     await api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Inspect visibility goal" }] });
+     await wait(async () => {
+       const part = await state(session.id);
+       return part?.state.status === "completed" && JSON.parse(part.state.output).status === "inspected";
+     }, "Read-only inspection completed");
+     await wait(() => wide.text().includes("Goal activity") && wide.text().includes("Independently validated"), "Inspection retains validated execution panel");
+     assert.equal(builds, 2, "inspection starts no builder");
+     await api(`/session/${session.id}/prompt_async`, { agent: "build", parts: [{ type: "text", text: "Native session" }] });
     await wait(() => wide.text().includes("Native session untouched") && !wide.text().includes("Goal activity"), "Switching to native Build hides old Goal panel");
 
     cancelMode = true;

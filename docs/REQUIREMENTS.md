@@ -55,7 +55,8 @@ Before starting children, `goal_cycle` requires an explicit admission decision.
 The coordinator records the aligned `completion_target`, `authorized_actions`,
 `max_cycles` and `max_stalled_cycles`. Publication instructions must derive these
 bounds from task-specific stop conditions. `alignment: clarification_required`
-stops before children. Missing admission also stops. Idle continuation must not
+stops before children. Missing or malformed admission returns a correctable input
+error without starting children or creating a terminal stop. Idle continuation must not
 restart an outcome or authority clarification before the first cycle. Admission
 records the coordinator's judgment. It does not grant permissions or automatically
 interpret natural-language authorization. A changed target or authority must use
@@ -66,8 +67,8 @@ failure requires its exact criterion key in `finding`. The coordinator must stat
 the concrete repair and the new evidence that can resolve it. The runtime stops
 incomplete at the admitted overall cycle bound or consecutive identical-finding
 bound. It compares failed criterion keys and exact evidence, not keys alone or
-semantic similarity. The stalled bound also counts consecutive unfinished builder
-attempts regardless of checkpoint wording. All attempts that create a child count
+semantic similarity. Valid unfinished checkpoints are not stalled attempts;
+repeated handoff protocol failures remain bounded. All attempts that create a child count
 against the overall bound, including builder-only and interrupted attempts. Changed
 independent findings can continue within the overall bound. Contradictions, inaccessible
 repairs and unavailable historical evidence require focused diagnosis. Later
@@ -102,6 +103,24 @@ remains explicitly unavailable. A current snapshot cannot prove earlier history
 or concurrent authorship. No clean-worktree requirement or user-work restoration
 is permitted.
 
+`goal_cycle(operation="inspect")` is a read-only operation scoped to the selected
+root Goal conversation and its recorded children. It reports the definition match,
+checkpoint, admission, attempts used/remaining, child activity and latest independent
+verdict without starting children, clearing stops or consuming allowance. Inspection
+and rejected requests cannot hide the latest execution checkpoint or alter user
+handback detection. Invalid argument and repair-diagnosis requests are correctable;
+scope mismatches, cancellation, denial and unresolved action outcomes remain stops.
+
+With an unchanged definition, recover after a process restart in the same Goal
+conversation. Count every child-bearing record once, including stale `running`
+records; retain the original admission and baseline. Before a new writer, confirm
+recorded interrupted/stopped children are idle through the session API. Busy,
+retrying, inaccessible or unknown child activity prevents continuation. Explicit
+user handback and confirmed resumption are required after a stop. The next fresh
+builder must reconcile actual task actions before new side effects; orchestration
+interruption proves neither absence nor completion of an external action. Do not
+export/migrate run state to another session or invent historical evidence.
+
 Prerequisite preparation is owned by the published run. Prometheus resolves
 material feasibility uncertainty through permitted exploration and specifies
 required inputs, dependencies, procedures, tool/skill usage, readiness checks and
@@ -119,7 +138,7 @@ Genuine missing authority/dependencies and unknown side effects retain their
 existing stop rules. No new agent format, phase, registry or policy capability is needed.
 
 Published instructions lead with a short execution spine: finish line, authority,
-current implementation gap, first productive obligation, minimum required
+dated starting evidence and implementation gap, first productive obligation, minimum required
 prerequisites and direct continuation. Criteria are implementation/artifact
 obligations with evidence, not only inspection questions. Optional dependencies
 must not become mandatory handoff gates. Reconcile superseded historical workflow
@@ -127,6 +146,11 @@ instructions explicitly and assign permitted documentation updates to the builde
 Commands that do not exist yet are labeled requirements to implement. Child
 prompts carry the current definition, baseline, relevant unresolved findings and
 immediate checkpoint once, not a duplicate full previous-cycle serialization.
+Starting observations are reconciled at execution, not permanent facts. Publication
+is not a claim of implementation readiness. Builders may make bounded partial
+advances; ready means work is ready for independent checking, not that the builder
+has already obtained an independent verdict. Runtime mechanics belong in the
+publisher template rather than duplicated task-specific operating manuals.
 
 Goal execution displays bounded, event-derived parent activity while child phases
 run, including cycle, phase, public milestone, waiting, failure, completion and

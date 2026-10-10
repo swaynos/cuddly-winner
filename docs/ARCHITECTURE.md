@@ -126,9 +126,11 @@ in cycle results. Later arguments cannot replace the admitted limits or authorit
 At the overall bound, or the admitted number of consecutive identical failed
 criterion/evidence reports, the runtime returns blocked with the latest failed
 validation intact. Protocol failures use their failure reason for comparison.
-Consecutive unfinished builder checkpoints count against the same stalled bound
-regardless of their evidence wording; every builder-only attempt with a child
-also consumes the overall bound. This is not semantic stagnation classification.
+Valid unfinished builder checkpoints continue within the overall bound, not the
+stalled bound. Missing/malformed or evidence-free readiness/blocker handoffs are
+protocol failures and repeated identical failures remain bounded. Every builder-only
+attempt with a child consumes the overall bound. There is no progress classifier
+based on prose, changed-file counts or passing tests.
 Different evidence under the same key is not automatically stagnation. The
 overall bound still limits alternation. Explicit handback after diagnosis can
 resume within remaining bounds, but cannot discard unresolved findings.
@@ -154,9 +156,30 @@ Both children receive the same initial evidence. Validators compare current
 evidence with that baseline and must not infer task ownership from dirty status
 alone. The snapshot does not establish pre-run history or concurrent authorship.
 Initial evidence and admission survive interrupted attempts through existing tool
-metadata. Interrupted attempts with created children count against the overall
-bound. A prior run without admission/provenance cannot acquire a new historical
+metadata. A shared history reader counts each child-bearing attempt once, including
+stale `running` records, and ignores inspection and `invalid_request` outputs when
+selecting execution checkpoints and user handback. A prior run without admission/provenance cannot acquire a new historical
 baseline by resuming. It requires a fresh session and honest evidence limitations.
+
+`goal_cycle` accepts `operation: "inspect"` (read-only) or `"execute"` (default).
+Inspection exposes the current conversation's checkpoint, definition match,
+admission/remaining allowance, child IDs/status and latest verdict through existing
+session APIs; it never clears stops, changes files or creates a child. It omits
+the full initial baseline and raw child tool output. Interrupted/stopped children
+are checked with bounded status/get/messages requests. The V1 status map omits idle
+sessions, so existence and parent ancestry must be confirmed before treating an
+absent map entry as idle. Failed reads or unknown status fail closed.
+An independently recorded child verdict is exposed even when the parent result
+was interrupted. Its unresolved findings enter later validators in chronological
+order; recovery itself never establishes acceptance.
+
+Recover an unchanged definition in the same conversation after process restart,
+with explicit user handback and confirmed admission. Before another writer, verify
+old-child inactivity and supply reconciliation evidence to the fresh builder; never
+repost external actions as part of runtime recovery. Definition revision still
+requires a fresh loaded conversation. No cross-session migration or new registry
+exists. Input/repair-diagnosis errors return `invalid_request` without mutating
+stop state or consuming attempts; corrected requests retain the prior checkpoint.
 
 Publishing does not start goal execution. Selecting the generated root agent starts
 its workflow; it coordinates through goal_cycle and cannot edit project files, run Bash,
