@@ -11,6 +11,10 @@ import { evaluate, validateVerdict } from "./goal/evaluation.ts";
 const CONTINUE = "Continue the admitted Goal in this same worker conversation. Use the current findings to explore, experiment or repair within authority. A partial report or failed experiment does not finish the task. Seek independent feedback when useful and final evaluation when the actual outcome is ready. Do not replay unknown external actions.";
 const actionTool = (name: string) => ["write", "edit", "apply_patch", "bash"].includes(name)
   || (/browser_/.test(name) && /click|upload|evaluate|press_key|download|save_media|screenshot/.test(name));
+// Native apply_patch emits these only before its write phase. Other failures
+// can follow partial effects; an error is not generally a completion receipt.
+const noEffectFailure = (name: string, error: string) => /^(?:Error:\s*)?ImmutabilityGuard:/.test(error)
+  || (name === "apply_patch" && /^(?:Error:\s*)?(?:apply_patch verification failed:|patch rejected: empty patch$|patchText is required$)/.test(error));
 const data = (response: any) => {
   if (response?.error || response?.data === undefined) throw new Error("OpenCode request outcome unknown; inspect before resuming.");
   return response.data;
@@ -299,7 +303,8 @@ export const Goal = async ({ client, directory, worktree }: any) => {
       if (event.type === "message.part.updated" && part?.type === "tool" && part.state?.status === "error") {
         const key = `${id}:${part.callID}`;
         if (activeTools.has(key)) {
-          if (/^(?:Error:\s*)?ImmutabilityGuard:/.test(String(part.state.error))) await completedAction(id, part.callID);
+          const action = checkpoint(await session(id))?.pending_actions?.[part.callID];
+          if (action?.tool === part.tool && noEffectFailure(part.tool, String(part.state.error))) await completedAction(id, part.callID);
           else { activeTools.delete(key); await reconcile(id); }
         }
         return;

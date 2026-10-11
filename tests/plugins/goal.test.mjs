@@ -1632,6 +1632,122 @@ test("confirmed guard rejection clears only the undispatched action without paus
   assert.equal(f.calls.length, 0);
 }));
 
+test("native patch preflight rejections clear only their pending action and continue without human resumption", async () => fixture(async f => {
+  await f.start();
+  const admitted = f.run();
+  await f.before("edit", "other-active-action");
+  const errors = [
+    "apply_patch verification failed: Error: Invalid patch format: missing Begin/End markers",
+    "apply_patch verification failed: Error: Failed to find expected lines in counter.txt:\nmissing context",
+    "apply_patch verification failed: Error: Failed to find expected lines in readiness.json:\nmissing definition",
+    "Error: apply_patch verification failed: Failed to read file to update: readiness.json",
+    "apply_patch verification failed: no hunks found",
+    "patch rejected: empty patch",
+    "patchText is required",
+  ];
+  for (const [index, error] of errors.entries()) {
+    const callID = `rejected-patch-${index}`;
+    await f.before("apply_patch", callID);
+    const part = { type: "tool", tool: "apply_patch", sessionID: "root", callID,
+      state: { status: "error", error } };
+    f.append("root", [part]);
+    await f.hooks.event({ event: { type: "message.part.updated", properties: { part } } });
+    assert.equal(f.run().state, "working", error);
+    assert.equal(f.run().paused_after_user, undefined);
+    assert.deepEqual(f.run().pending_actions, { "other-active-action": { tool: "edit", callID: "other-active-action" } });
+    assert.equal(await readFile(path.join(f.root, "counter.txt"), "utf8"), "defective\n");
+    await assert.rejects(readFile(path.join(f.root, "readiness.json")), { code: "ENOENT" });
+    const updates = f.updates.length;
+    await f.after("apply_patch", callID);
+    await f.hooks.event({ event: { type: "message.part.updated", properties: { part } } });
+    assert.equal(f.updates.length, updates, "Late hooks and duplicate error receipts cannot clear another action");
+    assert.equal((await f.inspect()).state, "working");
+  }
+  await f.after("edit", "other-active-action");
+  await f.load();
+  assert.equal((await f.inspect()).state, "working");
+  for (const key of ["completion_target", "authorized_actions", "initial_worktree", "definition_sha256"]) {
+    assert.deepEqual(f.run()[key], admitted[key], `${key} survives recoverable patch failures`);
+  }
+  f.finish("Rejected patches made no changes; correct the patch in this worker");
+  await f.event("session.idle");
+  assert.equal(f.continuations.length, 1);
+  await f.implement();
+  assert.equal((await f.evaluate()).state, "accepted");
+  assert.equal(f.calls.length, 1, "Only the independent evaluator is a child");
+}));
+
+test("patch-like text in other tools and non-preflight patch errors remain unknown after partial mutation", async () => {
+  for (const [tool, error, reportedTool = tool] of [
+    ["bash", "apply_patch verification failed: Error: Invalid patch format: missing Begin/End markers"],
+    ["bash", "apply_patch verification failed: no hunks found", "apply_patch"],
+    ["write", "patch rejected: empty patch"],
+    ["apply_patch", "EACCES: permission denied while writing the second file"],
+    ["apply_patch", "Patch output lost after writing counter.txt"],
+    ["apply_patch", "Tool failed after mutation: apply_patch verification failed: missing context"],
+  ]) await fixture(async f => {
+    await f.start();
+    const callID = "unknown-action";
+    await f.before(tool, callID);
+    await writeFile(path.join(f.root, "counter.txt"), "partial mutation before the failure\n");
+    const pending = f.run().pending_actions;
+    const part = { type: "tool", tool: reportedTool, sessionID: "root", callID, state: { status: "error", error } };
+    f.append("root", [part]);
+    await f.hooks.event({ event: { type: "message.part.updated", properties: { part } } });
+    assert.equal(f.run().state, "paused", `${tool}: ${error}`);
+    assert.match(f.run().reason, /outcome unknown/);
+    assert.deepEqual(f.run().pending_actions, pending);
+    await f.after(tool, callID);
+    await f.load();
+    assert.equal((await f.inspect()).state, "paused");
+    await assert.rejects(f.before("apply_patch", "replay"), /working checkpoint/);
+    await assert.rejects(f.invoke("goal_run", { operation: "resume", reconciled: true }), /Explicit user resumption/);
+    f.finish("The action effects are unknown; do not replay");
+    await f.event("session.idle");
+    assert.equal(f.continuations.length, 0);
+    assert.equal(await readFile(path.join(f.root, "counter.txt"), "utf8"), "partial mutation before the failure\n");
+  });
+});
+
+test("a known patch rejection cannot resume a separately cancelled or denied Goal", async () => {
+  for (const stop of ["denial", "cancellation"]) await fixture(async f => {
+    await f.start();
+    await f.before("apply_patch", "rejected-after-stop");
+    if (stop === "denial") await f.event("permission.replied", { reply: "reject" });
+    else await f.event("session.error", { error: { name: "MessageAbortedError" } });
+    const paused = f.run();
+    const part = { type: "tool", tool: "apply_patch", sessionID: "root", callID: "rejected-after-stop",
+      state: { status: "error", error: "apply_patch verification failed: no hunks found" } };
+    await f.hooks.event({ event: { type: "message.part.updated", properties: { part } } });
+    assert.equal(f.run().state, "paused");
+    assert.deepEqual(f.run().pending_actions, {});
+    for (const key of ["reason", "paused_at", "paused_after_user", "initial_worktree", "authorized_actions"]) {
+      assert.deepEqual(f.run()[key], paused[key], `${key} retains the actual ${stop}`);
+    }
+    f.finish("Preflight failure does not override the user's stop");
+    await f.event("session.idle");
+    assert.equal(f.continuations.length, 0);
+    await assert.rejects(f.invoke("goal_run", { operation: "resume", reconciled: true }), /Explicit user resumption/);
+  });
+});
+
+test("patch rejection cleanup must persist before further mutation is permitted", async () => fixture(async f => {
+  await f.start();
+  await f.before("apply_patch", "unacknowledged-rejection");
+  const original = clone(f.sessions.get("root")), update = f.client.session.update;
+  f.client.session.update = async () => ({ data: clone(original) });
+  const part = { type: "tool", tool: "apply_patch", sessionID: "root", callID: "unacknowledged-rejection",
+    state: { status: "error", error: "apply_patch verification failed: no hunks found" } };
+  try {
+    await assert.rejects(f.hooks.event({ event: { type: "message.part.updated", properties: { part } } }), /checkpoint did not persist/);
+  } finally { f.client.session.update = update; }
+  assert.deepEqual(f.run().pending_actions, original.metadata[CHECKPOINT].pending_actions);
+  await f.load();
+  assert.equal((await f.inspect()).state, "paused");
+  await assert.rejects(f.before("write", "cannot-assume-cleanup"), /working checkpoint/);
+  assert.equal(await readFile(path.join(f.root, "counter.txt"), "utf8"), "defective\n");
+}));
+
 test("unknown active-action error parts retain receipts and pause until explicit reconciled resumption", async () => fixture(async f => {
   f.user("I authorize you to continue the offline counter task.");
   const authorizedUserID = f.history.get("root").at(-1).info.id;

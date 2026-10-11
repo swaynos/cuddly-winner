@@ -603,6 +603,98 @@ test("persistent primary Goal writes directly, continues partial returns, repair
   assert.equal((await f.api(`/session/${unstarted.id}/children`)).length, 0);
 });
 
+test("persistent Goal recovers from native patch verification failures without Resume Goal", { timeout: 120_000 }, async t => {
+  const repairGate = gate();
+  t.after(() => repairGate.release());
+  let awaitingRepair = false;
+  const faults = [
+    { patchText: "*** Update File: counter.txt\n@@\n-bad\n+good", expected: /Invalid patch format: missing Begin\/End markers/ },
+    { patchText: "*** Begin Patch\n*** Update File: counter.txt\n@@\n-missing counter context\n+good\n*** End Patch", expected: /Failed to find expected lines.*counter\.txt/s },
+    // The first hunk is valid, but a later file fails verification. Native
+    // preflight must reject the entire patch before writing either file.
+    { patchText: "*** Begin Patch\n*** Update File: counter.txt\n@@\n-bad\n+MUST-NOT-WRITE\n*** Update File: readiness.json\n@@\n-missing readiness definition\n+{}\n*** End Patch", expected: /Failed to find expected lines.*readiness\.json/s },
+  ];
+  const f = await fixture(t, async (input, { root }) => {
+    const { user, results, turnResults } = conversation(input);
+    if (evaluatorMode(user)) return evaluator(input, root);
+    if (!user.includes("Execute patch rejection fixture")) return { text: "Patch rejection fixture." };
+    requireTools(input, ["goal_run", "goal_evaluate", "read", "apply_patch"]);
+    if (!started(results)) return call("goal_run", { operation: "start", completion_target: "Counter implementation verified offline", authorized_actions: "Read and patch only counter.txt/readiness.json; correct no-effect failures and continue in this worker." });
+    if (!results.some(result => result.name === "read" && result.args.filePath.endsWith("counter.txt"))) return call("read", { filePath: path.join(root, "counter.txt") });
+    const rejected = results.filter(result => result.name === "apply_patch" && faults.some(fault => fault.patchText === result.args.patchText));
+    for (const [index, result] of rejected.entries()) {
+      assert.equal(result.args.patchText, faults[index].patchText);
+      assert.match(result.output, /apply_patch verification failed:/);
+      assert.match(result.output, faults[index].expected);
+    }
+    if (rejected.length < faults.length) return call("apply_patch", { patchText: faults[rejected.length].patchText });
+    if (turnResults.at(-1)?.name === "apply_patch" && faults.some(fault => fault.patchText === turnResults.at(-1).args.patchText)) {
+      return { text: "PATCH_REJECTION_PARTIAL: no changes were applied; correct the patch in this same worker." };
+    }
+    const inspection = results.find(result => result.name === "goal_run" && result.args.operation === "inspect");
+    if (!inspection) return call("goal_run", { operation: "inspect" });
+    assert.equal(JSON.parse(inspection.output).state, "working");
+    assert.deepEqual(JSON.parse(inspection.output).pending_actions, {});
+    if (await bytes(root, "counter.txt") === "bad\n") {
+      awaitingRepair = true;
+      await repairGate.promise;
+      return call("apply_patch", { patchText: "*** Begin Patch\n*** Update File: counter.txt\n@@\n-bad\n+good\n*** End Patch" });
+    }
+    assert.equal(await bytes(root, "counter.txt"), "good\n");
+    if (!results.some(result => result.name === "goal_evaluate")) return call("goal_evaluate", { mode: "final", artifacts: ["counter.txt", "readiness.json"] });
+    return { text: "Patch errors recovered without human handback; fresh final evaluation accepted." };
+  });
+  // OpenCode exposes its native patch tool for gpt-* model IDs. This remains
+  // the same isolated deterministic provider, not a remote model or custom tool.
+  const configPath = path.join(f.root, "opencode.json"), config = JSON.parse(await readFile(configPath, "utf8"));
+  config.provider.fixture.models["gpt-fixture"] = { ...config.provider.fixture.models.default, name: "gpt-fixture" };
+  await writeFile(configPath, JSON.stringify(config));
+  await publish(f.root);
+  await writeFile(path.join(f.root, "counter.txt"), "bad\n");
+  await writeFile(path.join(f.root, "readiness.json"), '{"prepared":true}\n');
+  await f.start();
+  const session = await f.api("/session", { title: "Recoverable native patch errors" });
+  await f.api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", model: { providerID: "fixture", modelID: "gpt-fixture" }, parts: [{ type: "text", text: "Execute patch rejection fixture." }] });
+  await f.wait("automatic continuation reaches corrected patch without human handback", () => awaitingRepair);
+  const working = await f.checkpoint(session.id);
+  assert.equal(working.state, "working");
+  assert.equal(working.reason, undefined);
+  assert.equal(working.paused_at, undefined);
+  assert.deepEqual(working.pending_actions, {});
+  assert.equal(await bytes(f.root, "counter.txt"), "bad\n", "Failed multi-file preflight cannot apply its earlier valid hunk");
+  assert.equal(await bytes(f.root, "readiness.json"), '{"prepared":true}\n');
+  const beforeRepair = await f.messages(session.id);
+  const errors = parts(beforeRepair).filter(part => part.tool === "apply_patch" && part.state.status === "error");
+  assert.equal(errors.length, faults.length);
+  assert.equal(parts(beforeRepair).filter(part => part.state?.status === "error").length, faults.length);
+  for (const [index, part] of errors.entries()) {
+    assert.equal(part.state.input.patchText, faults[index].patchText);
+    assert.match(part.state.error, faults[index].expected);
+  }
+  assert.equal(beforeRepair.filter(message => message.info.role === "user" && message.parts.some(part => part.type === "text" && !part.synthetic)).length, 1);
+  assert.ok(parts(beforeRepair).some(part => part.type === "text" && part.synthetic && part.text.startsWith("Continue the admitted Goal in this same worker conversation.")));
+  assert.equal((await f.api("/question")).length, 0);
+  repairGate.release();
+  const accepted = await waitAccepted(f, session.id, { expectedErrorIDs: errors.map(part => part.id) });
+  await f.idle(session.id);
+  const history = await f.messages(session.id);
+  assert.deepEqual(completed(history, "goal_run").map(part => part.state.input.operation), ["start", "inspect"]);
+  assert.equal(parts(history).filter(part => part.tool === "question").length, 0);
+  assert.equal(completed(history, "apply_patch").length, 1);
+  assert.equal(completed(history, "goal_evaluate").length, 1);
+  assert.equal(await bytes(f.root, "counter.txt"), "good\n");
+  assert.equal(await bytes(f.root, "readiness.json"), '{"prepared":true}\n');
+  for (const key of ["definition_sha256", "initial_worktree", "authorized_actions", "completion_target"]) assert.deepEqual(accepted[key], working[key]);
+  assert.equal(accepted.initial_worktree.files["counter.txt"].sha256, sha256("bad\n"));
+  const children = await f.api(`/session/${session.id}/children`);
+  assert.equal(children.length, 1);
+  await assertEvaluatorMarker(f, children[0].id, session.id, accepted.definition_sha256);
+  const verdict = outputs(await f.messages(children[0].id), "goal_verdict").at(-1);
+  assert.ok(Object.values(verdict.checks).every(check => check.passed));
+  await delay(300);
+  assert.deepEqual(await f.messages(session.id), history, "Acceptance schedules no extra attempts or prompts");
+});
+
 test("working Goal API compaction preserves failed feedback and findings and automatically continues the same worker to fresh final acceptance", { timeout: 120_000 }, async t => {
   const feedbackGate = gate(), repairGate = gate();
   t.after(() => { feedbackGate.release(); repairGate.release(); });

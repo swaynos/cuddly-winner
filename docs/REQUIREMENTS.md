@@ -64,6 +64,17 @@ and uncertain outcomes, preserving historical budgets rather than resetting them
 The runtime does not claim shell sandboxing or hard enforcement of these ceilings.
 Transport/protocol safeguards are not domain progress or resource quotas.
 
+Recoverable tool failures with a verified no-effect outcome do not require a new
+`Resume Goal` authorization. Native `apply_patch` parsing/verification failures,
+empty patches and missing patch text occur before its file-write phase; clear only
+the matching tracked action after persisting that outcome, and allow correction
+in the same working session. Confirmed immutability-guard rejections also remain
+no-effect failures. This classification is scoped to the actual tool and pending
+call identity, not arbitrary error text or a worker's assertion. Other tool errors
+may follow partial local or external effects and must retain unknown-action
+reconciliation. A no-effect receipt never clears an independent cancellation,
+denial or existing pause, and a failed checkpoint update cannot authorize work.
+
 ## Durable State And Recovery
 
 Native `session.metadata.cuddly_winner_goal` is the authoritative checkpoint,

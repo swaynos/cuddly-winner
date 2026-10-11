@@ -126,6 +126,25 @@ Only user-explicit resource ceilings belong to the task, with domain intent/
 receipt evidence and historical consumption preserved. Tool permission approval
 does not enforce a shell sandbox or resource hard limit.
 
+Mutating tools reserve `pending_actions` before dispatch. Successful after hooks
+clear their own action durably. Native `apply_patch` errors starting with
+`apply_patch verification failed:` and its exact empty-patch/missing-text errors
+are emitted during preflight, before any patch-file writes. A matching active call
+and pending tool identity allow these no-effect failures, like confirmed guard
+rejections, to clear only that action without pausing the worker. Active ownership
+is retained until checkpoint cleanup is acknowledged; failed persistence does not
+grant further work. Duplicate/late receipts cannot erase another action.
+
+This narrow classification follows the native tool's
+[1.18.31](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/opencode/src/tool/apply_patch.ts)
+and [1.18.35](https://github.com/anomalyco/opencode/blob/v1.18.35/packages/opencode/src/tool/apply_patch.ts)
+preflight/write separation, corroborated by real CLI regression tests. It does
+not classify arbitrary shell/browser error output or non-preflight patch errors
+as no-effect. Those retain their unknown pending receipts and pause. A completed
+UI part alone is not the after-hook checkpoint acknowledgment. No-effect cleanup
+also never resumes a separately cancelled, denied or already paused run; old
+paused sessions still require normal explicit reconciliation/resumption.
+
 `goal_run(operation="pause")` persists a pause. Cancellation, real permission
 denial, genuine observed blockers, transport interruption or unknown actions also
 pause. Mutation is frozen during evaluating, paused and accepted states.

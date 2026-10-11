@@ -28,6 +28,7 @@ accommodate a runtime failure.
 | Final evaluation | Exact fixed criterion evidence, actual inspection tools, explicit resolutions for prior failures, all-policy-file plus explicit-artifact hash binding, definition recheck, candidate change rejection, terminal final acceptance and current-byte inspection after acceptance. |
 | Evaluator protocol | Only the active evaluator can submit `goal_verdict`; no worker self-verdict, edit, delegation or publication. Correct invalid reports in the same child. Three-report protocol watchdog returns working/error feedback rather than a domain stop or fresh implementation attempt. |
 | Recovery | Cancellation, denial, unknown pending side effects, evaluator interruption and uncertain continuation dispatch persist paused. Restart and status questions do not replay/resume. Explicit user resume with `reconciled=true`, unchanged definition and old-evaluator inactivity preserves original authority, baseline and findings. |
+| Tool failure outcomes | Native patch preflight/empty/missing-text errors clear only the matching active action after acknowledged persistence, permit same-worker correction and automatic partial-return continuation without a Question/resume. Reproduce malformed patches, mismatched context and a multi-file patch with a valid early hunk and invalid later hunk using the real native tool. Verify no files changed, stable original authority/baseline, a successful corrected patch and fresh final acceptance. Other-tool lookalike errors, non-preflight/partial effects, failed cleanup acknowledgment, cancellation and denial remain fail-closed. |
 | Resource intent/receipts | Only explicitly user-authorized ceilings are carried as task obligations. Domain intent/receipt evidence preserves actual and uncertain consumption and historical budgets. No automatic budget reset, default quota or shell-hard-limit claim. |
 | Initial attribution | Read-only native Git status, exact file hashes, intentional deletions, pre-existing untracked inputs and newly caused out-of-scope changes. Missing evidence remains unavailable; never restore user work or infer authorship from dirty status alone. |
 | Guard | Root exact edit paths, working checkpoint/fingerprint, managed ancestry, browser file writers, Bash approval, evaluator read-only boundary, root Prometheus/Build publication and fail-closed malformed/old markers. Protect actual control paths and loaded sources while permitting ordinary authorized task scripts/tools. |
@@ -70,6 +71,22 @@ Runtime changes require their own focused plugin and real CLI/TUI qualification.
 The profile-deploy suite verifies inventory, lifecycle and durable documentation;
 it does not independently prove persistent runtime execution, authenticated
 metadata transport, compaction, model judgment or live domain success.
+
+Focused tool-failure verification and installed-copy qualification:
+
+```sh
+node --test tests/plugins/goal.test.mjs
+node --test --test-name-pattern="persistent Goal recovers from native patch verification failures" tests/integration/goal_runtime.test.mjs
+OPENCODE_GOAL_RUNTIME_ROOT="$HOME/.config/opencode" OPENCODE_GOAL_TEST_CLI="$(command -v opencode)" node --test --test-name-pattern="persistent Goal recovers from native patch verification failures" tests/integration/goal_runtime.test.mjs
+```
+
+The CLI fixture uses an isolated deterministic localhost provider with a
+`gpt-fixture` model ID to expose OpenCode's native `apply_patch`; it does not
+replace the tool or call a paid model. This verifies real tool/error/checkpoint
+and continuation behavior in a fresh process without resuming an active task.
+Source/installed tests do not activate a fix in already running OpenCode servers;
+restart those servers after deployment. Historical paused runs are not silently
+resumed by the fix.
 
 Repository-wide verification, when authorized for the full implementation:
 
