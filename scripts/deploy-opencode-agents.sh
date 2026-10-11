@@ -686,6 +686,7 @@ AGENT_SOURCES=(
   "${REPO_ROOT}/agents/prometheus.md"
 )
 PLUGIN_SOURCES=("${REPO_ROOT}/plugins/immutability.ts" "${REPO_ROOT}/plugins/goal.ts")
+GOAL_HELPER_SOURCES=("${REPO_ROOT}/plugins/goal/state.ts" "${REPO_ROOT}/plugins/goal/evidence.ts" "${REPO_ROOT}/plugins/goal/evaluation.ts")
 TUI_SOURCES=("${REPO_ROOT}/plugins/tui/goal-progress.tsx" "${REPO_ROOT}/plugins/tui/progress.ts")
 TOOL_SOURCES=("${REPO_ROOT}/tools/publish_goal_agent.ts")
 RULE_SOURCES=("${REPO_ROOT}/rules/resource-selection.md")
@@ -704,6 +705,8 @@ if [[ "$ACTION" == "status" || "$ACTION" == "remove" ]]; then
   sync_retired_assets
   sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
   sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "copy" "${PLUGIN_SOURCES[@]}"
+  sync_group "Goal helpers" "${PLUGINS_DIR}/goal" "$ACTION" "copy" "${GOAL_HELPER_SOURCES[@]}"
+  if [[ "$ACTION" == "remove" ]]; then rmdir "${PLUGINS_DIR}/goal" 2>/dev/null || true; fi
   sync_tui
   sync_group "Tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
   sync_group "Rules" "$RULES_DIR" "$ACTION" "$MODE" "${RULE_SOURCES[@]}"
@@ -747,6 +750,7 @@ sync_feedback_locator
 sync_group "Agents" "$AGENTS_DIR" "$ACTION" "$MODE" "${AGENT_SOURCES[@]}"
 record_agent_state
 sync_group "Plugins" "$PLUGINS_DIR" "$ACTION" "copy" "${PLUGIN_SOURCES[@]}"
+sync_group "Goal helpers" "${PLUGINS_DIR}/goal" "$ACTION" "copy" "${GOAL_HELPER_SOURCES[@]}"
 sync_group "Tools" "$TOOLS_DIR" "$ACTION" "$MODE" "${TOOL_SOURCES[@]}"
 install_tool_sdk "$CONFIG_DIR"
 sync_tui

@@ -6,11 +6,17 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 
 export const GOAL_AGENT_DIRECTORY = ".opencode/agents/generated";
+// Git worktrees can contain the caller's cwd; the global/non-Git project uses
+// the filesystem root as a sentinel, not as the task's editable directory.
+export function activeWorktree(directory?: string, worktree?: string): string {
+  const cwd = path.resolve(directory ?? worktree ?? process.cwd());
+  const base = path.resolve(worktree ?? cwd);
+  return base !== path.parse(base).root && (cwd === base || cwd.startsWith(base + path.sep)) ? base : cwd;
+}
 export const GOAL_POLICY_BEGIN = "<!-- CUDDLY-WINNER GOAL POLICY BEGIN -->";
 export const GOAL_POLICY_END = "<!-- CUDDLY-WINNER GOAL POLICY END -->";
 
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const TRUSTED_CONTROL_PATHS = ["agents", "plugins", "tools", "rules", "scripts"];
 const RESERVED_NAMES = new Set([
   "build", "plan", "general", "explore", "compaction", "title", "summary",
   "ask", "grounder", "prometheus", "reviewer",
@@ -25,7 +31,6 @@ export type GoalAgentPolicy = {
 };
 
 export type GoalAgentRequest = {
-  builder_model?: string;
   validator_model?: string;
   name: string;
   description: string;
@@ -63,12 +68,10 @@ export function isGeneratedGoalAgentPath(value: string): boolean {
 }
 
 export function isProtectedControlPath(value: string): boolean {
-  if (isGeneratedGoalAgentPath(value)) return true;
+  // Worktree authority only; guards separately recognize trusted profile sources.
   const candidate = pathKey(value);
-  return TRUSTED_CONTROL_PATHS.some((trusted) => {
-    const protectedPath = pathKey(trusted);
-    return candidate === protectedPath || candidate.startsWith(`${protectedPath}/`);
-  });
+  return candidate === ".opencode" || candidate.startsWith(".opencode/") ||
+    candidate === "opencode.json" || candidate === "opencode.jsonc" || candidate === "agents.md";
 }
 
 function assertName(value: unknown): asserts value is string {
@@ -124,13 +127,13 @@ function assertNoPolicyMarkers(request: GoalAgentRequest): void {
 
 export function validateGoalAgentRequest(value: unknown): GoalAgentRequest {
   if (!record(value)) throw new Error("Goal Agent request must be an object");
-  const modelFields = new Set(["builder_model", "validator_model"]);
+  const optionalFields = new Set(["validator_model"]);
   const expected = new Set([
     "name", "description", "outcome", "acceptance_criteria", "durable_context",
     "edit_paths", "bash", "verification_commands", "stop_conditions",
     "escalation_triggers", "instructions",
   ]);
-  for (const key of Object.keys(value)) if (!expected.has(key) && !modelFields.has(key)) throw new Error(`unknown Goal Agent field: ${key}`);
+  for (const key of Object.keys(value)) if (!expected.has(key) && !optionalFields.has(key)) throw new Error(`unknown Goal Agent field: ${key}`);
   for (const key of expected) if (!(key in value)) throw new Error(`missing Goal Agent field: ${key}`);
 
   assertName(value.name);
@@ -145,15 +148,12 @@ export function validateGoalAgentRequest(value: unknown): GoalAgentRequest {
   assertTextList(value.stop_conditions, "stop_conditions");
   assertTextList(value.escalation_triggers, "escalation_triggers");
   assertText(value.instructions, "instructions");
-  for (const key of modelFields) {
-    const model = value[key];
-    if (model !== undefined && (typeof model !== "string" || !/^[^\s/]+\/[^\s]+$/.test(model))) {
-      throw new Error(`${key} must be a provider/model identifier`);
-    }
+  if (value.validator_model !== undefined &&
+      (typeof value.validator_model !== "string" || !/^[^\s/]+\/[^\s]+$/.test(value.validator_model))) {
+    throw new Error("validator_model must be a provider/model identifier");
   }
 
   const request: GoalAgentRequest = {
-    ...(value.builder_model === undefined ? {} : { builder_model: value.builder_model as string }),
     ...(value.validator_model === undefined ? {} : { validator_model: value.validator_model as string }),
     name: value.name,
     description: value.description,
@@ -252,8 +252,8 @@ export function renderGoalAgent(request: GoalAgentRequest): string {
     `description: ${JSON.stringify(request.description)}`,
     "mode: primary",
     `options: ${JSON.stringify({ goal: {
+      runtime: "persistent-worker-v1",
       criteria: request.acceptance_criteria,
-      ...(request.builder_model ? { builder_model: request.builder_model } : {}),
       ...(request.validator_model ? { validator_model: request.validator_model } : {}),
     } })}`,
     "permission:",
@@ -263,37 +263,32 @@ export function renderGoalAgent(request: GoalAgentRequest): string {
     "  grep: allow",
     "  list: allow",
     "  question: allow",
-    "  edit: deny",
-    "  write: deny",
+    "  edit: allow",
+    "  write: allow",
+    "  todowrite: allow",
+    "  skill: allow",
+    "  webfetch: allow",
+    "  websearch: allow",
+    "  lsp: allow",
     `  bash: ${request.bash ? "ask" : "deny"}`,
     "  task: deny",
-    "  goal_cycle: allow",
+    "  goal_run: allow",
+    "  goal_evaluate: allow",
+    "  cuddly-winner-browser_*: allow",
     "---",
     "",
     GOAL_POLICY_BEGIN,
     JSON.stringify(policy),
     GOAL_POLICY_END,
     "",
-    "You are the goal-oriented agent coordinating this goal. Read this file before working.",
-    "Call goal_cycle to run a fresh builder and, only after a ready goal_handoff, a fresh independent validator. A ready handoff is not acceptance.",
-    "Before the first cycle, compare the requested task with this definition. Resolve material ambiguity before children start.",
-    "Call goal_cycle with alignment=confirmed, completion_target, authorized_actions, max_cycles and max_stalled_cycles. Derive these bounds from this task's stop conditions. Record what completes this task and what side effects the user authorized. Admission never grants new permissions.",
-    "If the request conflicts with this definition, call goal_cycle with alignment=clarification_required. Explain the mismatch and needed decision. Do not start children or silently unlock execution. A definition revision requires publication and a fresh loaded session.",
-    "After failed validation, diagnose an unresolved finding before another cycle. Supply finding, repair and expected_evidence to goal_cycle. Include the failed criterion key in finding. Unfinished builder handoffs instead carry concrete next actions into a fresh builder without inventing a validator finding.",
-    "Every attempt that creates a child consumes the overall bound. Valid unfinished checkpoints continue within that bound; they are not stagnation. Exact repeated independent findings or protocol failures reach max_stalled_cycles; semantic similarity is not automatically detected. Respect recorded runtime stops and never reset bounds or repeatedly seek a different verdict.",
-    "Use goal_cycle with operation=inspect to read this run's checkpoint, child activity, verdict and remaining allowance without starting work or clearing a stop. Invalid request arguments are correctable and consume no attempt; correct them without seeking new authorization for unchanged scope.",
-    "After interruption or a process restart, inspect and explicitly resume the same conversation with the unchanged definition. Confirm prior children are inactive and reconcile task actions before new side effects. Never infer that no work occurred because a parent call did not return. A changed definition still requires fingerprint-checked publication, restart and a fresh conversation.",
-    "Do not implement in the coordinator, reuse child contexts, or declare completion from a builder's report.",
-    "Own prerequisite preparation within this run through the builder: inspect existing inputs, prepare missing or stale prerequisites, verify readiness, then continue directly into authorized iterative work. Preparation alone is not completion unless explicitly requested as the finish line.",
-    "Acceptance criteria are implementation and verification obligations, not an inspection checklist. Missing authorized implementation must be built. Partial implementation may span several bounded builders; their concrete remaining actions guide continuation. Ready handoffs require checks c0..cN containing concrete artifact/check evidence and observed results for every criterion. Ready means ready for independent checking, not that the builder already obtained the independent verdict.",
-    "Use durable preparation and dependency evidence to resume across fresh children. Reuse verified prerequisites; refresh affected preparation and invalidate dependent evidence when inputs change, preserving unaffected work and history. Do not replay unknown side effects or expand permissions.",
-    "Only a validated goal_cycle result establishes completion. Report its criterion-by-criterion evidence.",
-    "A blocked result is incomplete: report the specific blocker and ask for the needed decision. Never weaken the goal to finish.",
-    "Before orchestration, confirm that this outcome matches the user's requested deliverable and side-effect constraints. Preparing an executable loop is distinct from executing it; a generation prohibition does not justify a preparation-only controller.",
-    "Explain each repair cycle using its unresolved findings. Missing historical evidence cannot be manufactured by repetition. Report an observed evidence blocker. Diagnose repeated findings, contradictory requirements and repairs outside policy instead of repeating the same checks.",
-    "Use the recorded initial worktree evidence to attribute changes. Preserve existing user work and intentional deletions. Untracked does not mean created by this task. Required missing provenance remains blocked.",
-    "Read the latest independent verdict in session records. A builder-maintained artifact saying pending does not override a completed failed verdict. Milestones and passing test counts do not establish outcome acceptance.",
-    "Report implemented behavior, offline verification, remaining unverified behavior, and whether the actual real-world goal was reached separately. Review the substance of criterion evidence, not only the tool status. Publication is not implementation readiness. Use runtime inspection rather than guessing used attempts, action outcomes or restart readiness; the loaded runtime_contract is distinct from installed files. Do not recommend moving unfinished implementation to a separate Native Build session as a prerequisite for this run.",
+    "You are the persistent named Goal worker. Read this definition and relevant project evidence, then call goal_run(operation=start) once before mutation. Confirm the requested outcome and authorized actions; resolve material conflicts with the user.",
+    "Work directly and creatively within the exact edit_paths and Bash policy. Prepare missing or stale prerequisites, verify readiness, and continue into authorized work. Preparation alone is not completion unless explicitly requested as the finish line.",
+    "Continue partial work in this conversation. Reuse verified prerequisites; refresh affected preparation and invalidate dependent evidence when inputs change, preserving unaffected work and history. Acceptance criteria are implementation and verification obligations, not an inspection checklist.",
+    "Seek fresh independent feedback with goal_evaluate(mode=feedback, focus=..., artifacts=[...]) when useful. Diagnose findings, repair the work, and continue; feedback and passing partial checks do not establish completion.",
+    "For full acceptance, call goal_evaluate(mode=final, artifacts=[...]) with concrete artifact and verification references for the requested outcome. Resolve failed findings and obtain independent final acceptance before reporting completion. Never weaken the goal to finish.",
+    "Use goal_run operations inspect, pause, and resume to inspect or control this run. After interruption, inspect status and reconcile actual task actions before resuming the same conversation. Do not replay unknown side effects. Explicit resumption can use a fresh user request or a native Question with header and offered option Resume Goal; a status question or Keep paused answer does not authorize it. A changed definition requires fingerprint-checked publication, restart, and a fresh conversation.",
+    "Preserve existing user work and intentional deletions. Attribute changes using recorded initial worktree evidence; untracked does not mean created by this task. Missing historical evidence cannot be manufactured.",
+    "Report observed blockers and the needed decision. Distinguish implemented behavior, offline verification, remaining unverified behavior, and whether the actual real-world goal was reached, citing independent final evidence.",
     "",
     "# Outcome",
     request.outcome,
@@ -490,7 +485,6 @@ export default tool({
   args: {
     operation: tool.schema.enum(["create", "inspect", "update"]).optional(),
     expected_sha256: tool.schema.string().regex(/^[a-f0-9]{64}$/).optional(),
-    builder_model: tool.schema.string().regex(/^[^\s/]+\/[^\s]+$/).optional(),
     validator_model: tool.schema.string().regex(/^[^\s/]+\/[^\s]+$/).optional(),
     name: tool.schema.string().regex(NAME_RE),
     description: tool.schema.string().min(1).optional(),
@@ -499,13 +493,13 @@ export default tool({
     durable_context: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Canonical worktree-relative input/evidence paths. Identify stale authority instructions and their disposition in instructions; unavailable historical evidence cannot be manufactured.").optional(),
     edit_paths: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
     bash: tool.schema.boolean().optional(),
-    verification_commands: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Real verification entry points. Label commands that the builder must implement rather than implying they already exist.").optional(),
-    stop_conditions: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Task-specific overall attempt and stalled bounds with diagnosis/stop procedures. Valid unfinished builders consume only overall allowance; stalls count exact repeated independent findings or protocol failures, not semantic similarity.").optional(),
+    verification_commands: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Real verification entry points. Label commands that the worker must implement rather than implying they already exist.").optional(),
+    stop_conditions: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Genuine task-specific blockers and stop procedures. Do not invent cycle, stall, or resource limits; include only limits explicitly authorized by the user.").optional(),
     escalation_triggers: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
     instructions: tool.schema.string().min(1).describe("Lead with a short execution spine: finish line, authority, current gap, first productive obligation, minimum prerequisites and direct continuation. Reconcile stale context; describe readiness/reuse/invalidation and tool usage once. Respect preparation-only/scaffolding-only limits.").optional(),
   },
   async execute(args, context) {
-    const root = context.directory ?? context.worktree ?? process.cwd();
+    const root = activeWorktree(context.directory, context.worktree);
     return JSON.stringify(await publishGoalAgentFile(root, args), null, 2);
   },
 });

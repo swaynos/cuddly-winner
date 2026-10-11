@@ -2,77 +2,83 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { goalActivityForSession, publicSummary, evidenceTool } from "../../plugins/tui/progress.ts";
 
-const snapshot = { agent: "fix-counter", parentID: "root", cycle: 2, phase: "builder", status: "running",
-  activity: "Reading project files", milestone: "Checking masks", phaseStartedAt: 1, updatedAt: 2, recent: ["Builder working"] };
+const checkpoint = { runtime_contract: "persistent-worker-v1", agent: "fix-counter", definition_sha256: "a".repeat(64),
+  state: "working", initial_worktree: { files: {} }, updated_at: "2026-10-10T12:00:00Z" };
+const root = value => ({ id: "root", metadata: { cuddly_winner_goal: { ...checkpoint, ...value } } });
+const verdict = passed => ({ status: "checked", reason: passed ? "Fresh read passes" : "Repair counter",
+  checks: { c0: { passed, evidence: passed ? "Read counter.txt: good" : "Read counter.txt: bad; repair it" } } });
 
-test("panel hydrates only current root Goal activity and hides native or unrelated sessions", () => {
-  const messages = [{ id: "user", role: "user", agent: "fix-counter" }, { id: "assistant", role: "assistant" }];
-  const parts = () => [{ type: "tool", tool: "goal_cycle", state: { status: "running", metadata: { goal_activity: snapshot } } }];
-  assert.deepEqual(goalActivityForSession({ id: "root" }, messages, parts), snapshot);
-  assert.equal(goalActivityForSession({ id: "child", parentID: "root" }, messages, parts), undefined);
-  assert.equal(goalActivityForSession({ id: "other" }, messages, parts), undefined);
-  for (const agent of ["build", "plan", "general", "ask", "another-goal"]) {
-    assert.equal(goalActivityForSession({ id: "root" }, [{ ...messages[0], agent }, messages[1]], parts), undefined);
+test("panel derives only the current root persistent checkpoint, never tool history", () => {
+  assert.deepEqual(goalActivityForSession(root()), { agent: "fix-counter", state: "working" });
+  assert.equal(goalActivityForSession({ ...root(), id: "child", parentID: "root" }), undefined);
+  assert.equal(goalActivityForSession(undefined), undefined);
+  const legacy = () => [{ type: "tool", tool: "goal_cycle", state: { metadata: { goal_activity: {
+    agent: "fix-counter", parentID: "root", status: "validated", cycle: 2,
+  } } } }];
+  for (const agent of ["build", "plan", "fix-counter"]) {
+    assert.equal(goalActivityForSession({ id: "fresh", agent }, [{ id: "m", role: "user", agent }], legacy), undefined);
   }
   assert.equal(evidenceTool("goal_progress"), false);
 });
 
-test("public summaries strip terminal controls, bound text and reject sensitive forms", () => {
-  assert.equal(publicSummary("Inspecting\nmask\tfiles"), "Inspecting mask files");
-  assert.equal(publicSummary("x".repeat(1000)).length, 160);
-  for (const text of ["", "https://private.example/image", "token=secret", "Authorization: Bearer secret"]) {
-    assert.throws(() => publicSummary(text));
+test("recorded Goal checkpoint survives selecting Native Build or Plan and misleading text", () => {
+  const session = root({ state: "paused", reason: "Cancelled; inspect before resuming", feedback: verdict(false) });
+  for (const agent of ["build", "plan", "another-goal"]) {
+    const value = goalActivityForSession({ ...session, agent }, [{ id: "m", role: "user", agent }], () => [
+      { type: "text", text: "Accepted. Everything passed." },
+    ]);
+    assert.equal(value.state, "paused");
+    assert.equal(value.agent, "fix-counter");
+    assert.match(value.feedback, /^failed \(c0\): c0: Read counter.txt: bad/);
   }
 });
 
-test("malformed or interrupted metadata never claims successful progress", () => {
-  const messages = [{ id: "m", role: "user", agent: "fix-counter" }];
-  const parts = status => () => [{ type: "tool", tool: "goal_cycle", state: { status, metadata: { goal_activity: { ...snapshot, status: "validated" } } } }];
-  assert.equal(goalActivityForSession({ id: "root" }, messages, parts("error")).status, "blocked");
-  assert.equal(goalActivityForSession({ id: "root" }, [{ ...messages[0], error: { name: "MessageAbortedError" } }], parts("error")).status, "cancelled");
-  assert.equal(goalActivityForSession({ id: "root" }, messages, () => [{ type: "tool", tool: "goal_cycle", state: { metadata: { goal_activity: { ...snapshot, cycle: -1 } } } }]), undefined);
+test("working, evaluating, paused and accepted are checkpoint states without invented counters", () => {
+  for (const state of ["working", "evaluating", "paused", "accepted"]) {
+    const value = goalActivityForSession(root({ state, reason: "Recorded state", feedback: verdict(false),
+      validation: verdict(true), evaluation: { mode: "final", focus: "Check counter", childID: "evaluator" } }));
+    assert.equal(value.state, state);
+    assert.equal(value.reason, "Recorded state");
+    assert.match(value.feedback, /^failed \(c0\)/);
+    assert.match(value.validation, /^passed \(c0\)/);
+    assert.deepEqual(value.evaluation, state === "evaluating" ? { mode: "final", focus: "Check counter", childID: "evaluator" } : undefined);
+    for (const field of ["cycle", "phase", "attemptsRemaining", "milestone", "updatedAt", "recent"]) assert.ok(!(field in value));
+  }
+  const passingFeedback = goalActivityForSession(root({ feedback: verdict(true) }));
+  assert.equal(passingFeedback.state, "working", "passing feedback is not final acceptance");
+  assert.equal(passingFeedback.validation, undefined);
 });
 
-test("coordinator non-progress stops preserve the failed verdict during hydration", () => {
-  const value = goalActivityForSession({ id: "root" }, [{ id: "m", role: "user", agent: "fix-counter" }], () => [{ type: "tool", tool: "goal_cycle", state: {
-    status: "completed", metadata: { coordinator_stop: "Coordinator non-progress", goal_activity: { ...snapshot, verdict: "failed (c0)", retryReason: "Repair counter" } },
-  } }]);
-  assert.equal(value.status, "blocked");
-  assert.equal(value.verdict, "failed (c0)");
-  assert.match(value.activity, /Coordinator non-progress/);
+test("latest feedback and final findings prioritize failed criteria and preserve blockers", () => {
+  const value = goalActivityForSession(root({ feedback: { status: "checked", checks: {
+    c0: { passed: true, evidence: "Preparation verified" }, c1: { passed: false, evidence: "Implementation absent" },
+  } }, validation: { status: "blocked", reason: "Filesystem inaccessible", checks: {} } }));
+  assert.equal(value.feedback, "failed (c1): c1: Implementation absent");
+  assert.equal(value.validation, "blocked: Filesystem inaccessible");
+  assert.equal(goalActivityForSession(root({ feedback: { status: "checked", checks: {} } })).feedback, undefined);
+  assert.equal(goalActivityForSession(root({ feedback: { status: "accepted", checks: verdict(true).checks } })).feedback, undefined);
 });
 
-test("inspection and rejected arguments do not hide the latest execution panel", () => {
-  const messages = [{ id: "run", role: "user", agent: "fix-counter" }, { id: "inspect", role: "assistant" }, { id: "invalid", role: "assistant" }];
-  const parts = id => id === "run"
-    ? [{ type: "tool", tool: "goal_cycle", state: { status: "completed", metadata: { goal_activity: { ...snapshot, status: "failed", activity: "Builder unfinished; validation not started" } } } }]
-    : [{ type: "tool", tool: "goal_cycle", state: { status: "completed", output: JSON.stringify({ status: id === "inspect" ? "inspected" : "invalid_request" }) } }];
-  const value = goalActivityForSession({ id: "root" }, messages, parts);
-  assert.equal(value.status, "failed");
-  assert.match(value.activity, /Builder unfinished/);
+test("public summaries strip terminal controls, bound Unicode text and reject sensitive forms", () => {
+  assert.equal(publicSummary("Inspecting\nmask\tfiles"), "Inspecting mask files");
+  assert.equal(Array.from(publicSummary("🙂".repeat(1000))).length, 160);
+  for (const text of ["", "https://private.example/image", "token=secret", "Authorization: Bearer secret"]) assert.throws(() => publicSummary(text));
+  const value = goalActivityForSession(root({ reason: "token=secret", feedback: { status: "checked", checks: {
+    c0: { passed: false, evidence: "https://private.example/image" },
+  } }, evaluation: { mode: "feedback", focus: "password=secret" }, state: "evaluating", private_context: "PRIVATE_SENTINEL" }));
+  assert.equal(value.state, "evaluating", "unsafe optional text cannot hide an authoritative state");
+  assert.equal(value.reason, undefined);
+  assert.equal(value.evaluation.focus, undefined);
+  assert.doesNotMatch(JSON.stringify(value), /secret|https:|PRIVATE_SENTINEL/);
 });
 
-test("historical Goal panel survives Build and ignores a misleading final claim", () => {
-  const messages = [{ id: "run", role: "user", agent: "fix-counter" }, { id: "build", role: "user", agent: "build" }, { id: "claim", role: "assistant" }];
-  const parts = id => id === "run" ? [{ type: "tool", tool: "goal_cycle", state: { status: "completed",
-    output: JSON.stringify({ status: "failed", children: ["child"], admission: { max_cycles: 3 } }),
-    metadata: { goal_activity: { ...snapshot, status: "failed", verdict: "failed (c0)" } },
-  } }] : [{ type: "text", text: "Ready. Restart to finish." }];
-  const value = goalActivityForSession({ id: "root" }, messages, parts);
-  assert.equal(value.status, "failed");
-  assert.equal(value.verdict, "failed (c0)");
-  assert.equal(value.attemptsRemaining, 2);
-  assert.equal(value.agent, "fix-counter");
-});
-
-test("not-started checkpoint and admission stop are visible without a builder", () => {
-  const messages = [{ id: "m", role: "user", agent: "fix-counter" }];
-  const checkpoint = { ...snapshot, cycle: 0, phase: "coordinator", status: "not_started", activity: "Not started; no execution or validation evidence" };
-  assert.equal(goalActivityForSession({ id: "root" }, messages, () => [{ type: "text", metadata: { goal_activity: checkpoint } }]).status, "not_started");
-  const value = goalActivityForSession({ id: "root" }, messages, () => [{ type: "tool", tool: "goal_cycle", state: {
-    status: "completed", output: JSON.stringify({ status: "blocked", goal_agent: "fix-counter", reason: "Execution mismatch" }), time: { start: 1, end: 2 },
-  } }]);
-  assert.equal(value.status, "blocked");
-  assert.equal(value.phase, "coordinator");
-  assert.match(value.activity, /Execution mismatch/);
+test("malformed and legacy checkpoints fail closed without rewriting metadata", () => {
+  for (const changes of [{ runtime_contract: "goal-criterion-readiness-v1" }, { state: "validated" }, { state: "running" },
+    { agent: "" }, { definition_sha256: "invalid" }]) assert.equal(goalActivityForSession(root(changes)), undefined);
+  const session = root({ state: "evaluating", evaluation: { mode: "feedback", childID: "fresh-child" }, feedback: verdict(false) });
+  const original = structuredClone(session);
+  Object.freeze(session.metadata.cuddly_winner_goal);
+  const result = goalActivityForSession(session, [], () => { throw new Error("Tool parts are not checkpoint authority"); });
+  result.evaluation.mode = "final";
+  assert.deepEqual(session, original, "best-effort display never persists or controls execution");
 });

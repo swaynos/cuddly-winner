@@ -3,240 +3,189 @@
 ## Product Goal
 
 Provide a lightweight optional OpenCode profile for evidence-backed planning and
-one bounded, goal-oriented work handoff. It works seamlessly with default
-OpenCode Plan and Build, never changes their native behavior, and keeps any new
-behaviors scoped strictly to their intended surfaces without claiming command sandboxing.
+a persistent named Goal worker. Native Plan and Build remain fully usable without
+a specialist handoff or altered behavior. Build additionally exposes
+`publish_goal_agent`. Profile behavior stays within its intended surfaces and
+does not claim command sandboxing.
 
-## Current Contract
+## Definition And Publication
 
-The managed profile ships exactly `ask`, `grounder`, and `prometheus`.
-Grounder is hidden and read-only. Ask is read-only and can delegate research to
-Grounder. Prometheus is planning-only: it can invoke `publish_goal_agent`, but
-cannot edit project files or use Bash.
-It interviews the user after inspecting the conversation and project evidence,
-asks only decision-changing questions, and establishes observable acceptance
-criteria and independent verification before publication.
+The managed profile ships exactly `ask`, `grounder`, and `prometheus`. Ask and
+hidden Grounder are read-only. Prometheus is planning-only: it may research,
+clarify decision-changing uncertainty and invoke `publish_goal_agent`, but may
+not implement, edit project files or use Bash. Root Build may also publish.
 
-Prometheus publishes one local Goal Agent under
-`.opencode/agents/generated/<name>.md`. `<name>` is task-derived, lowercase,
-hyphenated, and cannot collide with a native or managed identity. The Goal Agent
-file must contain the schema-v1 embedded policy described in `ARCHITECTURE.md`.
-Its policy grants only exact worktree-relative edit paths and a boolean Bash
-capability.
+There is exactly one Goal Agent format:
+`.opencode/agents/generated/<task-derived-name>.md`. Its schema-v1 embedded policy
+declares exact canonical worktree-relative `edit_paths` and boolean `bash`.
+Frontmatter `options.goal.runtime` must equal `persistent-worker-v1`, and
+`options.goal.criteria` supplies fixed acceptance criteria. The worker uses its
+selected root model; optional `validator_model` selects a verified evaluator
+model. The `builder_model` parameter is removed.
 
-Inspect existing definitions before publication. Same-task revisions should keep
-the name and path stable. The publisher supports explicit inspect/update operations;
-updates require a complete validated definition and the inspected byte SHA-256.
-Stale, concurrent, colliding, malformed or symlinked updates fail safely. Default
-creation remains no-clobber. Restart OpenCode and use a fresh conversation after
-revision; prior success cannot validate a changed definition.
+Creation is no-clobber. Inspect existing definitions before publishing; revisions
+require a complete definition and the inspected `expected_sha256`. Reject stale,
+concurrent, colliding, malformed and symlinked updates. Restart OpenCode and use
+a fresh conversation after publication or revision. Changed definitions cannot
+reuse prior authority, permissions or acceptance.
 
-Goal Agents coordinate the published task in a fresh OpenCode session. Each
-goal_cycle starts a fresh builder. A ready `goal_handoff` permits a separate fresh
-independent validator; unfinished builder work must continue before validation.
-Failed validation
-feeds findings to the next fresh builder within the admitted bounds. Only criterion-by-criterion validation
-with tool evidence establishes completion. After an admitted failed cycle, a premature coordinator stop resumes
-automatically; cancellation, denied permissions, unknown API outcomes, and genuine
-blockers remain incomplete and require explicit user input before resuming.
-Unresolved independent findings persist across cycles and are supplied to fresh
-validators without the builder conversation. A previous failure becoming passed
-requires an explicit evidence-backed `resolution`; unrelated passing tests do
-not resolve it. `goal_verdict` rejects missing resolutions with the exact keys so
-the active validator can correct its report before finishing; the runtime must not
-silently rewrite a passed check to an older failure. Required unavailable historical evidence remains a blocker.
-Cycle records are bound to the exact definition fingerprint. Changed or unbound
-records cannot authorize continuation or descendant mutation in the old session.
-Outcome and side-effect constraints must distinguish executable implementation,
-offline verification and live execution. Completion reports must distinguish
-these evidence classes and actual goal achievement.
+Published instructions lead with the actual finish line, existing authority,
+starting evidence and current gap, first productive obligation, minimum
+prerequisites and direct continuation. Criteria require implementation/artifacts
+and independent evidence, not merely inspection. Distinguish preparation-only,
+executable behavior verified offline and an authorized live outcome. Label missing
+verification commands as implementation obligations. Reconcile stale instructions
+without manufacturing unavailable historical evidence.
 
-Before starting children, `goal_cycle` requires an explicit admission decision.
-The coordinator records the aligned `completion_target`, `authorized_actions`,
-`max_cycles` and `max_stalled_cycles`. Publication instructions must derive these
-bounds from task-specific stop conditions. `alignment: clarification_required`
-stops before children. Missing or malformed admission returns a correctable input
-error without starting children or creating a terminal stop. Idle continuation must not
-restart an outcome or authority clarification before the first cycle. Admission
-records the coordinator's judgment. It does not grant permissions or automatically
-interpret natural-language authorization. A changed target or authority must use
-the existing fingerprint-bound revision and fresh-session procedure.
+Preparation belongs to the worker: prepare missing/stale prerequisites, verify
+readiness and proceed into authorized work. Reuse verified preparation; refresh
+affected inputs and invalidate dependent evidence while preserving unaffected
+work and history. Optional dependencies must remain optional. Scaffolding-only
+scope verifies the transition without unauthorized live execution.
 
-Each repair cycle requires `finding`, `repair` and `expected_evidence`. A criterion
-failure requires its exact criterion key in `finding`. The coordinator must state
-the concrete repair and the new evidence that can resolve it. The runtime stops
-incomplete at the admitted overall cycle bound or consecutive identical-finding
-bound. It compares failed criterion keys and exact evidence, not keys alone or
-semantic similarity. Valid unfinished checkpoints are not stalled attempts;
-repeated handoff protocol failures remain bounded. All attempts that create a child count
-against the overall bound, including builder-only and interrupted attempts. Changed
-independent findings can continue within the overall bound. Contradictions, inaccessible
-repairs and unavailable historical evidence require focused diagnosis. Later
-arguments cannot increase admitted bounds. Failed findings remain unresolved
-after a non-progress stop. Explicit user handback does not waive them.
+## Persistent Root Worker
 
-Builders record `goal_handoff` with `status` (ready, unfinished or blocked),
-concrete `evidence`, and `remaining` actions. Ready requires no remaining work
-before independent checking and completed inspection/check tool evidence; it is
-not a success verdict. Ready also requires exactly one `checks.cN.evidence` entry
-per acceptance criterion, with actual artifact/check references and observed
-results. Missing, empty, excessive or unexpected criterion evidence is rejected
-in the active builder, which can correct the report before returning. Coverage
-does not establish truth or live quality; independent validation still checks
-the actual outputs. Passing tests and preparation are milestones, not reasons to
-stop the next authorized action. Unfinished requires concrete next actions, permits honest
-zero progress, and returns an incomplete checkpoint without starting a validator.
-Missing/malformed handoffs are unfinished protocol work, not readiness. Fresh
-builder continuation uses that checkpoint without fabricating a failed criterion.
-Blocked handoffs require an attempted inspection of an observed genuine stop;
-missing authorized implementation and unavailable coordinator tools are not
-external blockers. Cancellation, denial and unknown action outcomes retain their
-terminal rules. Handoffs live in existing session tool records, not a second Goal
-format or project registry. The runtime enforces handoff structure and evidence
-use, not the truthfulness of the builder's judgments.
+The selected Goal Agent implements directly in its root conversation. Creative
+exploration, experiments, diagnosis and repair continue in that same session.
+Partial returns, failed experiments and failed checks automatically continue
+while the run is working. There are no fresh builder sessions, build/validation
+cycles, stall quotas or arbitrary default time, token or attempt limits.
 
-Runtime stops are authoritative for idle nudges and explicit calls across reload.
-The coordinator-nudge bound persists even when the bridge cannot update completed
-metadata. Without explicit real user handback, later calls cannot bypass it.
+`goal_run` provides `start`, `inspect`, `pause`, and `resume`. Call
+`goal_run(operation="start", completion_target=..., authorized_actions=...)`
+once before mutation. These record the interpretation of existing user authority,
+not new permissions. Repeated
+start cannot replace the original authority or baseline. Changed target or
+authority requires fingerprint-checked publication and a fresh loaded conversation.
 
-Before the first builder mutation, the runtime records bounded initial Git status
-and hashes for exact edit paths, durable-context files and dirty paths. Session
-records retain this evidence across fresh children and interrupted attempts.
-Validators must attribute scope against this snapshot, preserve pre-existing user
-changes and intentional deletions, and reject newly caused out-of-scope edits.
-Untracked does not mean created by this run. Missing or excluded byte evidence
-remains explicitly unavailable. A current snapshot cannot prove earlier history
-or concurrent authorship. No clean-worktree requirement or user-work restoration
-is permitted.
+Only explicit user resource ceilings belong in task instructions. Task-owned
+domain intent/receipt evidence must account for authorized actions, consumption
+and uncertain outcomes, preserving historical budgets rather than resetting them.
+The runtime does not claim shell sandboxing or hard enforcement of these ceilings.
+Transport/protocol safeguards are not domain progress or resource quotas.
 
-`goal_cycle(operation="inspect")` is a read-only operation scoped to the root
-conversation and its recorded Goal children. It can resolve the historical Goal
-after switching that same conversation to native Build/Plan; ambiguous identities,
-missing definitions and inaccessible history report unknown without execution.
-Execution still requires the selected root Goal. It reports the definition match,
-checkpoint, admission, attempts used/remaining, child activity and latest independent
-verdict without starting children, clearing stops or consuming allowance. Inspection
-also reports the selected versus historical agent, authoritative run state and a
-`runtime_contract` identifier emitted by the loaded plugin. Installed/source files
-do not prove which runtime a running session has loaded.
-Inspection and rejected requests cannot hide the latest execution checkpoint or alter user
-handback detection. Invalid argument and repair-diagnosis requests are correctable;
-scope mismatches, cancellation, denial and unresolved action outcomes remain stops.
+## Durable State And Recovery
 
-With an unchanged definition, recover after a process restart in the same Goal
-conversation. Count every child-bearing record once, including stale `running`
-records; retain the original admission and baseline. Before a new writer, confirm
-recorded interrupted/stopped children are idle through the session API. Busy,
-retrying, inaccessible or unknown child activity prevents continuation. Explicit
-user handback and confirmed resumption are required after a stop. The next fresh
-builder must reconcile actual task actions before new side effects; orchestration
-interruption proves neither absence nor completion of an external action. Do not
-export/migrate run state to another session or invent historical evidence.
+Native `session.metadata.cuddly_winner_goal` is the authoritative checkpoint,
+persisted through the supported V2 API using the same authenticated client.
+It records `runtime_contract: 'persistent-worker-v1'`, agent,
+`definition_sha256`, state (`working`, `evaluating`, `paused`, `accepted`),
+original `completion_target`/`authorized_actions`, `initial_worktree` baseline,
+`pending_actions`, `continuation`, `evaluation`, `feedback`, `validation` and
+unresolved `findings`. Accepted state additionally binds the accepted candidate.
+Preserve unrelated session metadata. Persistence failure cannot authorize work.
+No task registry, manifest, alternate checkpoint file or compatibility layer exists.
 
-Prerequisite preparation is owned by the published run. Prometheus resolves
-material feasibility uncertainty through permitted exploration and specifies
-required inputs, dependencies, procedures, tool/skill usage, readiness checks and
-durable evidence locations in the existing goal fields. It does not implement
-preparation artifacts. Exact edit paths and capabilities must cover preparation
-as well as subsequent work. The builder prepares missing or stale prerequisites,
-verifies readiness and proceeds directly into authorized iteration. Fresh children
-reuse verified preparation from durable evidence; changed inputs refresh affected
-preparation and invalidate dependent evidence without discarding unaffected work
-or history. The independent validator checks readiness and the transition against
-the requested outcome. Repairable preparation failures continue through the normal
-build/validation cycle. Preparation-only scope may end at readiness; scaffolding-only
-scope must implement and test the transition without unauthorized execution.
-Genuine missing authority/dependencies and unknown side effects retain their
-existing stop rules. No new agent format, phase, registry or policy capability is needed.
+Before mutation, capture a baseline with native read-only Git status and hashes
+of policy paths, durable context and observed dirty paths. Never stage, commit,
+restore, clean or require a clean worktree. Preserve user changes and intentional
+deletions. Untracked does not imply created by the run. Missing baseline bytes,
+capture limitations, prior history and concurrent authorship remain explicit
+uncertainties; a later snapshot cannot invent them.
 
-Published instructions lead with a short execution spine: finish line, authority,
-dated starting evidence and implementation gap, first productive obligation, minimum required
-prerequisites and direct continuation. Criteria are implementation/artifact
-obligations with evidence, not only inspection questions. Optional dependencies
-must not become mandatory handoff gates. Reconcile superseded historical workflow
-instructions explicitly and assign permitted documentation updates to the builder.
-Commands that do not exist yet are labeled requirements to implement. Child
-prompts carry the current definition, baseline, relevant unresolved findings and
-immediate checkpoint once, not a duplicate full previous-cycle serialization.
-Starting observations are reconciled at execution, not permanent facts. Publication
-is not a claim of implementation readiness. Builders may make bounded partial
-advances; ready means work is ready for independent checking, not that the builder
-has already obtained an independent verdict. Runtime mechanics belong in the
-publisher template rather than duplicated task-specific operating manuals.
+Compaction summaries preserve useful context but are not authority. Metadata
+retains admission, baseline, findings and uncertainty through compaction/reload.
+Best-effort UI or tool-part updates are presentation only; control persistence
+must not depend on them. The single same-session continuation dispatcher must
+not duplicate native compaction continuation or expand authorized actions.
 
-Goal execution displays bounded, event-derived parent activity while child phases
-run, including cycle, phase, public milestone, waiting, failure, completion and
-cancellation. Child-reported progress is not validation evidence. Preserve native
-session behavior, user TUI settings and modified assets during installation/removal.
-Show the latest independent verdict and failed keys while a repair runs, alongside
-the retry reason. Builder-maintained task artifacts cannot override session
-verdicts. Report observed permission denial, cancellation, child failure and
-unknown action outcomes distinctly. Unknown outcomes require inspection before
-explicit resumption. No interruption permits automatic action replay.
-An idle selected Goal with no execution record displays `not_started`: no execution
-or validation evidence, no implicit admission and no automatic child. Admission
-stops are visible even without a builder. A conversation switched to Build/Plan
-retains its recorded Goal panel without changing native execution. Free-text
-completion/readiness claims cannot replace the recorded checkpoint/verdict. The
-panel displays remaining attempts when admission evidence is available.
-An unsupported blocker with no attempted inspection, or a malformed completed
-validator report, is repairable failed validation. Missing coordinator-only tools
-in a child is intentional, not a dependency failure. Ordinary rejected-input tool
-errors must not be mistaken for user permission rejection.
-Bookkeeping and unavailable-tool calls do not establish blocker evidence. Failed
-inspection attempts can establish evidence of an unavailable external dependency.
-Both builder and validator child sessions explicitly receive read, glob, grep, and
-list inspection permissions. The validator cannot use edit tools or delegate; when
-Bash is enabled, it receives an approval-gated verification channel and must not
-modify product code through shell commands. Approval is not a command allowlist;
-this is not a shell sandbox.
-Optional verified `builder_model` and `validator_model` values in
-`options.goal` choose separate execution models. When a value is omitted, that
-child inherits the model currently selected in the Goal Agent session (normally
-the user's configured default).
-Goal Agents cannot rewrite their generated definition or trusted profile sources. Their
-descendants inherit the Goal-Agent boundary and cannot loosen any managed ancestor's
-restriction. Only the selected root Prometheus or Build session may publish a Goal Agent.
-A malformed Goal-Agent policy fails closed. Browser tools that save screenshots,
-downloads, or media locally obey the same exact edit-path policy as edit tools.
+Cancellation, actual permission denial, genuine blockers, interrupted evaluation
+and unknown side effects persist as paused. Restart must not automatically replay
+actions. Inspect actual receipts and child evidence before resumption. An unknown
+continuation dispatch is not safe to resubmit blindly. Resume requires explicit
+user resumption, `goal_run(operation="resume", reconciled=true)`, an unchanged
+definition and verified inactivity of old evaluators. Status questions, synthetic
+continuation and compaction summaries never implicitly resume a pause.
+Fresh native Question confirmation also works without a new chat message: require
+the explicit `Resume Goal` header/offered option, a single structured `Resume Goal`
+answer and completion after the fixed `paused_at` boundary. A newer negative answer
+overrides older chat authorization. Native compaction may finish handling a fresh
+human request, but task mutation remains paused until explicit reconciled resume.
+Original pre-pause authorization cannot be reused. Inspection can return the original
+baseline with `include_baseline=true`; normal status does not repeat that payload.
+
+Inspection reports the loaded runtime contract, selected/historical identity,
+definition match, state, authority, pending activity, feedback, validation and
+findings. The same conversation remains inspectable after switching to Build/Plan
+without changing native execution. Inspection starts no work and clears no pause;
+it may record a pause upon detecting interrupted/unknown activity. An unstarted
+Goal has no inferred admission. Accepted-candidate inspection distinguishes
+historical acceptance from whether current bytes still match.
+
+## Independent Feedback And Final Evaluation
+
+Worktree-relative policy lookup must not be bypassed by starting OpenCode in a
+subdirectory. Use its enclosing worktree; for the global/non-Git filesystem-root
+sentinel use the active directory instead.
+
+`goal_evaluate(mode="feedback", focus=..., artifacts=[...])` obtains a fresh
+independent evaluation of the stated focus. `goal_evaluate(mode="final",
+artifacts=[...])` checks every fixed acceptance criterion. Each request creates
+a fresh evaluator; it receives the definition, baseline, candidate hashes,
+artifact references and relevant unresolved findings, never the root chat.
+Evaluators inherit the selected worker model unless `validator_model` overrides it.
+
+Only the active evaluator may call `goal_verdict`. It must obtain actual
+inspection/check evidence and supply exactly the assigned `cN` checks, boolean
+results and concrete evidence. Passing a previously failed final criterion
+requires an evidence-backed `resolution` of its unresolved findings. Unrelated
+passing tests cannot resolve them. Synthetic/offline checks cannot establish
+required live quality or execution. Missing required historical evidence is a
+genuine blocker, not evidence that repetition can manufacture.
+
+Evaluation freezes worker mutation and binds the candidate to hashes of all
+policy-editable files and explicit artifacts. Final evaluation also includes
+baseline-present inputs/user work. The evaluator receives current hashes without requiring a worker-created
+checksum manifest. Freeze mutation before snapshot capture. Recheck the definition fingerprint
+and candidate bytes before accepting a report. Missing files are explicit absence;
+unavailable/symlink evidence cannot silently establish acceptance. A changed
+candidate needs fresh evaluation. A final pass transitions to terminal `accepted`;
+a feedback pass remains `working`. Ordinary failed checks return findings to the
+same worker for diagnosis and repair; only observed genuine stops pause work.
+
+Report errors are corrected in the same evaluator child. A three-report protocol
+watchdog returns to `working` with error feedback if reporting remains incomplete;
+it is not a domain-attempt, cycle or stagnation stop. Transport interruption,
+cancellation, denial and unknown outcomes retain the pause/reconciliation rules.
+Free-text completion and worker-owned artifacts cannot override final validation.
+
+## Permissions And Control Boundary
+
+Root editing is allowed only at exact policy paths while working with the matching
+checkpoint. Boolean Bash access is `ask` when enabled and denied otherwise.
+Approval-gated shell access is neither a command allowlist nor a shell sandbox;
+the guard intercepts tools, not arbitrary host filesystem effects of shell commands.
+Browser tools that save screenshots, downloads, or media locally obey the same
+exact edit-path policy as edit tools.
+
+Protect actual control files: `.opencode/`, root `opencode.json`/`opencode.jsonc`,
+root `AGENTS.md`, generated definitions and the loaded runtime's own source
+directories. Ordinary task directories named `scripts/`, `tools/`, `agents/`,
+`plugins/` or `rules/` are not protected merely by name. Exact authorized task
+paths in them remain editable unless they are the actually loaded runtime sources.
+Managed ancestor restrictions cannot be loosened by descendants. Evaluators are
+read-only, cannot delegate/publish or submit task side effects; permitted shell
+verification must not mutate product. Only root Prometheus or Build may publish.
+Native and unrelated agents remain outside Goal policy.
+
+## Legacy Retirement
+
+Old packages and old Goal definitions with an absent or different runtime marker
+fail closed until explicitly republished. Restart and use a fresh conversation;
+there is no migration, alias or compatibility execution path. Historical stops,
+limits and task budgets remain preserved evidence, never automatically reset.
+The retired registry, manifest, brief, task-loop, Ralph, optimization, KPI,
+Reviewer, spike, skill, feedback, session-fetch and announce-hygiene systems must
+not be reintroduced. This does not prohibit user-requested automation elsewhere.
 
 ## Goal Progress Visibility
 
-While `goal_cycle` runs, the terminal TUI must show a persistent, bounded Goal-only
-activity panel identifying cycle, builder/independent validator, current actual
-tool activity and concise child-reported milestones. It must remain visible in
-narrow terminals with the sidebar hidden and during approval waits. Progress
-reports are not evidence or success; show failed validation/retry, independent
-completion, interruption and cancellation honestly. Preserve native Build/Plan
-prompts, session isolation, cancellation and unknown-action safeguards.
-
-The installer manages the separate TUI module and registration without replacing
-user themes, keybindings, plugin options, JSONC comments or disable preferences.
-Verification must observe terminal-rendered updates before the child finishes,
-not just completed output or metadata values. Restart OpenCode after deployment.
-
-## No Legacy Support
-
-The old generated-agent registry, manifest, brief, task-loop, Ralph,
-optimization, KPI, Reviewer, spike, skill, feedback, session-fetch, and announce
-hygiene systems are removed. They have no alias, migration, or alternate runtime
-path. A recognized old package fails closed until Prometheus republishes it as a
-Goal Agent.
-This retirement does not prohibit the current single-file Goal Agent runtime or
-user-requested automation in other projects. Older Goal Agent definitions without
-goal metadata do not silently acquire autonomous continuation; explicitly revise
-a valid single-file definition through the publisher, then restart in a fresh session.
-
-## Native Compatibility
-
-Build, Plan, unknown identities, and unrelated local agents remain completely native
-and usable without a Goal Agent definition. The only addition to native Build is access to
-publish_goal_agent, so a Build session can publish a Goal Agent without
-switching to Prometheus. The profile works seamlessly with default Plan and Build
-and does not alter their behavior. The immutability plugin applies only to
-Ask, Grounder, Prometheus, Goal Agents, and a detected legacy package, while allowing
-root Build sessions to publish Goal Agents if chosen. It intercepts OpenCode
-edit and Bash tool calls, not host filesystem effects produced by a command.
+The separate TUI surface reads native checkpoint state and independent feedback/
+validation as best-effort presentation. It cannot authorize continuation, clear
+pauses or establish acceptance. Preserve native prompts, session isolation, user
+themes/keybindings, JSONC comments, plugin options and disable preferences.
+Verify actual terminal rendering separately from metadata persistence. UI failure
+must not become control-state loss. Restart OpenCode after deployment.
 
 ## Browser Runtime
 
@@ -246,7 +195,15 @@ deployed beside the rule without inclusion in always-loaded instructions.
 
 ## Installation Safety
 
-The installer must deploy the current profile without overwriting user changes.
+Deploy two server plugins and the individually inventoried nested helpers
+`plugins/goal/state.ts`, `plugins/goal/evidence.ts` and `plugins/goal/evaluation.ts`
+as copies in both modes. State transitions remain pure; filesystem/Git evidence
+collection is a separate read-only module.
+The helpers are imports, not auto-loaded plugins. Status detects missing/modified
+helpers; removal removes only exact copies or repository-target links, preserving
+modified helpers and unrelated siblings. Never recursively own the whole nested
+directory. Existing runtime clean-staging and integrity checks remain required.
+
 By default, overwritten managed entries are replaced in place without creating
 backup files; passing `--backup` to `install` preserves replaced entries in `backups/`.
 It may retire old managed assets only when an exact hash or repository-link target

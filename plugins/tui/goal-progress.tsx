@@ -1,35 +1,59 @@
 /** @jsxImportSource @opentui/solid */
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createResource, onCleanup, Show } from "solid-js";
 import { useTerminalDimensions } from "@opentui/solid";
 import type { TuiPluginModule, TuiPluginApi } from "@opencode-ai/plugin/tui";
 import { goalActivityForSession } from "./progress.ts";
 
 function GoalPanel(props: { api: TuiPluginApi }) {
   const dimensions = useTerminalDimensions();
-  const [now, setNow] = createSignal(Date.now());
-  const timer = setInterval(() => setNow(Date.now()), 1000);
-  onCleanup(() => clearInterval(timer));
   const snapshot = () => {
     const route = props.api.route.current;
     if (route.name !== "session" || !route.params?.sessionID) return;
     const id = String(route.params.sessionID);
-    return goalActivityForSession(props.api.state.session.get(id), props.api.state.session.messages(id), props.api.state.part);
+    return goalActivityForSession(props.api.state.session.get(id));
   };
+  // Reattachment can miss a child's earlier permission event in native state.
+  // Hydrate through the read-only SDK and refresh on events, never poll/control.
+  const [permissions, { refetch }] = createResource(() => {
+    const value = snapshot();
+    if (value) return `${props.api.route.current.params?.sessionID}:${value.evaluation?.childID ?? ""}`;
+  }, async () => {
+    try {
+      const response = await props.api.client.permission.list({ directory: props.api.state.path.directory },
+        { signal: AbortSignal.timeout(3000) });
+      return response.data ?? [];
+    } catch { return []; }
+  });
+  const refreshPermissions = (event: { properties: { sessionID: string } }) => {
+    const value = snapshot();
+    if (value && [String(props.api.route.current.params?.sessionID), value.evaluation?.childID].includes(event.properties.sessionID)) void refetch();
+  };
+  onCleanup(props.api.event.on("permission.asked", refreshPermissions));
+  onCleanup(props.api.event.on("permission.replied", refreshPermissions));
   const clip = (text: string) => {
     const limit = Math.max(10, dimensions().width - 4);
     const characters = Array.from(text);
     return characters.length > limit ? characters.slice(0, limit - 3).join("") + "..." : text;
   };
   return <Show when={snapshot()}>{value => {
-    const elapsed = () => Math.max(0, Math.floor(((value().status === "running" || value().status === "waiting" ? now() : value().updatedAt) - value().phaseStartedAt) / 1000));
+    const waiting = () => {
+      const id = String(props.api.route.current.params?.sessionID);
+      const evaluator = value().evaluation?.childID;
+      if (props.api.state.session.permission(id).length || (evaluator && props.api.state.session.permission(evaluator).length)
+        || permissions()?.some(request => request.sessionID === id || request.sessionID === evaluator)) {
+        return "Waiting for user permission";
+      }
+      if (value().state === "evaluating") return `Waiting for independent ${value().evaluation?.mode ?? ""} evaluator`.replace(/\s+/g, " ");
+      return value().reason;
+    };
     return <box width="100%" flexShrink={0} flexDirection="column" paddingLeft={1} paddingRight={1}
       backgroundColor={props.api.theme.current.backgroundPanel}>
       <text height={1} wrapMode="none" fg={props.api.theme.current.primary}>
-        {clip(`Goal activity ${value().cycle} | ${value().phase === "validator" ? "Validator" : value().phase === "coordinator" ? "Coordinator" : "Builder"} | ${value().status} | ${Math.floor(elapsed() / 60)}:${String(elapsed() % 60).padStart(2, "0")}`)}
+        {clip(`Goal worker | ${value().state} | ${value().agent}`)}
       </text>
-      <text height={1} wrapMode="none" fg={props.api.theme.current.text}>{clip(`Now: ${value().activity}`)}</text>
-      <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(value().milestone ? `Reported: ${value().milestone}` : "Reported: awaiting a child milestone")}</text>
-      <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(`Verdict: ${value().verdict ?? "none"}${value().attemptsRemaining !== undefined ? ` | Remaining attempts: ${value().attemptsRemaining}` : ""}${value().retryReason ? ` | Repair: ${value().retryReason}` : ""}`)}</text>
+      <Show when={waiting()}>{text => <text height={1} wrapMode="none" fg={props.api.theme.current.text}>{clip(text())}</text>}</Show>
+      <Show when={value().feedback}>{text => <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(`Feedback: ${text()}`)}</text>}</Show>
+      <Show when={value().validation}>{text => <text height={1} wrapMode="none" fg={props.api.theme.current.textMuted}>{clip(`Final: ${text()}`)}</text>}</Show>
     </box>;
   }}</Show>;
 }

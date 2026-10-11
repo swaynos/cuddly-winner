@@ -1,7 +1,11 @@
-import { lstatSync, realpathSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parse as parseYaml } from "yaml";
 import {
   hasGoalAgentFile,
+  activeWorktree,
+  goalAgentPath,
   goalDefinitionFingerprint,
   isGeneratedGoalAgentPath,
   isGoalAgentName,
@@ -16,6 +20,9 @@ const GOAL_AGENT_PUBLISH_TOOLS = new Set(["publish_goal_agent"]);
 const BROWSER_FILE_WRITE_TOOLS = new Set(["browser_screenshot", "browser_download", "browser_save_media"]);
 const MANAGED_AGENTS = new Set(["ask", "prometheus", "grounder"]);
 const READ_ONLY_AGENTS = new Set(["ask", "grounder"]);
+const GOAL_RUNTIME = "persistent-worker-v1";
+const SOURCE_ROOT = realpathSync(fileURLToPath(new URL("../", import.meta.url)));
+const RUNTIME_DIRECTORIES = new Set(["agents", "plugins", "tools", "rules", "scripts"]);
 
 // Browser tools that can hand saved authentication state back to the model stay
 // blocked even though the managed MCP does not expose them.
@@ -98,12 +105,12 @@ function resolvedSession(result: unknown, sessionID: string): Record<string, any
 }
 
 export const ImmutabilityGuard = async ({ directory, worktree, client }: { directory: string; worktree: string; client: any }) => {
-  const lexicalRoot = resolve(directory || worktree);
+  const lexicalRoot = activeWorktree(directory, worktree);
   const root = realpathSync(lexicalRoot);
   const sessionAgents = new Map<string, string>();
   const invalidAncestry = new Set<string>();
 
-  type GoalAgentRegistration = { goalAgent: boolean; legacy?: boolean; policy?: GoalAgentPolicy; fingerprint?: string };
+  type GoalAgentRegistration = { goalAgent: boolean; legacy?: boolean; runtime?: string; policy?: GoalAgentPolicy; fingerprint?: string };
   const goalAgentPolicies = new Map<string, GoalAgentRegistration>();
   function goalAgentPolicy(agent: string): GoalAgentRegistration {
     const cached = goalAgentPolicies.get(agent);
@@ -122,7 +129,11 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
     }
     if (!hasGoalAgentFile(root, agent)) return { goalAgent: false };
     try {
-      const registration = { goalAgent: true, policy: readGoalAgentPolicy(root, agent), fingerprint: goalDefinitionFingerprint(root, agent) };
+      const policy = readGoalAgentPolicy(root, agent);
+      const content = readFileSync(goalAgentPath(root, agent), "utf8");
+      const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(content);
+      const runtime = frontmatter ? parseYaml(frontmatter[1])?.options?.goal?.runtime : undefined;
+      const registration = { goalAgent: true, policy, runtime, fingerprint: goalDefinitionFingerprint(root, agent) };
       goalAgentPolicies.set(agent, registration);
       return registration;
     } catch {
@@ -135,7 +146,10 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
     return MANAGED_AGENTS.has(agent) || goalAgentPolicy(agent).goalAgent;
   }
 
-  type AgentResolution = { valid: true; agents: string[]; current?: string; hasParent: boolean } | { valid: false };
+  type AgentResolution = {
+    valid: true; agents: string[]; current?: string; hasParent: boolean;
+    session: Record<string, any>; evaluator: boolean; goalRoots: { agent: string; session: Record<string, any> }[];
+  } | { valid: false };
   async function resolveAgent(sessionID: string, visited = new Set<string>()): Promise<AgentResolution> {
     if (invalidAncestry.has(sessionID)) return { valid: false };
     if (visited.has(sessionID)) {
@@ -154,30 +168,28 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
       if (session.parentID) {
         parent = await resolveAgent(session.parentID, visited);
         if (!parent.valid) {
-          invalidAncestry.add(sessionID);
+          if (invalidAncestry.has(session.parentID)) invalidAncestry.add(sessionID);
           return parent;
         }
       }
       const current = sessionAgents.get(sessionID) ?? (typeof session.agent === "string" && session.agent ? session.agent : undefined);
-      if (current && goalAgentPolicy(current).goalAgent && !session.parentID && client.session.messages) {
-        const history = await client.session.messages({ path: { id: sessionID } });
-        if (history.error || !Array.isArray(history.data)) throw new Error("unresolved Goal history");
-        const fingerprint = goalDefinitionFingerprint(root, current);
-        for (const message of history.data) for (const part of message.parts) {
-          if (part.tool !== "goal_cycle") continue;
-          const bound = part.state?.status === "completed" ? JSON.parse(part.state.output).definition_sha256
-            : part.state?.status === "running" ? part.state.metadata?.definition_sha256 : undefined;
-          if ((part.state?.status === "completed" || bound) && bound !== fingerprint) throw new Error("Goal definition changed; use a fresh conversation");
-        }
-      }
       const agents = [...(parent?.agents ?? [])];
-      if (current && isManaged(current)) agents.push(current);
-      return { valid: true, agents, current, hasParent: Boolean(session.parentID) };
+      // A bound Goal whose definition disappeared must not become a native agent.
+      // A selected native Build/Plan remains native even after a root agent switch.
+      const boundGoal = current && isGoalAgentName(current) && session.metadata?.cuddly_winner_goal?.agent === current;
+      if (current && (isManaged(current) || boundGoal)) agents.push(current);
+      const goalRoots = [...(parent?.goalRoots ?? [])];
+      if (current && !session.parentID && (goalAgentPolicy(current).goalAgent || boundGoal)) {
+        goalRoots.push({ agent: current, session });
+      }
+      const evaluator = Boolean(parent?.evaluator || session.metadata?.cuddly_winner_evaluator ||
+        parent?.goalRoots.some((goal) => goal.session.id === session.parentID &&
+          goal.session.metadata?.cuddly_winner_goal?.evaluation?.childID === session.id));
+      return { valid: true, agents, current, hasParent: Boolean(session.parentID), session, goalRoots, evaluator };
     } catch {
-      for (const id of visited) invalidAncestry.add(id);
+      // Unreadable ancestry denies this call; a later call must verify it anew.
       return { valid: false };
     }
-    return { valid: true, agents: [], hasParent: false };
   }
 
   function goalAgentPolicyFor(agent: string): GoalAgentPolicy | undefined {
@@ -188,7 +200,33 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
     if (registration.goalAgent && !registration.policy) {
       throw new Error(`ImmutabilityGuard: @${agent} has an invalid Goal Agent definition; mutation and shell access are denied.`);
     }
+    if (registration.goalAgent && registration.runtime !== GOAL_RUNTIME) {
+      throw new Error(`ImmutabilityGuard: @${agent} lacks the ${GOAL_RUNTIME} runtime marker; republish it as a persistent Goal Agent, restart OpenCode, and use a fresh conversation before mutation or Bash.`);
+    }
     return registration.policy;
+  }
+
+  function checkGoalCheckpoint(resolution: Extract<AgentResolution, { valid: true }>): void {
+    for (const goal of resolution.goalRoots) {
+      const registration = goalAgentPolicy(goal.agent);
+      const checkpoint = goal.session.metadata?.cuddly_winner_goal;
+      if (!registration.policy || !registration.fingerprint) {
+        throw new Error(`ImmutabilityGuard: @${goal.agent} has a missing or invalid Goal Agent definition; mutation and Bash are denied.`);
+      }
+      if (!checkpoint || typeof checkpoint !== "object" || Array.isArray(checkpoint)) {
+        throw new Error(`ImmutabilityGuard: @${goal.agent} has no Goal checkpoint; call goal_run(operation=start) before mutation or Bash.`);
+      }
+      if (checkpoint.runtime_contract !== GOAL_RUNTIME || checkpoint.agent !== goal.agent ||
+          checkpoint.definition_sha256 !== registration.fingerprint) {
+        throw new Error(`ImmutabilityGuard: @${goal.agent} has invalid Goal metadata or a changed definition fingerprint; restart OpenCode and use a fresh conversation.`);
+      }
+      const designatedEvaluator = goal.session.id === resolution.session.parentID &&
+        checkpoint.evaluation?.childID === resolution.session.id;
+      if (checkpoint.state === "evaluating" && designatedEvaluator) continue;
+      if (checkpoint.state !== "working" || resolution.evaluator) {
+        throw new Error(`ImmutabilityGuard: @${goal.agent} Goal checkpoint is ${checkpoint.state}; mutation and Bash are frozen.`);
+      }
+    }
   }
 
   return {
@@ -218,6 +256,12 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
         }
         return;
       }
+      if (resolution.evaluator && mutatesFiles(input.tool)) {
+        throw new Error("ImmutabilityGuard: evaluator children are read-only and may never write files.");
+      }
+      if (resolution.evaluator && !resolution.goalRoots.length) {
+        throw new Error("ImmutabilityGuard: evaluator has no active parent Goal checkpoint; Bash is denied.");
+      }
       if (!agents.length) return;
       const agent = agents[agents.length - 1];
       if (agents.some((name) => READ_ONLY_AGENTS.has(name))) {
@@ -228,11 +272,9 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
         throw new Error("ImmutabilityGuard: @prometheus may not edit project files.");
       }
       const policies = agents.map(goalAgentPolicyFor).filter((policy): policy is GoalAgentPolicy => Boolean(policy));
+      checkGoalCheckpoint(resolution);
 
       if (SHELL_TOOLS.has(input.tool)) {
-        if (!resolution.hasParent && policies.length) {
-          throw new Error(`ImmutabilityGuard: @${agent} coordinates through goal_cycle and may not execute shell commands.`);
-        }
         if (policies.some((policy) => !policy.bash)) throw new Error(`ImmutabilityGuard: @${agent} may not execute shell commands.`);
         return;
       }
@@ -263,7 +305,10 @@ export const ImmutabilityGuard = async ({ directory, worktree, client }: { direc
         const absolutePath = safeTarget(lexicalRoot, root, unresolvedPath);
         const relPath = relative(root, absolutePath).replace(/\\/g, "/");
         if (isGeneratedGoalAgentPath(relPath)) throw new Error(`ImmutabilityGuard: @${agent} cannot rewrite published Goal Agent definition: "${relPath}".`);
-        if (isProtectedControlPath(relPath)) throw new Error(`ImmutabilityGuard: "${relPath}" is trusted control-plane state.`);
+        const sourcePath = relative(SOURCE_ROOT, absolutePath).replace(/\\/g, "/");
+        const loadedSource = isInside(SOURCE_ROOT, absolutePath) &&
+          RUNTIME_DIRECTORIES.has(sourcePath.normalize("NFC").toLowerCase().split("/")[0]);
+        if (isProtectedControlPath(relPath) || loadedSource) throw new Error(`ImmutabilityGuard: "${relPath}" is trusted control-plane state.`);
         if (policies.some((policy) => !policy.edit_paths.includes(relPath))) throw new Error(`ImmutabilityGuard: @${agent} cannot edit outside its declared edit paths: "${relPath}".`);
       }
     },

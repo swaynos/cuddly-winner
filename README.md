@@ -1,21 +1,22 @@
 # Cuddly Winner
 
-Goal readiness is evidence-backed: ready builders must account for every acceptance
-criterion before an independent validator starts. Publication and passing partial
-tests do not establish task completion. `goal_cycle(operation="inspect")` reports
-the loaded runtime contract, recorded state, verdict and allowance; it also reads
-historical Goal evidence after switching the same conversation to Build/Plan.
-An unstarted Goal is reported as not started, without inventing authorization.
+Goal Agents are persistent named workers: they implement and explore in their root
+conversation, automatically continuing partial work and failed experiments. Fresh
+independent evaluators provide feedback and final acceptance. Publication, passing
+partial tests and feedback do not establish completion. `goal_run(operation="inspect")`
+reports the loaded `persistent-worker-v1` contract, recorded state, authority and
+independent evidence; it also reads the same conversation's historical Goal checkpoint
+after switching to Build/Plan. An unstarted Goal has no invented authorization.
 Installation status describes disk contents; restart OpenCode (and its server for
 `opencode attach`) before checking the loaded runtime through inspection.
 
 Cuddly Winner is a small optional OpenCode profile that works seamlessly with
-default OpenCode Plan and Build without altering their native behavior. The only
-addition to native Build is access to publish_goal_agent, so a Build session
-can publish a Goal Agent without switching to Prometheus. Any new behaviors
+default OpenCode Plan and Build without altering their native behavior. Native
+Build can publish through publish_goal_agent and inspect existing Goal evidence
+without becoming a Goal worker or switching to Prometheus. Any new behaviors
 introduced by this project work strictly within their intended surfaces.
 Native Plan and Build remain the default for ordinary work. Prometheus is available
-when a task benefits from a durable, bounded goal-oriented handoff.
+when a task benefits from a durable goal-oriented definition and independent evaluation.
 
 ## Profile
 
@@ -43,15 +44,23 @@ unresolved requirements, then publishes one task-derived Goal Agent:
 The Goal Agent file contains the task instructions, verification, and embedded
 edit/Bash policy. Creation is no-clobber; explicit revisions are fingerprint-checked. After
 publication, quit and restart OpenCode, start a new conversation in the target
-project, and select the named agent. The Goal Agent owns build AND validation: each cycle
-uses a fresh builder session and, after a ready handoff, a separate fresh validator session. Partial
-builders continue within the overall attempt allowance; unfinished is not stagnation. Failed
-validation returns findings to another fresh builder; premature coordinator stops
-resume automatically. Only validated criteria complete the goal. Cancellation,
-denied permissions, and genuine blockers stop it as incomplete. It does not stage
-or commit work. Both children inherit the model currently selected in the Goal
-Agent session (normally the user's configured default), unless Prometheus sets a
-verified `builder_model` or `validator_model` override for that role.
+project, and select the named agent. The root worker calls `goal_run(operation="start")`
+with the actual `completion_target` and existing `authorized_actions` before mutation,
+then prepares, implements, experiments and repairs directly in that same conversation.
+It uses `goal_evaluate(mode="feedback", focus=..., artifacts=[...])` for fresh
+independent feedback and `goal_evaluate(mode="final", artifacts=[...])` for full
+acceptance. Evaluators receive the definition, baseline, candidate and relevant
+findings, never the worker's chat. Only the active evaluator can record `goal_verdict`.
+Final acceptance is terminal and hash-bound to all policy-editable files and explicit
+artifacts, plus baseline-present inputs/user work; a feedback pass returns to working. There are no fresh-builder cycles,
+stall quotas or arbitrary default time/token/attempt limits. Explicit user resource
+ceilings remain task-owned obligations with intent/receipt evidence.
+
+The worker uses the model selected in its root session. Evaluators inherit that
+model unless a verified `validator_model` override is published; `builder_model`
+is removed. The exact edit-path policy permits root editing and boolean Bash access
+uses `ask` when enabled. Approval is not a shell sandbox or a resource hard limit.
+It does not stage or commit work.
 
 The generated directory is an internal boundary. The visible agent name remains
 the task-derived `<name>`, without a required prefix.
@@ -66,18 +75,27 @@ an agent, delete its file and restart OpenCode.
 
 ### Continuing and recovering a run
 
-Ordinary unfinished work continues in the same Goal conversation with fresh
-builders. After interruption or a process restart, use
-`goal_cycle(operation="inspect")` in that conversation to see the checkpoint,
-child activity, latest verdict and remaining allowance. Inspection starts no work
-and clears no stop. Confirm old children are inactive and explicitly resume the
-unchanged definition, reconciling task actions before any new side effects.
-Unknown activity/actions remain incomplete; never replay an uncertain submission.
-There is no need to republish merely because implementation is partial.
+Native `session.metadata.cuddly_winner_goal` preserves the original authority and
+baseline, pending actions, continuation, evaluations, feedback, validation and
+findings across compaction and reload. Compaction summaries and the best-effort
+Goal UI cannot grant authority or acceptance.
 
-Invalid tool arguments can be corrected immediately without another authorization
-interview or a charged attempt. Publication establishes a task definition, not
-implementation readiness or a successful live outcome.
+Cancellation, permission denial, genuine blockers and unknown action outcomes
+persist as paused. After interruption or restart, use `goal_run(operation="inspect")`,
+inspect receipts and evaluator activity. When paused, reconcile outcomes before
+a fresh user-authorized `goal_run(operation="resume", reconciled=true)`. A status question
+does not resume work. Restart never automatically replays an uncertain submission.
+Native Question confirmation uses the explicit `Resume Goal` header/option; `Keep paused`
+does not authorize resumption. Original baseline evidence is available on demand through
+`goal_run(operation="inspect", include_baseline=true)`.
+Inspection may persist a pause when interrupted activity is discovered; it starts
+no task action and clears no pause. Partial implementation alone needs no republication.
+
+Old Goal definitions without the `persistent-worker-v1` marker fail closed. Explicitly
+republish them, restart and use a fresh conversation; historical stops and resource
+budgets remain evidence, not allowances to reset. There is no migration or compatibility
+runtime. Invalid inputs and evaluator report errors are correctable without replacing
+the worker or inventing a domain-attempt quota.
 
 ## Installation
 
@@ -85,10 +103,17 @@ implementation readiness or a successful live outcome.
 bash scripts/deploy-opencode-agents.sh install
 ```
 
+The installer copies `plugins/goal/state.ts`, `plugins/goal/evidence.ts` and `plugins/goal/evaluation.ts` as
+individual nested helpers alongside the two server plugins. They are imports,
+not auto-loaded plugins. Status and removal track each helper separately and
+preserve modified helpers and unrelated neighboring files.
+
 Use `status` to inspect the managed profile and `remove` to remove only
-byte-identical copies or links to this repository. The installer preserves
-modified files, browser settings, saved login sessions, and unrelated
-configuration. It retires known old profile assets only when ownership is proven,
+byte-identical copies or links to this repository. Removal preserves modified
+files. Install replaces managed entries without backups by default; use `--backup`
+to preserve replaced entries under `backups/`. Runtime packages retain clean staging
+and integrity checks. Browser settings, saved login sessions, and unrelated
+configuration are preserved. It retires known old profile assets only when ownership is proven,
 except that install and remove forcibly delete a file or symlink at the retired
 `tools/publish_direct_agent.ts` path. `status` reports that retired file if it
 still exists.

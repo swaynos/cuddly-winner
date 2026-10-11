@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { parse as parseYaml } from "yaml";
 import publishGoalAgent, {
+  isProtectedControlPath,
   publishGoalAgentFile,
   readGoalAgentPolicy,
 } from "../../tools/publish_goal_agent.ts";
@@ -31,7 +33,7 @@ function request(overrides = {}) {
   };
 }
 
-test("publishes one self-contained goal-oriented agent", async () => fixture(async root => {
+test("publishes one self-contained persistent Goal worker", async () => fixture(async root => {
   const result = await publishGoalAgentFile(root, request());
   assert.equal(result.name, "retry-fix");
   assert.equal(result.path, ".opencode/agents/generated/retry-fix.md");
@@ -46,19 +48,34 @@ test("publishes one self-contained goal-oriented agent", async () => fixture(asy
   assert.match(content, /\n  bash: ask\n/);
   assert.doesNotMatch(content, /^model:/m);
   const options = JSON.parse(content.match(/^options: (.*)$/m)[1]);
-  assert.deepEqual(options.goal, { criteria: ["The retry policy has focused coverage."] });
+  assert.deepEqual(options.goal, {
+    runtime: "persistent-worker-v1",
+    criteria: ["The retry policy has focused coverage."],
+  });
+  const header = parseYaml(content.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.equal(header.mode, "primary");
+  assert.deepEqual(header.permission, {
+    "*": "deny",
+    read: "allow", glob: "allow", grep: "allow", list: "allow", question: "allow",
+    edit: "allow", write: "allow", todowrite: "allow", skill: "allow",
+    webfetch: "allow", websearch: "allow", lsp: "allow",
+    bash: "ask", task: "deny", goal_run: "allow", goal_evaluate: "allow",
+    "cuddly-winner-browser_*": "allow",
+  });
   assert.match(content, /# Outcome\nRetry scheduling follows the requested policy\./);
   assert.match(content, /# Verification\n- `node --test tests\/retry\.test\.mjs`/);
-  assert.match(content, /Own prerequisite preparation within this run through the builder/);
+  assert.match(content, /goal_run\(operation=start\) once before mutation/);
+  assert.match(content, /Work directly and creatively within the exact edit_paths and Bash policy/);
   assert.match(content, /Preparation alone is not completion unless explicitly requested/);
   assert.match(content, /refresh affected preparation and invalidate dependent evidence/);
-  assert.match(content, /only after a ready goal_handoff/);
   assert.match(content, /Acceptance criteria are implementation and verification obligations/);
-  assert.match(content, /Valid unfinished checkpoints continue within that bound/);
-  assert.match(content, /operation=inspect/);
-  assert.match(content, /explicitly resume the same conversation/);
-  assert.match(content, /Invalid request arguments are correctable/);
-  assert.match(content, /semantic similarity is not automatically detected/);
+  assert.match(content, /Continue partial work in this conversation/);
+  assert.match(content, /goal_evaluate\(mode=feedback, focus=\.\.\., artifacts=\[\.\.\.\]\)/);
+  assert.match(content, /goal_evaluate\(mode=final, artifacts=\[\.\.\.\]\)/);
+  assert.match(content, /goal_run operations inspect, pause, and resume/);
+  assert.match(content, /native Question with header and offered option Resume Goal/);
+  assert.match(content, /reconcile actual task actions before resuming the same conversation/);
+  assert.doesNotMatch(content, /goal_cycle|goal_handoff|builder_model|max_cycles|max_stalled_cycles|coordinator|bounded builders/);
 
   const policy = readGoalAgentPolicy(root, "retry-fix");
   assert.deepEqual(policy, {
@@ -77,8 +94,12 @@ test("publisher rejects unsafe input before writing", async () => fixture(async 
     request({ edit_paths: ["../outside.ts"] }),
     request({ edit_paths: ["src/retry.ts", "src/retry.ts"] }),
     request({ bash: "yes" }),
-    request({ builder_model: "unqualified-model" }),
+    request({ builder_model: "qwen/coder" }),
     request({ validator_model: null }),
+    request({ validator_model: "unqualified-model" }),
+    request({ acceptance_criteria: [] }),
+    request({ acceptance_criteria: null }),
+    request({ acceptance_criteria: [""] }),
     request({ instructions: "<!-- CUDDLY-WINNER GOAL POLICY BEGIN -->" }),
   ]) {
     await assert.rejects(publishGoalAgentFile(root, candidate));
@@ -86,18 +107,89 @@ test("publisher rejects unsafe input before writing", async () => fixture(async 
   await assert.rejects(lstat(path.join(root, ".opencode", "agents", "generated", "retry-fix.md")), { code: "ENOENT" });
 }));
 
-test("publisher stores independent builder and validator model overrides", async () => fixture(async root => {
+test("publisher inherits the selected root model and stores only an evaluator override", async () => fixture(async root => {
   const result = await publishGoalAgentFile(root, request({
-    builder_model: "qwen/coder",
     validator_model: "anthropic/checker",
   }));
   const content = await readFile(path.join(root, result.path), "utf8");
   const options = JSON.parse(content.match(/^options: (.*)$/m)[1]);
   assert.deepEqual(options.goal, {
+    runtime: "persistent-worker-v1",
     criteria: ["The retry policy has focused coverage."],
-    builder_model: "qwen/coder",
     validator_model: "anthropic/checker",
   });
+  assert.doesNotMatch(content, /^model:|builder_model/m);
+  assert.equal("builder_model" in publishGoalAgent.args, false);
+  await assert.rejects(publishGoalAgentFile(root, request({ builder_model: "qwen/coder" })), /unknown Goal Agent field: builder_model/);
+}));
+
+test("evaluator model is optional while fixed criteria and the policy schema are preserved", async () => fixture(async root => {
+  const definition = request({ bash: false });
+  const result = await publishGoalAgentFile(root, definition);
+  const content = await readFile(path.join(root, result.path), "utf8");
+  const header = parseYaml(content.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.deepEqual(header.options.goal, {
+    runtime: "persistent-worker-v1", criteria: definition.acceptance_criteria,
+  });
+  assert.equal(header.permission.bash, "deny");
+  assert.match(content, /# Acceptance Criteria\n- The retry policy has focused coverage\./);
+  assert.doesNotMatch(content, /^model:/m);
+  assert.deepEqual(readGoalAgentPolicy(root, "retry-fix"), {
+    schema_version: 1, name: "retry-fix", edit_paths: definition.edit_paths, bash: false,
+  });
+}));
+
+test("creation and revision require nonempty acceptance criteria", async () => fixture(async root => {
+  const missing = request();
+  delete missing.acceptance_criteria;
+  const invalid = [missing, ...[undefined, null, [], [""], ["  "], [42]].map(
+    acceptance_criteria => request({ acceptance_criteria }),
+  )];
+  for (const definition of invalid) {
+    await assert.rejects(publishGoalAgentFile(root, definition), /acceptance_criteria/);
+  }
+  await assert.rejects(lstat(path.join(root, ".opencode")), { code: "ENOENT" });
+
+  const first = await publishGoalAgentFile(root, request());
+  const inspected = await publishGoalAgentFile(root, { operation: "inspect", name: first.name });
+  for (const definition of invalid) {
+    await assert.rejects(publishGoalAgentFile(root, {
+      ...definition, operation: "update", expected_sha256: inspected.sha256,
+    }), /acceptance_criteria/);
+  }
+  assert.equal(await readFile(path.join(root, first.path), "utf8"), inspected.content);
+}));
+
+test("publisher protects worktree authority paths before creating or revising a definition", async () => fixture(async root => {
+  const controls = [
+    ".opencode", ".opencode/agents/generated/retry-fix.md", ".opencode/agents/custom.md",
+    ".opencode/plugins/guard.ts", ".opencode/tools/tool.ts", ".opencode/rules/local.md",
+    ".opencode/opencode.json", ".OpEnCoDe/skills/local/SKILL.md",
+    "opencode.json", "opencode.jsonc", "AGENTS.md",
+  ];
+  for (const editPath of controls) {
+    assert.equal(isProtectedControlPath(editPath), true, editPath);
+    await assert.rejects(publishGoalAgentFile(root, request({ edit_paths: [editPath] })), /protected control-plane path/);
+  }
+  await assert.rejects(lstat(path.join(root, ".opencode")), { code: "ENOENT" });
+  const first = await publishGoalAgentFile(root, request());
+  const inspected = await publishGoalAgentFile(root, { operation: "inspect", name: first.name });
+  for (const editPath of controls) {
+    await assert.rejects(publishGoalAgentFile(root, {
+      ...request({ edit_paths: [editPath] }), operation: "update", expected_sha256: inspected.sha256,
+    }), /protected control-plane path/);
+  }
+  assert.equal(await readFile(path.join(root, first.path), "utf8"), inspected.content);
+}));
+
+test("publisher accepts ordinary application paths with control-directory names", async () => fixture(async root => {
+  const edit_paths = [
+    "scripts/build.mjs", "tools/convert.ts", "plugins/export.ts", "agents/example.md", "rules/pricing.ts",
+    "src/scripts/helper.ts", "docs/AGENTS.md", ".opencode-backup/notes.md", "src/opencode.json",
+  ];
+  for (const editPath of edit_paths) assert.equal(isProtectedControlPath(editPath), false, editPath);
+  await publishGoalAgentFile(root, request({ edit_paths }));
+  assert.deepEqual(readGoalAgentPolicy(root, "retry-fix").edit_paths, edit_paths);
 }));
 
 test("publisher never replaces an existing agent", async () => fixture(async root => {
@@ -133,6 +225,8 @@ test("explicit fingerprint-bound revisions preserve identity and reject stale up
   const first = await publishGoalAgentFile(root, request());
   const inspected = await publishGoalAgentFile(root, { operation: "inspect", name: "retry-fix" });
   assert.match(inspected.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(inspected.content, await readFile(path.join(root, first.path), "utf8"));
+  assert.equal(inspected.sha256, first.sha256);
   const update = { ...request({ outcome: "Updated policy", edit_paths: ["src/new.ts"], bash: false }), operation: "update", expected_sha256: inspected.sha256 };
   const revised = await publishGoalAgentFile(root, update);
   assert.equal(revised.path, first.path);
@@ -140,6 +234,8 @@ test("explicit fingerprint-bound revisions preserve identity and reject stale up
   assert.match(revised.instruction, /fresh conversation/);
   assert.deepEqual(readGoalAgentPolicy(root, "retry-fix").edit_paths, ["src/new.ts"]);
   const content = await readFile(path.join(root, first.path), "utf8");
+  assert.match(content, /\n  bash: deny\n/);
+  assert.equal(JSON.parse(content.match(/^options: (.*)$/m)[1]).goal.runtime, "persistent-worker-v1");
   await assert.rejects(publishGoalAgentFile(root, update), /changed since inspection/);
   assert.equal(await readFile(path.join(root, first.path), "utf8"), content);
   await assert.rejects(publishGoalAgentFile(root, { ...update, expected_sha256: undefined }), /expected_sha256/);
@@ -180,6 +276,22 @@ test("tool publishes from the active worktree", async () => fixture(async root =
   assert.equal(result.name, "retry-fix");
   await statPolicy(root, "retry-fix");
 }));
+
+test("Prometheus remains a read-only publisher for persistent workers and fresh evaluators", async () => {
+  const content = await readFile(new URL("../../agents/prometheus.md", import.meta.url), "utf8");
+  const header = parseYaml(content.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.equal(header.permission.edit, "deny");
+  assert.equal(header.permission.write, "deny");
+  assert.equal(header.permission.bash, "deny");
+  assert.equal(header.permission.publish_goal_agent, "allow");
+  assert.deepEqual(header.permission.task, { "*": "deny", grounder: "allow" });
+  assert.match(content, /first productive obligation/);
+  assert.match(content, /persistent named worker/);
+  assert.match(content, /model selected in its root session/);
+  assert.match(content, /validator_model/);
+  assert.match(content, /Do not invent cycle, stall, time, batch, or resource limits/);
+  assert.doesNotMatch(content, /goal_cycle|goal_handoff|builder_model|max_cycles|max_stalled_cycles|fresh bounded builder|coordinator/);
+});
 
 async function statPolicy(root, name) {
   assert.deepEqual(readGoalAgentPolicy(root, name).edit_paths, ["src/retry.ts", "tests/retry.test.mjs"]);

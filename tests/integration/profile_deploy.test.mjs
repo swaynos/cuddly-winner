@@ -10,6 +10,7 @@ const run = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "../..");
 const deploy = path.join(repo, "scripts", "deploy-opencode-agents.sh");
 const retireAssets = path.join(repo, "scripts", "opencode-retired-assets.mjs");
+const GOAL_HELPERS = ["evaluation.ts", "evidence.ts", "state.ts"];
 const BROWSER_CONTROL_FILES = [
   "opencode-playwright-mcp.mjs",
   "opencode-browser-state.mjs",
@@ -64,7 +65,13 @@ test("installer deploys the Cuddly Winner profile and purges the retired publish
     (await readdir(path.join(config, "agents"))).filter((name) => name.endsWith(".md")).sort(),
     ["ask.md", "grounder.md", "prometheus.md"],
   );
-  assert.deepEqual((await readdir(path.join(config, "plugins"))).sort(), ["goal.ts", "immutability.ts", "tui"]);
+  assert.deepEqual((await readdir(path.join(config, "plugins"))).sort(), ["goal", "goal.ts", "immutability.ts", "tui"]);
+  assert.deepEqual((await readdir(path.join(config, "plugins/goal"))).sort(), GOAL_HELPERS);
+  for (const name of GOAL_HELPERS) {
+    const destination = path.join(config, "plugins/goal", name);
+    assert.equal((await lstat(destination)).isSymbolicLink(), false);
+    assert.equal(await readFile(destination, "utf8"), await readFile(path.join(repo, "plugins/goal", name), "utf8"));
+  }
   assert.deepEqual((await readdir(path.join(config, "plugins/tui"))).sort(), ["goal-progress.tsx", "progress.ts"]);
   assert.deepEqual(JSON.parse(await readFile(path.join(config, "tui.json"), "utf8")).plugin, ["./plugins/tui/goal-progress.tsx"]);
   assert.deepEqual((await readdir(path.join(config, "tools"))).sort(), ["publish_goal_agent.ts"]);
@@ -87,6 +94,8 @@ test("deployment status distinguishes current, stale, linked, foreign and missin
   await rm(path.join(config, "agents/prometheus.md"));
   await symlink(path.join(repo, "agents/ask.md"), path.join(config, "agents/prometheus.md"));
   await rm(path.join(config, "plugins/goal.ts"));
+  await writeFile(path.join(config, "plugins/goal/state.ts"), "modified helper\n");
+  await rm(path.join(config, "plugins/goal/evaluation.ts"));
   await assert.rejects(deployFixture(root, "status"), error => {
     assert.equal(error.code, 1);
     assert.match(error.stdout, /\[stale or modified copy\].*agents\/ask.md/);
@@ -94,8 +103,47 @@ test("deployment status distinguishes current, stale, linked, foreign and missin
     assert.match(error.stdout, /\[foreign link\].*agents\/prometheus.md/);
     assert.match(error.stdout, /\[missing\].*plugins\/goal.ts/);
     assert.match(error.stdout, /\[current copy\].*plugins\/immutability.ts/);
+    assert.match(error.stdout, /\[stale or modified copy\].*plugins\/goal\/state.ts/);
+    assert.match(error.stdout, /\[missing\].*plugins\/goal\/evaluation.ts/);
     return true;
   });
+}));
+
+test("nested Goal helpers remain copies in symlink mode and removal preserves exact file ownership", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  await deployFixture(root, "install", ["--mode", "symlink"]);
+  const helpers = path.join(config, "plugins/goal");
+  for (const name of GOAL_HELPERS) assert.equal((await lstat(path.join(helpers, name))).isSymbolicLink(), false);
+  assert.equal((await lstat(path.join(config, "agents/ask.md"))).isSymbolicLink(), true);
+  await deployFixture(root, "status");
+
+  const customized = path.join(helpers, "state.ts");
+  const unrelated = path.join(helpers, "user-helper.ts");
+  await writeFile(customized, "user-owned state customization\n");
+  await writeFile(unrelated, "keep neighboring file\n");
+  await rm(path.join(helpers, "evaluation.ts"));
+  await symlink(path.join(repo, "plugins/goal/evaluation.ts"), path.join(helpers, "evaluation.ts"));
+  await deployFixture(root, "remove");
+
+  assert.equal(await readFile(customized, "utf8"), "user-owned state customization\n");
+  assert.equal(await readFile(unrelated, "utf8"), "keep neighboring file\n");
+  assert.equal(await exists(path.join(helpers, "evaluation.ts")), false, "owned helper link must be removed individually");
+  assert.deepEqual((await readdir(helpers)).sort(), ["state.ts", "user-helper.ts"]);
+}));
+
+test("Goal helper lifecycle refuses a symlinked nested parent", async () => fixture(async root => {
+  const config = path.join(root, "config");
+  const outside = path.join(root, "outside");
+  await mkdir(outside);
+  await mkdir(path.join(config, "plugins"), { recursive: true });
+  await writeFile(path.join(outside, "state.ts"), "outside user data\n");
+  await symlink(outside, path.join(config, "plugins/goal"), "dir");
+
+  for (const action of ["install", "status", "remove"]) {
+    await assert.rejects(deployFixture(root, action), /symlinked managed parent/);
+    assert.equal(await readFile(path.join(outside, "state.ts"), "utf8"), "outside user data\n");
+    assert.deepEqual(await readdir(outside), ["state.ts"]);
+  }
 }));
 
 test("installer purges a customized retired publisher but preserves unrelated retired assets", async () => fixture(async root => {
@@ -187,6 +235,7 @@ test("Goal TUI installs and removes without rewriting unrelated JSONC configurat
   await deployFixture(root, "remove");
   assert.equal(await exists(path.join(config, "plugins/tui/goal-progress.tsx")), false);
   assert.equal(await exists(path.join(config, "plugins/tui/progress.ts")), false);
+  assert.equal(await exists(path.join(config, "plugins/goal")), false, "empty owned helper directory is removed");
   const remaining = await readFile(path.join(config, "tui.jsonc"), "utf8");
   assert.match(remaining, /keep my settings/);
   assert.match(remaining, /user-plugin/);
@@ -216,19 +265,61 @@ test("installer replaces entries without backups by default and preserves backup
   assert.notEqual(await readFile(targetAgent, "utf8"), "locally modified ask\n");
 
   await writeFile(targetAgent, "locally modified again\n");
+  const targetHelper = path.join(config, "plugins/goal/state.ts");
+  await writeFile(targetHelper, "locally modified helper\n");
   await deployFixture(root, "install", ["--backup"]);
   assert.equal(await exists(path.join(config, "backups")), true);
   const backupFiles = await readdir(path.join(config, "backups", "agents"));
   assert.equal(backupFiles.length, 1);
   assert.match(backupFiles[0], /^ask\.md\.bak\./);
   assert.equal(await readFile(path.join(config, "backups", "agents", backupFiles[0]), "utf8"), "locally modified again\n");
+  const helperBackups = await readdir(path.join(config, "backups/plugins/goal"));
+  assert.equal(helperBackups.length, 1);
+  assert.match(helperBackups[0], /^state\.ts\.bak\./);
+  assert.equal(await readFile(path.join(config, "backups/plugins/goal", helperBackups[0]), "utf8"), "locally modified helper\n");
+  assert.equal(await readFile(targetHelper, "utf8"), await readFile(path.join(repo, "plugins/goal/state.ts"), "utf8"));
 }));
 
-test("durable docs describe the enforced Goal Agent boundaries", async () => {
+test("durable docs replace the coordinator contract with persistent-worker authority and independent acceptance", async () => {
   const requirements = await readFile(path.join(repo, "docs", "REQUIREMENTS.md"), "utf8");
   const architecture = await readFile(path.join(repo, "docs", "ARCHITECTURE.md"), "utf8");
+  const readme = await readFile(path.join(repo, "README.md"), "utf8");
+  const agents = await readFile(path.join(repo, "AGENTS.md"), "utf8");
+  const testPlan = await readFile(path.join(repo, "docs", "TEST-PLAN.md"), "utf8");
+  for (const document of [requirements, architecture, readme, agents, testPlan]) {
+    assert.match(document, /persistent-worker-v1/);
+    assert.match(document, /same\s+(?:worker\s+)?(?:root\s+)?(?:conversation|session)/);
+    assert.match(document, /fresh\s+independent/i);
+    assert.match(document, /builder_model[\s\S]*removed|no `builder_model`/);
+    assert.doesNotMatch(document, /goal_cycle\(operation=|max_cycles|max_stalled_cycles|Each\s+goal_cycle starts a fresh builder/);
+  }
+  for (const document of [requirements, architecture]) {
+    assert.match(document, /session\.metadata\.cuddly_winner_goal/);
+    assert.match(document, /supported V2/);
+    assert.match(document, /same authenticated/);
+    assert.match(document, /`pending_actions`[\s\S]*`continuation`[\s\S]*`evaluation`[\s\S]*`feedback`[\s\S]*`validation`[\s\S]*`findings`/);
+    assert.match(document, /goal_run\(operation="start", completion_target=\.\.\., authorized_actions=\.\.\.\)/);
+    assert.match(document, /goal_run\(operation="resume", reconciled=true\)/);
+    assert.match(document, /Status questions[\s\S]*do not authorize|Status questions[\s\S]*never implicitly resume/);
+    assert.match(document, /three-report\s+protocol\s+watchdog/i);
+    assert.match(document, /terminal `accepted`/i);
+    assert.match(document, /all\n?policy-editable files|all policy-editable files/);
+    assert.match(document, /never the root chat/);
+    assert.match(document, /selected root model/);
+    assert.match(document, /Only the active[\s\S]*evaluator[\s\S]*goal_verdict/);
+    assert.match(document, /feedback pass[\s\S]*working/i);
+    assert.match(document, /no[\s\S]*arbitrary\s+default\s+time/i);
+    assert.match(document, /resource[\s\S]*intent\/\n?receipt evidence|domain intent\/receipt evidence/);
+    assert.match(document, /historical stops[\s\S]*budgets/i);
+    assert.match(document, /scripts\/`[\s\S]*tools\/`|scripts\/tools/);
+    assert.match(document, /actually loaded runtime/);
+    assert.match(document, /plugins\/goal\/state\.ts/);
+    assert.match(document, /plugins\/goal\/evaluation\.ts/);
+  }
   assert.match(requirements, /Browser tools that save screenshots,[\s\S]*exact edit-path policy/);
   assert.match(requirements, /Customized retired MCP entries/);
   assert.match(architecture, /scans[\s\S]*frontmatter name/);
-  assert.match(architecture, /`agents\/`, `plugins\/`,[\s\S]*`scripts\/`/);
+  assert.match(architecture, /own source root \(`agents\/`, `plugins\/`,[\s\S]*`scripts\/`\)/);
+  assert.match(architecture, /GOAL_HELPER_SOURCES[\s\S]*never copy\/remove the whole directory/);
+  assert.match(testPlan, /profile-deploy suite[\s\S]*does not independently prove persistent runtime execution/);
 });
