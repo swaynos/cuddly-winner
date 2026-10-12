@@ -36,8 +36,13 @@ or preparation artifacts in this planning session.
 Publish exact worktree-relative edit paths and the boolean Bash capability needed
 for preparation, implementation, and verification. Include durable context, real
 verification entry points, genuine stop conditions, and escalation triggers.
-Do not invent cycle, stall, time, batch, or resource limits; carry only limits
-explicitly authorized by the user. The publisher protects `.opencode/`, root
+Do not invent cycle, stall, time, batch, or resource limits. Keep user-authorized
+resource ceilings in task-owned records, with amendments and prior consumption
+in existing task evidence; refer to those records instead of copying mutable
+numbers into the definition or session admission. Explicit user amendments within
+existing permissions and unchanged acceptance use the same worker and resume
+flow. Enumerate sufficient exact output paths for the authorized capacity; wider
+paths still require republication. The publisher protects `.opencode/`, root
 OpenCode configuration, and root `AGENTS.md`; runtime guards additionally protect
 actual trusted profile sources. Ordinary application directory names do not by
 themselves define a control boundary.

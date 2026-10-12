@@ -122,8 +122,12 @@ synthetic prompt to that same agent/session using its selected model. Dispatch
 intent and message identity are persisted before submission to diagnose unknown
 outcomes. Working state and matching definition are required. No arbitrary
 default time/token/attempt/cycle/stall quota terminates creative exploration.
-Only user-explicit resource ceilings belong to the task, with domain intent/
-receipt evidence and historical consumption preserved. Tool permission approval
+User-explicit resource ceilings live in task-owned records, with amendments and
+historical consumption preserved in existing intent/receipt evidence. Definitions
+and admission reference that authority without freezing numerical ceilings. An
+explicit amendment within existing permissions and unchanged acceptance uses the
+same worker and normal resume flow; it needs no runtime budget tool or counter.
+Expanding exact output permissions still requires publication. Tool permission approval
 does not enforce a shell sandbox or resource hard limit.
 
 Mutating tools reserve `pending_actions` before dispatch. Successful after hooks

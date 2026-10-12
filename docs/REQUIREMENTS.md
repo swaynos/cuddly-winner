@@ -58,9 +58,13 @@ not new permissions. Repeated
 start cannot replace the original authority or baseline. Changed target or
 authority requires fingerprint-checked publication and a fresh loaded conversation.
 
-Only explicit user resource ceilings belong in task instructions. Task-owned
-domain intent/receipt evidence must account for authorized actions, consumption
-and uncertain outcomes, preserving historical budgets rather than resetting them.
+Only explicit user resource ceilings belong in task-owned records. Definitions
+and session admission refer to those records rather than copying mutable numbers.
+Record explicit user amendments alongside domain intent/receipt evidence, retaining
+prior ceilings, consumption and uncertain outcomes. Numerical amendments within
+existing permissions and unchanged acceptance use the same worker and existing
+resume operation; they do not change the definition fingerprint. Wider edit/output
+paths or changed acceptance still require republication and a fresh conversation.
 The runtime does not claim shell sandboxing or hard enforcement of these ceilings.
 Transport/protocol safeguards are not domain progress or resource quotas.
 
