@@ -70,6 +70,10 @@ test("publishes one self-contained persistent Goal worker", async () => fixture(
   assert.match(content, /refresh affected preparation and invalidate dependent evidence/);
   assert.match(content, /Acceptance criteria are implementation and verification obligations/);
   assert.match(content, /Continue partial work in this conversation/);
+  assert.match(content, /Keep looping even when progress is slow or the outcome appears impossible/);
+  assert.match(content, /no default time, attempt or stall limit/);
+  assert.match(content, /Correct invalid tool arguments and retry/);
+  assert.match(content, /saying blocked is feedback, not permission to stop/);
   assert.match(content, /goal_evaluate\(mode=feedback, focus=\.\.\., artifacts=\[\.\.\.\]\)/);
   assert.match(content, /goal_evaluate\(mode=final, artifacts=\[\.\.\.\]\)/);
   assert.match(content, /goal_run operations inspect, pause, and resume/);

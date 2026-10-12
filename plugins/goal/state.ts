@@ -11,6 +11,7 @@ export type Run = {
   updated_at: number;
   reason?: string;
   paused_after_user?: string;
+  resumed_after_user?: string;
   paused_at?: number;
   findings: Record<string, string[]>;
   pending_actions?: Record<string, { tool: string; callID: string }>;
@@ -46,14 +47,17 @@ export function transition(run: Run, event: { type: "pause"; reason: string } | 
     : { ...next, state: "paused", reason: event.reason, continuation: undefined };
   if (event.type === "resume") {
     if (run.state !== "paused") throw new Error("Only a paused run needs resumption.");
-    return { ...next, state: "working", reason: undefined, paused_after_user: undefined, paused_at: undefined, evaluation: undefined, pending_actions: {}, continuation: undefined };
+    return { ...next, state: "working", reason: undefined, resumed_after_user: run.paused_after_user,
+      paused_after_user: undefined, paused_at: undefined, evaluation: undefined, pending_actions: {}, continuation: undefined };
   }
   if (event.type === "evaluate") {
     if (run.state !== "working" || Object.keys(run.pending_actions ?? {}).length) throw new Error("Finish active task actions before evaluating a stable candidate.");
     return { ...next, state: "evaluating", evaluation: event.evaluation, continuation: undefined };
   }
   if (run.state !== "evaluating" || !run.evaluation) throw new Error("Evaluation is no longer active; its report cannot establish acceptance.");
-  if (event.verdict.status === "blocked") return { ...next, state: "paused", reason: event.verdict.reason,
+  // A model's inability to proceed is feedback, not a control-plane stop.
+  // Cancellation, denial and uncertain effects are paused by runtime evidence.
+  if (event.verdict.status === "blocked") return { ...next, state: "working", reason: undefined, evaluation: undefined,
     ...(run.evaluation.mode === "final" ? { validation: event.verdict } : { feedback: event.verdict }) };
   const final = run.evaluation.mode === "final";
   const passed = Object.values(event.verdict.checks).every((check: any) => check.passed);
@@ -65,6 +69,22 @@ export function transition(run: Run, event: { type: "pause"; reason: string } | 
   return { ...next, state: final && passed ? "accepted" : "working", findings, reason: undefined,
     ...(final ? { validation: event.verdict } : { feedback: event.verdict }),
     ...(final && passed ? { accepted_candidate: run.evaluation.candidate } : {}), evaluation: undefined };
+}
+
+export function pauseIntent(messages: any[], continuationText: string, consumedUserID?: string) {
+  const human = messages.findLast((m: any) => m.info.role === "user" && m.parts.some((p: any) =>
+    p.type === "text" && !p.synthetic && p.text !== continuationText));
+  const text = human?.parts.filter((p: any) => p.type === "text" && !p.synthetic).map((p: any) => p.text).join(" ") ?? "";
+  if (human?.info.id === consumedUserID) return false;
+  return text.split(/[.!;\n]+/).some((sentence: string) => !/\?|\b(?:do not|don't|never|not)\b/i.test(sentence)
+    && /^\s*(?:please\s+|I\s+(?:want|need)\s+you\s+to\s+)?(?:pause|stop|cancel)(?:(?:\s+(?:the|this|my))?\s+(?:goal|run|worker|work|task|execution)\b|\s*$)/i.test(sentence));
+}
+
+export function recoverableModelError(error: any) {
+  if (["ContextOverflowError", "StructuredOutputError"].includes(error?.name)) return true;
+  const code = error?.data?.statusCode;
+  return error?.name === "APIError" && Number.isInteger(code) && code >= 400 && code < 600
+    && ![401, 403].includes(code);
 }
 
 // Resume is a human-control boundary, not an interpretation of compaction prose.

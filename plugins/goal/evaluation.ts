@@ -1,4 +1,4 @@
-import { checkpoint, transition, type Run } from "./state.ts";
+import { checkpoint, transition, recoverableModelError, type Run } from "./state.ts";
 import { captureFiles } from "./evidence.ts";
 
 export function validateVerdict(value: any, criteria: string[], findings: Record<string, string[]>) {
@@ -62,6 +62,10 @@ export async function evaluate({ client, root, goal, run, context, save, markEva
       if (context.abort.aborted) throw new Error("Evaluation cancelled; inspect outcomes before explicit resumption.");
       if (result.error || !result.data || result.data.info?.error) {
         const error = result.error ?? result.data?.info?.error;
+        if (result.data?.info?.error && recoverableModelError(error)) {
+          correction = `Evaluator model error (${error.name}); request fresh evaluation or continue diagnosis. No task action was submitted.`;
+          break;
+        }
         const kind = typeof error?.name === "string" && /^[A-Za-z]+Error$/.test(error.name) ? error.name : "missing or failed response";
         const ref = /^err_[a-z0-9]+$/.test(error?.data?.ref ?? "") ? ` ${error.data.ref}` : "";
         throw new Error(`Evaluator interrupted or its API outcome unknown (${kind}${ref}); inspect its recorded outcome before resuming.`);

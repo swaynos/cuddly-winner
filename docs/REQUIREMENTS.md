@@ -50,6 +50,11 @@ exploration, experiments, diagnosis and repair continue in that same session.
 Partial returns, failed experiments and failed checks automatically continue
 while the run is working. There are no fresh builder sessions, build/validation
 cycles, stall quotas or arbitrary default time, token or attempt limits.
+The selected model may be cheap and repeatedly wrong. Slow progress, an apparently
+impossible outcome, incorrect tool arguments and a worker's own blocker claim do
+not finish or pause the run. Correct the call, inspect fresh state, repair or
+explore another permitted approach in the same worker. Do not require human rescue
+for ordinary recovery.
 
 `goal_run` provides `start`, `inspect`, `pause`, and `resume`. Call
 `goal_run(operation="start", completion_target=..., authorized_actions=...)`
@@ -57,6 +62,21 @@ once before mutation. These record the interpretation of existing user authority
 not new permissions. Repeated
 start cannot replace the original authority or baseline. Changed target or
 authority requires fingerprint-checked publication and a fresh loaded conversation.
+
+For a replacement conversation, `goal_run(operation="inspect",
+predecessor_session_id=...)` reads a prior root's native checkpoint, runtime
+status and evaluator identities. It works before or after admission for a root of the same
+named task, project and worktree; it never reads database files, returns chat or
+baseline content, reconciles another session, or changes metadata. A successfully
+read status map may omit idle sessions; failed/unrecognized reads remain unknown.
+`can_continue` requires an idle paused/accepted predecessor with no pending action,
+evaluation or continuation and no unverified children. Permanently marked read-only
+evaluators are not competing writers and their activity is not a separate blocker.
+This is a current status snapshot, not resumption authorization or a writer lock;
+retain explicit user resume and task-action reconciliation requirements.
+An unstarted caller is scoped through its selected validated definition, without
+inheriting predecessor authority or becoming admitted. `include_baseline=true`
+does not reject this read-only request; predecessor baseline content remains excluded.
 
 Only explicit user resource ceilings belong in task-owned records. Definitions
 and session admission refer to those records rather than copying mutable numbers.
@@ -66,6 +86,8 @@ existing permissions and unchanged acceptance use the same worker and existing
 resume operation; they do not change the definition fingerprint. Wider edit/output
 paths or changed acceptance still require republication and a fresh conversation.
 The runtime does not claim shell sandboxing or hard enforcement of these ceilings.
+Reaching a ceiling prohibits further spending; it does not prohibit useful permitted
+reasoning, inspection or implementation. Continuation never resets or widens a ceiling.
 Transport/protocol safeguards are not domain progress or resource quotas.
 
 Recoverable tool failures with a verified no-effect outcome do not require a new
@@ -104,7 +126,7 @@ Best-effort UI or tool-part updates are presentation only; control persistence
 must not depend on them. The single same-session continuation dispatcher must
 not duplicate native compaction continuation or expand authorized actions.
 
-Cancellation, actual permission denial, genuine blockers, interrupted evaluation
+Explicit user stops, cancellation, actual permission denial, unknown evaluation
 and unknown side effects persist as paused. Restart must not automatically replay
 actions. Inspect actual receipts and child evidence before resumption. An unknown
 continuation dispatch is not safe to resubmit blindly. Resume requires explicit
@@ -118,6 +140,19 @@ overrides older chat authorization. Native compaction may finish handling a fres
 human request, but task mutation remains paused until explicit reconciled resume.
 Original pre-pause authorization cannot be reused. Inspection can return the original
 baseline with `include_baseline=true`; normal status does not repeat that payload.
+`goal_run(pause)` must corroborate a stop request in the latest real user message;
+a model's reason alone returns the actual working state and recovery guidance,
+without applying a pause. Idle continuation also honors that real user stop.
+An unnecessary native Question headed `Resume Goal` is rejected while working or
+unadmitted, with current-state correction guidance instead of a human popup. Genuine
+paused resumption and questions for new authority remain available.
+After explicit resume, `resumed_after_user` prevents an already handled stop request
+from pausing the run again, including native Question handback with no new chat.
+Recognized terminal model/protocol errors without pending effects retry in the same
+worker. Non-auth HTTP API errors with a known status, context overflow and structured
+output errors are recoverable; HTTP 401/403, unknown transport outcomes and active
+task effects retain the pause boundary. Read-only evaluator model errors return
+working error feedback rather than requiring human resumption.
 
 Inspection reports the loaded runtime contract, selected/historical identity,
 definition match, state, authority, pending activity, feedback, validation and
@@ -156,7 +191,10 @@ and candidate bytes before accepting a report. Missing files are explicit absenc
 unavailable/symlink evidence cannot silently establish acceptance. A changed
 candidate needs fresh evaluation. A final pass transitions to terminal `accepted`;
 a feedback pass remains `working`. Ordinary failed checks return findings to the
-same worker for diagnosis and repair; only observed genuine stops pause work.
+same worker for diagnosis and repair. Evaluator `blocked` reports also return to
+`working`, retaining the evidence and earlier findings without establishing acceptance.
+They cannot independently stop the worker; actual runtime-observed control boundaries
+still pause it. Missing provenance must never be invented while exploring permitted work.
 
 Report errors are corrected in the same evaluator child. A three-report protocol
 watchdog returns to `working` with error feedback if reporting remains incomplete;

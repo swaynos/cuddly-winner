@@ -9,7 +9,7 @@ import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { Goal } from "../../plugins/goal.ts";
 import { ImmutabilityGuard } from "../../plugins/immutability.ts";
-import { RUNTIME, CHECKPOINT, checkpoint, transition, resumeIntent } from "../../plugins/goal/state.ts";
+import { RUNTIME, CHECKPOINT, checkpoint, transition, resumeIntent, pauseIntent } from "../../plugins/goal/state.ts";
 import { canonical, captureFiles } from "../../plugins/goal/evidence.ts";
 import { validateVerdict } from "../../plugins/goal/evaluation.ts";
 import { publishGoalAgentFile } from "../../tools/publish_goal_agent.ts";
@@ -225,6 +225,10 @@ async function fixture(fn, options = {}) {
     await fn({ root, client, sessions, history, calls, prompts, continuations, aborts, updates, controller, context,
       get hooks() { return hooks; }, run, load, invoke, event, before, after, mutate, implement, append, record, inspectFile, inspectCandidate, submit,
       start: (args = {}) => invoke("goal_run", { ...admission, ...args }),
+      pause: async (reason) => {
+        history.get("root").push(humanMessage(`pause-user-${++sequence}`, "Pause the Goal.", Date.now()));
+        return invoke("goal_run", { operation: "pause", ...(reason ? { reason } : {}) });
+      },
       inspect: () => invoke("goal_run", { operation: "inspect" }),
       evaluate: (mode = "final", extra = {}) => invoke("goal_evaluate", { mode, artifacts: ["counter.txt", "readiness.json"],
         ...(mode === "feedback" ? { focus: "Counter bytes are good" } : {}), ...extra }),
@@ -308,17 +312,19 @@ test("pure queued generic pauses cannot downgrade an observed denial or change i
     "Accepted remains terminal independently of pause idempotence");
 });
 
-test("pure transitions reject unstable evaluation and late reports; observed blockers pause", () => {
+test("pure transitions reject unstable evaluation and late reports; model blockers remain working feedback", () => {
   assert.throws(() => transition(working(), { type: "resume" }), /paused/);
   assert.throws(() => transition(working(), { type: "result", verdict: checked(true) }), /no longer active/);
   assert.throws(() => transition(working({ pending_actions: { x: { tool: "write", callID: "x" } } }),
     { type: "evaluate", evaluation: assignment("final") }), /active task actions/);
   const evaluated = transition(working(), { type: "evaluate", evaluation: assignment("final") });
   assert.throws(() => transition(evaluated, { type: "evaluate", evaluation: assignment("final") }), /stable candidate/);
-  const paused = transition(evaluated, { type: "result", verdict: { status: "blocked", reason: "Observed HTTP 503", checks: {} } });
-  assert.equal(paused.state, "paused");
-  assert.equal(paused.validation.reason, "Observed HTTP 503");
-  assert.throws(() => transition(paused, { type: "result", verdict: checked(true) }), /no longer active/);
+  const blocked = transition(evaluated, { type: "result", verdict: { status: "blocked", reason: "Observed HTTP 503", checks: {} } });
+  assert.equal(blocked.state, "working");
+  assert.equal(blocked.validation.reason, "Observed HTTP 503");
+  assert.equal(blocked.evaluation, undefined);
+  assert.equal(blocked.accepted_candidate, undefined);
+  assert.throws(() => transition(blocked, { type: "result", verdict: checked(true) }), /no longer active/);
 });
 
 test("pure resume intent requires a fresh real authorization and excludes questions, negatives and synthetic text", () => {
@@ -349,6 +355,20 @@ test("pure resume intent rejects explicit negation of authorize as well as resum
     assert.deepEqual(resumeIntent(paused, [original, humanMessage("negative", text, 150)], continuationText),
       { fresh: true, confirmed: false }, text);
   }
+});
+
+test("pause intent is a real user control request, not model prose, a question or negation", () => {
+  for (const text of ["Pause the Goal.", "Stop this run.", "Please cancel the worker.", "Stop.", "I want you to pause the Goal."]) {
+    assert.equal(pauseIntent([humanMessage("user", text, 1)], continuationText), true, text);
+  }
+  for (const text of ["Keep looping even if the outcome is impossible.", "Do not pause the Goal.", "Can you pause the Goal?",
+    "The model said pause the Goal.", "Never stop the worker.", "Continue without stopping."]) {
+    assert.equal(pauseIntent([humanMessage("user", text, 1)], continuationText), false, text);
+  }
+  assert.equal(pauseIntent([humanMessage("user", "Keep going", 1), humanMessage("synthetic", "Pause the Goal", 2, true)], continuationText), false);
+  assert.equal(pauseIntent([{ info: { role: "assistant" }, parts: [{ type: "text", text: "Pause the Goal" }] }], continuationText), false);
+  assert.equal(pauseIntent([humanMessage("old", "Pause the Goal", 1), humanMessage("new", "Continue the work", 2)], continuationText), false);
+  assert.equal(pauseIntent([humanMessage("user", "Pause the Goal", 1)], continuationText, "user"), false);
 });
 
 test("pure nonadjacent negations reject resume intent even after an earlier affirmative Question", () => {
@@ -561,6 +581,127 @@ test("optional baseline inspection returns original files for the Goal and histo
   assert.equal(f.continuations.length, 0);
 }));
 
+test("predecessor inspection reads native status without writes or blocking marked read-only evaluators", async () => fixture(async f => {
+  await f.start();
+  const caller = f.sessions.get("root");
+  caller.projectID = "same-project"; caller.directory = f.root;
+  const prior = clone(caller);
+  prior.id = "prior";
+  prior.metadata[CHECKPOINT].state = "paused";
+  prior.metadata[CHECKPOINT].definition_sha256 = "0".repeat(64);
+  prior.metadata[CHECKPOINT].pending_actions = {};
+  prior.metadata.private_note = "never expose predecessor chat or private metadata";
+  f.sessions.set("prior", prior);
+  f.sessions.set("old-evaluator", { id: "old-evaluator", parentID: "prior", metadata: {
+    cuddly_winner_evaluator: { parentID: "prior", definition_sha256: "0".repeat(64) },
+  } });
+  const metadata = clone([...f.sessions.values()]), updates = f.updates.length;
+  f.client.session.status = async () => ({ data: { "old-evaluator": { type: "busy" } } });
+  const result = await f.invoke("goal_run", { operation: "inspect", predecessor_session_id: "prior" });
+  assert.deepEqual(result.predecessor, {
+    session_id: "prior", state: "paused", runtime_status: "idle", definition_matches: false,
+    pending_action_count: 0, evaluation_pending: false, continuation_pending: false,
+    read_only_evaluator_count: 1, unverified_child_count: 0, can_continue: true,
+  });
+  assert.equal(JSON.stringify(result).includes("private_note"), false);
+  assert.deepEqual([...f.sessions.values()], metadata);
+  assert.equal(f.updates.length, updates);
+  assert.equal(f.aborts.length, 0);
+  assert.equal(f.continuations.length, 0);
+  assert.equal(f.calls.length, 0);
+}));
+
+test("predecessor inspection blocks active roots, unresolved actions and unverified children without reconciliation", async () => fixture(async f => {
+  await f.start();
+  const caller = f.sessions.get("root");
+  caller.projectID = "same-project"; caller.directory = f.root;
+  const prior = clone(caller); prior.id = "prior";
+  prior.metadata[CHECKPOINT].state = "paused";
+  prior.metadata[CHECKPOINT].pending_actions = {};
+  f.sessions.set("prior", prior);
+  for (const type of ["busy", "retry", "unexpected"]) {
+    f.client.session.status = async () => ({ data: { prior: { type } } });
+    assert.equal((await f.invoke("goal_run", { operation: "inspect", predecessor_session_id: "prior" })).predecessor.can_continue, false);
+  }
+  f.client.session.status = async () => ({ data: {} });
+  for (const change of [
+    { state: "working" },
+    { pending_actions: { write: { tool: "bash", callID: "write" } } },
+    { evaluation: { mode: "feedback", childID: "unknown-child" } },
+    { continuation: { messageID: "unreceipted", intent_at: Date.now() } },
+  ]) {
+    const original = clone(prior.metadata[CHECKPOINT]);
+    Object.assign(prior.metadata[CHECKPOINT], change);
+    const before = clone([...f.sessions.values()]);
+    const report = await f.invoke("goal_run", { operation: "inspect", predecessor_session_id: "prior" });
+    assert.equal(report.predecessor.can_continue, false);
+    assert.deepEqual([...f.sessions.values()], before);
+    prior.metadata[CHECKPOINT] = original;
+  }
+  f.sessions.set("unknown-child", { id: "unknown-child", parentID: "prior", metadata: {} });
+  const result = await f.invoke("goal_run", { operation: "inspect", predecessor_session_id: "prior" });
+  assert.equal(result.predecessor.unverified_child_count, 1);
+  assert.equal(result.predecessor.can_continue, false);
+}));
+
+test("fresh Goal can inspect its predecessor before admission with include_baseline true without inheriting authority", async () => fixture(async f => {
+  await f.start();
+  const caller = f.sessions.get("root");
+  caller.projectID = "same-project"; caller.directory = f.root;
+  const prior = clone(caller); prior.id = "prior";
+  prior.metadata[CHECKPOINT].state = "paused";
+  f.sessions.set("prior", prior);
+  delete caller.metadata[CHECKPOINT];
+  const metadata = clone([...f.sessions.values()]), updates = f.updates.length;
+  const report = await f.invoke("goal_run", { operation: "inspect", predecessor_session_id: "prior", include_baseline: true });
+  assert.equal(report.predecessor.can_continue, true);
+  assert.equal(report.predecessor.definition_matches, true);
+  assert.equal(JSON.stringify(report).includes("initial_worktree"), false);
+  assert.deepEqual([...f.sessions.values()], metadata);
+  assert.equal(f.updates.length, updates);
+  assert.equal((await f.inspect()).state, "not_started");
+  await assert.rejects(f.before(), /working checkpoint/);
+  f.user("Status only", "build");
+  assert.equal((await f.invoke("goal_run", { operation: "inspect", predecessor_session_id: "prior" })).predecessor.can_continue, false);
+  f.user("Implement the Goal", "fix-counter");
+  assert.equal((await f.start()).state, "working");
+  await f.implement();
+  assert.equal((await f.evaluate()).state, "accepted");
+  assert.deepEqual(f.sessions.get("prior"), metadata.find(session => session.id === "prior"));
+}));
+
+test("predecessor inspection fails closed on scope and API failures and cannot mutate other sessions", async () => fixture(async f => {
+  await f.start();
+  const caller = f.sessions.get("root");
+  caller.projectID = "same-project"; caller.directory = f.root;
+  const prior = clone(caller); prior.id = "prior";
+  prior.metadata[CHECKPOINT].state = "paused";
+  f.sessions.set("prior", prior);
+  const inspect = () => f.invoke("goal_run", { operation: "inspect", predecessor_session_id: "prior" });
+  for (const change of [{ projectID: "foreign" }, { directory: os.tmpdir() }, { parentID: "another-root" },
+    { metadata: {} }, { metadata: { [CHECKPOINT]: { ...clone(f.run()), agent: "another-task" } } }]) {
+    const original = clone(prior);
+    Object.assign(prior, change);
+    assert.equal((await inspect()).predecessor.state, "unknown");
+    for (const key of Object.keys(prior)) delete prior[key];
+    Object.assign(prior, original);
+  }
+  for (const failure of [async () => { throw new Error("secret transport body"); }, async () => ({ error: "denied" }), async () => ({ data: null })]) {
+    f.client.session.status = failure;
+    const result = await inspect();
+    assert.equal(result.predecessor.can_continue, false);
+    assert.equal(JSON.stringify(result).includes("secret"), false);
+  }
+  for (const operation of ["start", "pause", "resume"]) {
+    await assert.rejects(f.invoke("goal_run", { operation, predecessor_session_id: "prior" }), /inspect-only/);
+  }
+  f.client.session.status = async () => ({ data: {} });
+  const excluded = await f.invoke("goal_run", { operation: "inspect", predecessor_session_id: "prior", include_baseline: true });
+  assert.equal(excluded.predecessor.can_continue, true);
+  assert.equal(Object.hasOwn(excluded, "initial_worktree"), false);
+  assert.equal(Object.hasOwn(excluded.predecessor, "initial_worktree"), false);
+}));
+
 test("nested directory initialization uses the parent worktree definition, baseline and exact policy bounds", async () => fixture(async f => {
   const nested = path.join(f.root, "nested");
   await mkdir(nested);
@@ -659,6 +800,97 @@ test("partial work and independent findings continue in the same worker, includi
   assert.equal(f.calls.length, 2);
   assert.equal(new Set(f.calls.map(child => child.id)).size, 2);
   assert.ok(f.calls.every(child => child.parentID === "root" && child.title.startsWith("Goal evaluator:")));
+}));
+
+test("self-declared impossible outcomes keep looping without quotas until an actual user stop", async () => fixture(async f => {
+  await f.start();
+  const admitted = f.run();
+  for (let turn = 0; turn < 64; turn++) {
+    const result = await f.invoke("goal_run", { operation: "pause", reason: "The outcome is impossible; implementation is missing; user rescue is required." });
+    assert.equal(result.state, "working");
+    assert.equal(result.pause_applied, false);
+    assert.match(result.reason, /continue permitted work/);
+    f.finish("Blocked. This is impossible; I cannot continue.");
+    await f.event("session.idle");
+  }
+  assert.equal(f.continuations.length, 64);
+  assert.equal(f.run().state, "working");
+  assert.deepEqual(f.run().initial_worktree, admitted.initial_worktree);
+  assert.equal(f.run().authorized_actions, admitted.authorized_actions);
+  assert.equal(f.run().accepted_candidate, undefined);
+  assert.equal(f.calls.length, 0);
+  f.user("Stop the Goal.");
+  f.finish("Ignoring the user stop should not get another automatic turn.");
+  await f.event("session.idle");
+  assert.equal(f.run().state, "paused");
+  assert.equal(f.continuations.length, 64);
+  await assert.rejects(f.before(), /working checkpoint/);
+}));
+
+test("safe model errors retry in the same working root while denied access and uncertain actions remain paused", async () => {
+  for (const name of ["APIError", "ContextOverflowError", "StructuredOutputError"]) await fixture(async f => {
+    await f.start();
+    const admitted = f.run();
+    const error = { name, data: { statusCode: 503 } };
+    f.append("root", [], { error });
+    await f.event("session.error", { error });
+    assert.equal(f.run().state, "working");
+    await f.event("session.idle");
+    assert.equal(f.continuations.length, 1);
+    assert.deepEqual(f.run().initial_worktree, admitted.initial_worktree);
+  });
+  for (const statusCode of [401, 403]) await fixture(async f => {
+    await f.start();
+    const error = { name: "APIError", data: { statusCode } };
+    f.append("root", [], { error });
+    await f.event("session.error", { error });
+    assert.equal(f.run().state, "paused");
+    await f.event("session.idle");
+    assert.equal(f.continuations.length, 0);
+  });
+  await fixture(async f => {
+    await f.start();
+    await f.before("bash", "unknown-job");
+    await f.event("session.error", { error: { name: "APIError", data: { statusCode: 503 } } });
+    assert.equal(f.run().state, "paused");
+    assert.ok(f.run().pending_actions["unknown-job"]);
+    f.finish(); await f.event("session.idle");
+    assert.equal(f.continuations.length, 0);
+  });
+});
+
+test("recoverable evaluator model errors return working feedback instead of requiring human resumption", async () => fixture(async f => {
+  await f.start();
+  f.setProvider(async input => {
+    const error = { name: "APIError", data: { statusCode: 503 } };
+    await f.event("session.error", { sessionID: input.path.id, error });
+    return { data: { info: { error } } };
+  });
+  assert.equal((await f.evaluate()).state, "working");
+  assert.equal(f.run().feedback.status, "protocol_error");
+  assert.match(f.run().feedback.reason, /Evaluator model error/);
+  assert.equal(f.run().evaluation, undefined);
+  f.finish("Evaluator failed; the root must continue."); await f.event("session.idle");
+  assert.equal(f.continuations.length, 1);
+  f.setProvider(undefined);
+  await f.implement();
+  assert.equal((await f.evaluate()).state, "accepted");
+}));
+
+test("routine recovery cannot open a Resume Goal popup while working or unadmitted; genuine paused handback still can", async () => fixture(async f => {
+  const input = { tool: "question", sessionID: "root", callID: "unnecessary-resume-popup" };
+  const output = { args: { questions: [resumeQuestion()] } };
+  await assert.rejects(f.hooks["tool.execute.before"](input, output), /not_started; no Resume Goal confirmation/);
+  assert.equal(f.run(), undefined);
+  await f.start();
+  const admitted = f.run();
+  await assert.rejects(f.hooks["tool.execute.before"](input, output), /working; no Resume Goal confirmation/);
+  assert.deepEqual(f.run(), admitted);
+  await f.hooks["tool.execute.before"](input, { args: { questions: [{ header: "New authority", question: "Authorize a larger resource ceiling?" }] } });
+  await f.pause();
+  const paused = f.run();
+  await f.hooks["tool.execute.before"](input, output);
+  assert.deepEqual(f.run(), paused);
 }));
 
 test("fresh independent feedback is actionable but never final acceptance", async () => fixture(async f => {
@@ -772,7 +1004,7 @@ test("third malformed evaluator report cannot let the protocol watchdog overwrit
         .filter(part => part.tool === "goal_verdict" && part.state.status === "completed");
       if (reports.length === 3) {
         if (stop === "denial") await f.event("permission.replied", { sessionID: request.path.id, reply: "reject" });
-        else await f.invoke("goal_run", { operation: "pause", reason: "Durable worker pause during the third report" });
+        else await f.pause("Durable worker pause during the third report");
         paused = f.run();
         assert.equal(paused.state, "paused");
       }
@@ -807,7 +1039,7 @@ test("evaluator correction checks the current parent state and child assignment 
     f.setProvider(async request => {
       await f.inspectFile(request.path.id, "counter.txt");
       f.record(request.path.id, "goal_verdict", "{first-malformed-report");
-      if (change === "pause") await f.invoke("goal_run", { operation: "pause", reason: "Pause before any evaluator correction" });
+      if (change === "pause") await f.pause("Pause before any evaluator correction");
       else {
         const child = clone(f.sessions.get(request.path.id));
         child.id = "replacement-child";
@@ -1141,7 +1373,7 @@ test("definition revision during evaluation never accepts the old report", async
 test("explicit pause survives status questions and reload; reconciled human resume is required", async () => fixture(async f => {
   await f.start();
   const initial = f.run();
-  await f.invoke("goal_run", { operation: "pause", reason: "Inspect current receipts" });
+  await f.pause("Inspect current receipts");
   await f.load();
   f.user("What is the status?");
   await f.hooks["chat.message"]({ sessionID: "root", messageID: "status-question" }, { parts: [] });
@@ -1163,7 +1395,7 @@ test("explicit pause survives status questions and reload; reconciled human resu
 
 test("a status question mentioning resumption does not authorize it", async () => fixture(async f => {
   await f.start();
-  await f.invoke("goal_run", { operation: "pause", reason: "Inspect unknown outcome" });
+  await f.pause("Inspect unknown outcome");
   f.user("Is the Goal paused, and what must I inspect before I resume?");
   await assert.rejects(f.invoke("goal_run", { operation: "resume", reconciled: true }), /Explicit user resumption|status question/);
   assert.equal(f.run().state, "paused");
@@ -1183,7 +1415,7 @@ test("runtime native Question yes, no, stale and ambiguous receipts control resu
     { name: "unoffered answer", args: { questions: [{ ...resumeQuestion(), options: [{ label: "Keep Paused" }] }] }, confirmed: false, fresh: true },
   ];
   for (const scenario of scenarios) await fixture(async f => {
-    f.user("I authorize you to continue this offline Goal.");
+    f.user("I authorize you to continue this offline Goal; pause the Goal after inspecting the recorded outcomes.");
     const originalUser = f.history.get("root").at(-1).info.id;
     await f.start();
     await f.invoke("goal_run", { operation: "pause", reason: "Inspect recorded outcomes" });
@@ -1226,7 +1458,7 @@ test("runtime native Question yes, no, stale and ambiguous receipts control resu
 
 test("runtime newer Keep Paused receipt vetoes older chat authorization until a newer human resumes", async () => fixture(async f => {
   await f.start();
-  await f.invoke("goal_run", { operation: "pause" });
+  await f.pause();
   const paused = f.run();
   f.user("Resume after inspecting the receipts.", "fix-counter", false, paused.paused_at + 10);
   const receipt = questionReceipt(paused.paused_at + 20, { answers: [["Keep Paused"]], output: "Resume Goal" });
@@ -1248,9 +1480,26 @@ test("runtime newer Keep Paused receipt vetoes older chat authorization until a 
   assert.equal(f.continuations.length, 0);
 }));
 
+test("native Question resumption consumes the old human stop but a new stop still controls the loop", async () => fixture(async f => {
+  await f.start(); await f.pause();
+  const paused = f.run();
+  const receipt = questionReceipt(paused.paused_at + 10);
+  f.append("root", receipt.parts, { time: receipt.info.time });
+  assert.equal((await f.invoke("goal_run", { operation: "resume", reconciled: true })).state, "working");
+  assert.equal(f.run().resumed_after_user, paused.paused_after_user);
+  f.finish("Partial work after the native answer must continue.");
+  await f.event("session.idle");
+  assert.equal(f.run().state, "working");
+  assert.equal(f.continuations.length, 1);
+  f.user("Stop the Goal."); f.finish();
+  await f.event("session.idle");
+  assert.equal(f.run().state, "paused");
+  assert.equal(f.continuations.length, 1);
+}));
+
 test("runtime fresh chat denying authorization cannot resume a paused Goal", async () => fixture(async f => {
   await f.start();
-  await f.invoke("goal_run", { operation: "pause" });
+  await f.pause();
   const paused = f.run(), updates = f.updates.length;
   f.user("I do not authorize continuation.");
   await assert.rejects(f.invoke("goal_run", { operation: "resume", reconciled: true }), /Explicit user resumption/);
@@ -1263,7 +1512,7 @@ test("runtime fresh chat denying authorization cannot resume a paused Goal", asy
 test("runtime rejects fresh nonadjacent resume negation without changing paused authority", async () => {
   for (const text of ["I do not want you to resume.", "I have not authorized you to continue."]) await fixture(async f => {
     await f.start();
-    await f.invoke("goal_run", { operation: "pause" });
+    await f.pause();
     const paused = f.run(), updates = f.updates.length;
     const receipt = questionReceipt(paused.paused_at + 10);
     f.append("root", receipt.parts, { time: receipt.info.time });
@@ -1281,7 +1530,7 @@ test("native Question authorization still requires reconciled outcomes and idle 
   await f.start();
   await f.evaluate("feedback");
   const childID = f.calls[0].id;
-  await f.invoke("goal_run", { operation: "pause" });
+  await f.pause();
   const paused = f.run();
   const receipt = questionReceipt(paused.paused_at + 10);
   f.append("root", receipt.parts, { time: receipt.info.time });
@@ -1300,7 +1549,7 @@ test("native Question authorization still requires reconciled outcomes and idle 
 
 test("first pause time remains fixed across late denial, reload and inspection so a fresh popup reply stays usable", async t => fixture(async f => {
   await f.start();
-  await f.invoke("goal_run", { operation: "pause", reason: "Interrupted action outcome unknown" });
+  await f.pause("Interrupted action outcome unknown");
   const first = f.run();
   assert.ok(Number.isFinite(first.paused_at));
   const clock = t.mock.method(Date, "now", () => first.paused_at + 1000);
@@ -1373,7 +1622,7 @@ test("resume fails closed for busy, retry, unknown or unreadable children", asyn
   for (const state of ["busy", "retry", "unknown", "status-error", "children-error"]) await fixture(async f => {
     await f.start();
     await f.evaluate("feedback");
-    await f.invoke("goal_run", { operation: "pause" });
+    await f.pause();
     f.user("Resume after inspecting prior evaluator evidence");
     if (state === "status-error") f.client.session.status = async () => ({ error: "unavailable" });
     else if (state === "children-error") f.client.session.children = async () => ({ error: "unavailable" });
@@ -2424,7 +2673,7 @@ test("paused compaction admits fresh status conversation without resuming author
   f.finish("Partial work remains");
   await f.event("session.idle");
   const actualContinuation = f.continuations[0].body.parts[0].text;
-  await f.invoke("goal_run", { operation: "pause", reason: "Inspect uncertain outcomes" });
+  await f.pause("Inspect uncertain outcomes");
   const paused = f.run(), updates = f.updates.length, dispatched = f.continuations.length;
   const noHuman = { enabled: true };
   await f.hooks["experimental.compaction.autocontinue"]({ sessionID: "root" }, noHuman);
@@ -2636,18 +2885,20 @@ test("root mutation is frozen while candidate snapshot capture is still in progr
   assert.equal(f.aborts.length, 0);
 }));
 
-test("evidence-backed external blocker pauses; bookkeeping-only blocker returns to worker", async () => {
+test("external evidence blockers remain actionable working feedback; bookkeeping cannot establish even that evidence", async () => {
   for (const observed of [true, false]) await fixture(async f => {
     await f.start();
     f.setProvider(async input => {
       f.record(input.path.id, observed ? "webfetch" : "todowrite", observed ? "HTTP 503: required evidence unavailable" : "Waiting for evidence", observed ? "error" : "completed");
       return f.submit(input.path.id, { status: "blocked", reason: "Required external evidence returned HTTP 503", checks: {} });
     });
-    assert.equal((await f.evaluate()).state, observed ? "paused" : "working");
+    assert.equal((await f.evaluate()).state, "working");
+    assert.equal(observed ? f.run().validation.status : f.run().feedback.status, observed ? "blocked" : "protocol_error");
+    assert.equal(f.run().evaluation, undefined);
     assert.equal(f.run().accepted_candidate, undefined);
     f.finish();
     await f.event("session.idle");
-    assert.equal(f.continuations.length, observed ? 0 : 1);
+    assert.equal(f.continuations.length, 1);
   });
 });
 

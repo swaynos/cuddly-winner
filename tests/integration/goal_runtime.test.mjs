@@ -21,7 +21,7 @@ const readsGood = output => /^\s*\d+\s*[:|]\s*good\s*$/m.test(output);
 const compactionRequest = input => input.messages?.some(message => message.role === "system" && /context summarization agent|summarizing conversations/i.test(content(message)));
 const evaluatorMode = text => text.match(/^INDEPENDENT EVALUATOR mode=(feedback|final)\b/m)?.[1];
 
-async function fixture(t, respond, { runtime = true, extraPlugin } = {}) {
+async function fixture(t, respond, { runtime = true, extraPlugin, prometheus = false } = {}) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "goal-runtime-live-")));
   let child;
   let serverLog = "";
@@ -86,6 +86,11 @@ async function fixture(t, respond, { runtime = true, extraPlugin } = {}) {
     for (const file of ["plugins/goal.ts", "plugins/immutability.ts", "tools/publish_goal_agent.ts"]) {
       await symlink(path.join(runtimeRoot, file), path.join(root, ".opencode", file));
     }
+  }
+  if (prometheus) {
+    await mkdir(path.join(root, ".opencode", "agents"), { recursive: true });
+    await writeFile(path.join(root, ".opencode", "agents", "prometheus.md"),
+      await readFile(path.join(process.env.OPENCODE_GOAL_RUNTIME_ROOT ?? repo, "agents", "prometheus.md")));
   }
   await symlink(path.join(repo, "node_modules"), path.join(root, ".opencode", "node_modules"));
   if (extraPlugin) await writeFile(path.join(root, ".opencode", "plugins", "interruption.ts"), extraPlugin);
@@ -249,6 +254,61 @@ function requireTools(input, names) {
   for (const name of ["goal_cycle", "goal_handoff", "goal_progress"]) assert.ok(!tools.includes(name), `${name} is retired from the persistent worker surface`);
 }
 
+test("native predecessor inspection lets a fresh scoped Goal continue without database access", { timeout: 120_000 }, async t => {
+  let predecessorID;
+  const f = await fixture(t, async (input, { root }) => {
+    const { user, results } = conversation(input);
+    if (user.includes("INDEPENDENT EVALUATOR")) return evaluator(input, root);
+    requireTools(input, ["goal_run", "write"]);
+    if (user.includes("PREDECESSOR FIXTURE")) {
+      if (!started(results)) return call("goal_run", { operation: "start",
+        completion_target: "Verify scoped counter implementation", authorized_actions: "Implement the two declared files; inspect predecessor through the native tool only." });
+      if (!results.some(result => result.name === "goal_run" && result.args.operation === "pause")) {
+        return call("goal_run", { operation: "pause", reason: "User requested predecessor fixture pause" });
+      }
+      return { text: "Predecessor is paused." };
+    }
+    const inspection = results.find(result => result.name === "goal_run" && result.args.predecessor_session_id);
+    if (!inspection) return call("goal_run", { operation: "inspect", predecessor_session_id: predecessorID, include_baseline: true });
+    const report = JSON.parse(inspection.output);
+    assert.equal(report.predecessor.can_continue, true, inspection.output);
+    assert.equal(JSON.stringify(report).includes("initial_worktree"), false);
+    if (!started(results)) return call("goal_run", { operation: "start",
+      completion_target: "Verify scoped counter implementation", authorized_actions: "Implement the two declared files; inspect predecessor through the native tool only." });
+    if (await bytes(root, "readiness.json") !== '{"prepared":true}\n') {
+      return call("write", { filePath: path.join(root, "readiness.json"), content: '{"prepared":true}\n' });
+    }
+    if (await bytes(root, "counter.txt") !== "good\n") return call("write", { filePath: path.join(root, "counter.txt"), content: "good\n" });
+    if (!results.some(result => result.name === "goal_evaluate")) {
+      return call("goal_evaluate", { mode: "final", artifacts: ["counter.txt", "readiness.json"] });
+    }
+    assert.equal(JSON.parse(results.findLast(result => result.name === "goal_evaluate").output).state, "accepted");
+    return { text: "Scoped continuation independently accepted." };
+  });
+  await publish(f.root);
+  await f.start();
+  const prior = await f.api("/session", { title: "Paused predecessor fixture" });
+  predecessorID = prior.id;
+  await f.api(`/session/${prior.id}/message`, { agent: "fix-counter", parts: [{ type: "text", text: "PREDECESSOR FIXTURE: start; pause the Goal without changing files." }] });
+  await f.idle(prior.id);
+  const before = await f.api(`/session/${prior.id}`);
+  assert.equal(before.metadata.cuddly_winner_goal.state, "paused");
+  const successor = await f.api("/session", { title: "Scoped successor fixture" });
+  await f.api(`/session/${successor.id}/message`, { agent: "fix-counter", parts: [{ type: "text", text: "Continue scoped implementation after inspecting the predecessor through goal_run; do not access database files." }] });
+  await waitAccepted(f, successor.id);
+  await f.idle(successor.id);
+  const messages = await f.messages(successor.id);
+  const inspection = outputs(messages, "goal_run").find(result => result.predecessor);
+  assert.equal(inspection.predecessor.session_id, prior.id);
+  assert.equal(inspection.predecessor.runtime_status, "idle");
+  assert.equal(inspection.predecessor.pending_action_count, 0);
+  assert.equal(inspection.predecessor.can_continue, true);
+  assert.equal(completed(messages, "goal_run")[0].state.input.operation, "inspect", "Reproduce inspection before start, including the harmless include_baseline argument");
+  assert.equal(parts(messages).some(part => ["bash", "glob"].includes(part.tool)), false);
+  assert.deepEqual((await f.api(`/session/${prior.id}`)).metadata, before.metadata, "Inspection must not reconcile or mutate the predecessor");
+  assert.equal(await bytes(f.root, "counter.txt"), "good\n");
+});
+
 async function evaluator(input, root, { blocked = false } = {}) {
   const { user, results } = conversation(input);
   assert.match(user, /INDEPENDENT EVALUATOR/);
@@ -289,6 +349,134 @@ async function assertEvaluatorMarker(f, childID, parentID, fingerprint) {
   assert.equal(response.data.metadata?.cuddly_winner_goal, undefined, "an evaluator cannot acquire a root execution checkpoint");
   assert.deepEqual(response.data.metadata?.cuddly_winner_evaluator, { parentID, definition_sha256: fingerprint }, "the native SDK must return the permanent read-only evaluator identity");
 }
+
+test("Prometheus publishes a fresh scaffold whose worker recovers from errors and repeated impossible claims to independent acceptance", { timeout: 120_000 }, async t => {
+  const definition = {
+    name: "fix-counter", description: "Persistent counter worker", outcome: "Counter implementation verified offline",
+    acceptance_criteria: ["counter.txt contains exactly good followed by a newline", "readiness.json contains verified preparation"],
+    durable_context: ["README.md"], edit_paths: ["counter.txt", "readiness.json"], bash: false,
+    verification_commands: ["Read counter.txt and readiness.json and compare their contents"],
+    stop_conditions: ["Actual user cancellation or permission denial", "Unknown task side effects must be reconciled"],
+    escalation_triggers: ["Additional authority required"], instructions: "Implement missing preparation and counter directly; keep repairing and obtain independent final acceptance.",
+  };
+  const f = await fixture(t, async (input, { root }) => {
+    const { user, results, turnResults, messages } = conversation(input);
+    if (user.includes("INDEPENDENT EVALUATOR")) return evaluator(input, root, { blocked: await bytes(root, "counter.txt") !== "good\n" });
+    if (user.includes("PROMETHEUS PUBLICATION FIXTURE")) {
+      requireTools(input, ["publish_goal_agent"]);
+      if (!results.some(result => result.name === "publish_goal_agent")) return call("publish_goal_agent", definition);
+      return { text: "Scaffold published; restart and select fix-counter." };
+    }
+    requireTools(input, ["goal_run", "goal_evaluate", "write"]);
+    if (!started(results)) return call("goal_run", { operation: "start", completion_target: definition.outcome,
+      authorized_actions: "Implement the exact two files and verify offline. Keep looping under existing authority." });
+    if (await bytes(root, "readiness.json") !== '{"prepared":true}\n') return call("write", { filePath: path.join(root, "readiness.json"), content: '{"prepared":true}\n' });
+    if (await bytes(root, "counter.txt") === undefined) return call("write", { filePath: path.join(root, "counter.txt"), content: "bad\n" });
+    if (!results.some(result => result.name === "goal_evaluate")) return call("goal_evaluate", { mode: "final", artifacts: ["counter.txt", "readiness.json"] });
+    const continuations = messages.filter(message => message.role === "user" && content(message).startsWith("Continue the admitted Goal in this same worker conversation.")).length;
+    if (continuations < 8) {
+      if (!turnResults.some(result => result.name === "goal_run" && result.args.operation === "pause")) {
+        return call("goal_run", { operation: "pause", reason: "The outcome is impossible and the evaluator is blocked. User rescue required." });
+      }
+      if (!results.some(result => result.name === "goal_run" && result.args.operation === "resume")) {
+        return call("goal_run", { operation: "resume", reconciled: true });
+      }
+      if (!results.some(result => result.name === "question")) return call("question", resumeQuestion());
+      return { text: "This is impossible. I cannot continue. The Goal is blocked." };
+    }
+    if (await bytes(root, "counter.txt") !== "good\n") return call("write", { filePath: path.join(root, "counter.txt"), content: "good\n" });
+    if (JSON.parse(results.findLast(result => result.name === "goal_evaluate").output).state !== "accepted") {
+      return call("goal_evaluate", { mode: "final", artifacts: ["counter.txt", "readiness.json"] });
+    }
+    return { text: "Repaired and independently accepted." };
+  }, { prometheus: true });
+  await writeFile(path.join(f.root, "README.md"), "Existing task context\n");
+  await f.start();
+  const planner = await f.api("/session", { title: "Fresh Prometheus publication" });
+  await f.api(`/session/${planner.id}/message`, { agent: "prometheus", parts: [{ type: "text", text: "PROMETHEUS PUBLICATION FIXTURE: publish a persistent counter implementation Goal; do not implement it." }] });
+  const publication = completed(await f.messages(planner.id), "publish_goal_agent");
+  assert.equal(publication.length, 1);
+  assert.equal(completed(await f.messages(planner.id), "write").length, 0);
+  assert.equal(await bytes(f.root, "counter.txt"), undefined);
+  const scaffold = await bytes(f.root, ".opencode/agents/generated/fix-counter.md");
+  assert.match(scaffold, /Keep looping even when progress is slow or the outcome appears impossible/);
+  assert.equal(JSON.parse(publication[0].state.output).sha256, sha256(scaffold));
+  await f.kill(); await f.start();
+  const worker = await f.api("/session", { title: "Repeatedly mistaken cheap worker fixture" });
+  await f.api(`/session/${worker.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Execute the published Goal and keep looping until independent acceptance. Do not ask for ordinary recovery." }] });
+  const accepted = await f.wait("mistaken worker recovers to final acceptance", async () => {
+    const run = await f.checkpoint(worker.id); return run?.state === "accepted" && run;
+  });
+  await f.idle(worker.id);
+  const history = await f.messages(worker.id);
+  const runParts = completed(history, "goal_run");
+  assert.equal(runParts.filter(part => part.state.input.operation === "start").length, 1);
+  const pauses = runParts.filter(part => part.state.input.operation === "pause");
+  assert.equal(pauses.length, 8);
+  assert.ok(pauses.every(part => JSON.parse(part.state.output).state === "working" && JSON.parse(part.state.output).pause_applied === false));
+  const mistakes = parts(history).filter(part => part.type === "tool" && part.state.status === "error");
+  assert.equal(mistakes.length, 2);
+  assert.equal(mistakes[0].tool, "goal_run");
+  assert.equal(mistakes[0].state.input.operation, "resume");
+  assert.match(mistakes[0].state.error, /Explicit user resumption/);
+  assert.equal(mistakes[1].tool, "question");
+  assert.match(mistakes[1].state.error, /working; no Resume Goal confirmation/);
+  assert.deepEqual(await f.api("/question"), [], "Routine recovery never waits for a human popup answer");
+  const checks = outputs(history, "goal_evaluate");
+  assert.equal(checks[0].state, "working");
+  assert.equal(checks[0].validation.status, "blocked");
+  assert.equal(checks.at(-1).state, "accepted");
+  assert.equal((await f.api(`/session/${worker.id}/children`)).length, 2, "Only independent evaluators are children; repairs remain in the root");
+  assert.equal(accepted.definition_sha256, sha256(scaffold));
+  assert.equal(accepted.accepted_candidate["counter.txt"].sha256, sha256("good\n"));
+  assert.equal(await bytes(f.root, "README.md"), "Existing task context\n");
+  assert.equal(history.filter(message => message.info.role === "user" && !message.parts.some(part => part.synthetic)).length, 1, "No human rescues the worker");
+});
+
+test("a genuinely impossible Goal keeps looping until actual user cancellation", { timeout: 120_000 }, async t => {
+  let waiting = false;
+  const f = await fixture(t, async (input, { root, res }) => {
+    const { user, results, turnResults, messages } = conversation(input);
+    if (user.includes("INDEPENDENT EVALUATOR")) {
+      if (!results.some(result => result.name === "read")) return call("read", { filePath: path.join(root, "counter.txt") });
+      if (!results.some(result => result.name === "goal_verdict")) return call("goal_verdict", { status: "checked", reason: "Contradictory fixed criteria cannot both pass", checks: {
+        c0: { passed: false, evidence: "Fresh counter.txt contains bad, not good" }, c1: { passed: true, evidence: "Fresh counter.txt contains exactly bad followed by newline" },
+      } });
+      return { text: "Independent failure recorded." };
+    }
+    if (!started(results)) return call("goal_run", { operation: "start", completion_target: "Satisfy both contradictory fixed counter criteria",
+      authorized_actions: "Inspect the counter, diagnose failures and request independent checks. Do not change the fixed criteria." });
+    const continuations = messages.filter(message => message.role === "user" && content(message).startsWith("Continue the admitted Goal in this same worker conversation.")).length;
+    if (continuations >= 12) { waiting = true; await new Promise(resolve => res.on("close", resolve)); return; }
+    if (!turnResults.some(result => result.name === "goal_evaluate")) return call("goal_evaluate", { mode: "final", artifacts: ["counter.txt"] });
+    if (!turnResults.some(result => result.name === "goal_run" && result.args.operation === "pause")) return call("goal_run", { operation: "pause", reason: "This Goal is logically impossible." });
+    return { text: "Impossible outcome; I am giving up." };
+  });
+  await publish(f.root, { acceptance_criteria: ["counter.txt contains exactly good followed by a newline", "counter.txt contains exactly bad followed by a newline"] });
+  await writeFile(path.join(f.root, "counter.txt"), "bad\n");
+  await f.start();
+  const worker = await f.api("/session", { title: "Impossible fixed outcome" });
+  await f.api(`/session/${worker.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Keep exploring and independently checking this Goal even if the outcome is impossible." }] });
+  await f.wait("impossible worker remains live after repeated failures", () => waiting);
+  const working = await f.checkpoint(worker.id);
+  assert.equal(working.state, "working");
+  assert.ok(working.findings.c0.length);
+  assert.equal(working.accepted_candidate, undefined);
+  const history = await f.messages(worker.id);
+  assert.equal(completed(history, "goal_evaluate").length, 12);
+  assert.equal(completed(history, "goal_run").filter(part => part.state.input.operation === "pause").length, 12);
+  assert.equal(history.filter(message => message.info.role === "user" && !message.parts.some(part => part.synthetic)).length, 1);
+  await f.api(`/session/${worker.id}/abort`, {});
+  const paused = await f.wait("actual cancellation durably stops the impossible worker", async () => {
+    const run = await f.checkpoint(worker.id); return run?.state === "paused" && run;
+  });
+  assert.match(paused.reason, /cancellation/);
+  await f.idle(worker.id);
+  const stopped = await f.messages(worker.id);
+  await delay(200);
+  assert.deepEqual(await f.messages(worker.id), stopped);
+  assert.equal(await bytes(f.root, "counter.txt"), "bad\n");
+});
 
 test("native Question tool records structured Resume Goal and Keep paused answers without adding user chat messages", { timeout: 120_000 }, async t => {
   const f = await fixture(t, async input => {
@@ -378,7 +566,7 @@ for (const [choice, compact] of [["Resume Goal", false], ["Keep paused", false],
     await writeFile(path.join(f.root, "counter.txt"), "bad\n");
     await f.start();
     session = await f.api("/session", { title: `Paused Goal Question: ${choice}` });
-    await f.api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Execute native Question handback fixture. QUESTION_ROOT_PRIVATE stays in this root conversation." }] });
+    await f.api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Execute native Question handback fixture; pause the Goal after preparation. QUESTION_ROOT_PRIVATE stays in this root conversation." }] });
     const request = await f.wait("paused worker's actual native Question request", async () => (await f.api("/question")).find(request => request.sessionID === session.id));
     assert.deepEqual(request.questions, resumeQuestion().questions);
     const paused = await f.checkpoint(session.id);
@@ -845,7 +1033,7 @@ test("a paused persistent Goal survives API compaction and restart and resumes o
   await writeFile(path.join(f.root, "counter.txt"), "good\n");
   await f.start();
   const session = await f.api("/session", { title: "Paused persistent worker" });
-  await f.api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Execute paused fixture." }] });
+  await f.api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Execute paused fixture; pause the Goal after preparation." }] });
   const paused = await f.wait("explicit persisted pause", async () => { const checkpoint = await f.checkpoint(session.id); return checkpoint?.state === "paused" && checkpoint; });
   await f.idle(session.id);
   const pausedHistory = await f.messages(session.id);
@@ -983,7 +1171,7 @@ test("SIGKILL during a real root write leaves an unknown action that inspection 
   assert.equal(await bytes(f.root, "readiness.json"), receipt);
 });
 
-test("persistent Goal preserves genuine evaluator blockers, cancellation and actual permission rejection without idle replay", { timeout: 180_000 }, async t => {
+test("persistent Goal preserves cancellation and actual permission rejection without idle replay", { timeout: 180_000 }, async t => {
   let cancellationWaiting = false;
   const f = await fixture(t, async (input, { root, res }) => {
     const { user, results } = conversation(input);
@@ -1005,7 +1193,7 @@ test("persistent Goal preserves genuine evaluator blockers, cancellation and act
   });
   await publish(f.root, { bash: true });
   await f.start();
-  for (const reason of ["external blocker", "cancellation", "permission rejection"]) {
+  for (const reason of ["cancellation", "permission rejection"]) {
     const session = await f.api("/session", { title: reason });
     await f.api(`/session/${session.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: `Execute stop fixture: ${reason}.` }] });
     if (reason === "cancellation") {
@@ -1017,7 +1205,7 @@ test("persistent Goal preserves genuine evaluator blockers, cancellation and act
       await f.observeStopEvents(session.id);
       await f.api(`/permission/${permission.id}/reply`, { reply: "reject" });
     }
-    const expectedReason = reason === "external blocker" ? /inaccessible|block/i : reason === "cancellation" ? /cancel|abort/i : /permission|reject|deni/i;
+    const expectedReason = reason === "cancellation" ? /cancel|abort/i : /permission|reject|deni/i;
     let intermediateReason;
     const stopped = await f.wait(`${reason} persisted pause with observed reason`, async () => {
       const checkpoint = await f.checkpoint(session.id);
@@ -1040,12 +1228,7 @@ test("persistent Goal preserves genuine evaluator blockers, cancellation and act
     assert.equal(completed(history, "goal_run").filter(part => part.state.input.operation === "start").length, 1);
     assert.equal(completed(history, "write").length, 0);
     const children = await f.api(`/session/${session.id}/children`);
-    assert.equal(children.length, reason === "external blocker" ? 1 : 0);
-    if (reason === "external blocker") {
-      const verdict = outputs(await f.messages(children[0].id), "goal_verdict").at(-1);
-      assert.equal(verdict.status, "blocked");
-      assert.match(verdict.reason, /inaccessible/);
-    }
+    assert.equal(children.length, 0);
     if (reason === "permission rejection") assert.ok(parts(history).some(part => part.tool === "bash" && part.state.status === "error" && /reject|deni/i.test(part.state.error)));
   }
 });

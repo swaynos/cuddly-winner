@@ -20,20 +20,22 @@ accommodate a runtime failure.
 | Area | Required evidence |
 | --- | --- |
 | Publisher | One-file schema-v1 policy and runtime marker, root editing, boolean Bash `ask`/deny, optional `validator_model`, no `builder_model`, recursive name collisions, no-clobber creation, exact-byte inspection, fingerprint-bound revision, stale/concurrent update and symlink rejection. |
-| Persistent root | Root writes directly with the chosen model; preparation and partial returns automatically continue in the same session with zero builder children. Failed experiments/checks permit creative repair without cycles or stall/time/token/attempt quotas. |
+| Persistent root | Root writes directly with the chosen model; preparation and partial returns automatically continue in the same session with zero builder children. Failed experiments/checks, repeated impossible claims and unsupported model pauses keep looping without cycles or stall/time/token/attempt quotas. A genuinely contradictory Goal remains working until actual user cancellation. |
 | Native checkpoint transport | Real pinned CLI supported V2 `session.update` preserves `metadata.cuddly_winner_goal` and unrelated metadata through real compaction, SIGKILL and restart. Same authenticated transport must work; fake metadata/part updates alone are insufficient. |
 | Admission | Start precedes mutation, preserves the original completion target/authorized actions/baseline on repeated calls and reload, and cannot expand permissions. Missing/invalid admission fails closed. |
 | Authority and compaction | Summaries retain findings/context but cannot replace metadata, implicitly resume a pause or establish acceptance. A single dispatcher prevents duplicate continuation after compaction. UI errors cannot determine control persistence. |
 | Independent feedback | Each request creates a fresh evaluator with focus/artifacts and no root chat. Feedback pass remains working and does not clear unresolved final findings. Failed feedback reaches the same worker for repair. |
 | Final evaluation | Exact fixed criterion evidence, actual inspection tools, explicit resolutions for prior failures, all-policy-file plus explicit-artifact hash binding, definition recheck, candidate change rejection, terminal final acceptance and current-byte inspection after acceptance. |
 | Evaluator protocol | Only the active evaluator can submit `goal_verdict`; no worker self-verdict, edit, delegation or publication. Correct invalid reports in the same child. Three-report protocol watchdog returns working/error feedback rather than a domain stop or fresh implementation attempt. |
-| Recovery | Cancellation, denial, unknown pending side effects, evaluator interruption and uncertain continuation dispatch persist paused. Restart and status questions do not replay/resume. Explicit user resume with `reconciled=true`, unchanged definition and old-evaluator inactivity preserves original authority, baseline and findings. |
+| Recovery | Actual user stop, cancellation, denial, unknown pending side effects, unknown evaluator interruption and uncertain continuation dispatch persist paused. Safe known model/protocol errors return to the same working loop. Restart and status questions do not replay/resume. Explicit user resume with `reconciled=true`, unchanged definition and old-evaluator inactivity preserves original authority, baseline and findings; handled user stops cannot re-pause a resumed worker. |
+| Predecessor inspection | Existing inspect operation reads native status only for the same task/project/worktree, before or after admission. Verify no metadata writes, baseline/chat/private-data exposure (including include_baseline=true), foreign access, inherited authority or predecessor resumption. Busy/retry/working roots, uncertainty, unverified children and API failures block; marked historical read-only evaluators do not. Real CLI fixture reproduces the originally failed pre-start baseline request and reaches scoped implementation/independent acceptance without database access. |
+| Prometheus execution journey | Load the real Prometheus agent, publish through the native tool, restart, select the new scaffold, fail independent evaluation, make an invalid resume call, repeatedly declare the outcome impossible and request unsupported pauses. The root automatically continues without human rescue, repairs and obtains fresh independent final acceptance. No product writes during planning. |
 | Tool failure outcomes | Native patch preflight/empty/missing-text errors clear only the matching active action after acknowledged persistence, permit same-worker correction and automatic partial-return continuation without a Question/resume. Reproduce malformed patches, mismatched context and a multi-file patch with a valid early hunk and invalid later hunk using the real native tool. Verify no files changed, stable original authority/baseline, a successful corrected patch and fresh final acceptance. Other-tool lookalike errors, non-preflight/partial effects, failed cleanup acknowledgment, cancellation and denial remain fail-closed. |
 | Resource intent/receipts | User-authorized ceilings are task-owned, not copied into immutable definitions/admission. Existing domain evidence records amendments and retains consumption and uncertainty. Amendments within permissions and unchanged acceptance use the same worker/resume; widened output paths require republication. No runtime budget tool, automatic reset, default quota or shell-hard-limit claim. |
 | Initial attribution | Read-only native Git status, exact file hashes, intentional deletions, pre-existing untracked inputs and newly caused out-of-scope changes. Missing evidence remains unavailable; never restore user work or infer authorship from dirty status alone. |
 | Guard | Root exact edit paths, working checkpoint/fingerprint, managed ancestry, browser file writers, Bash approval, evaluator read-only boundary, root Prometheus/Build publication and fail-closed malformed/old markers. Protect actual control paths and loaded sources while permitting ordinary authorized task scripts/tools. |
 | Legacy | Old marker absent/different and historical coordinator records fail closed, requiring explicit republication/restart/fresh conversation without resetting historical stops or budgets. No migration/compatibility runtime. |
-| Installation | Three agents, two flat server plugins, two individually copied nested Goal helpers, two TUI assets, publisher/rule/reference and five browser files. Copy/symlink modes, helper drift, exact removal ownership, modified/unrelated sibling preservation, nested backups and unsafe-parent rejection. Preserve clean runtime staging/integrity and existing retirement behavior. |
+| Installation | Three agents, two flat server plugins, three individually copied nested Goal helpers, two TUI assets, publisher/rule/reference and five browser files. Copy/symlink modes, helper drift, exact removal ownership, modified/unrelated sibling preservation, nested backups and unsafe-parent rejection. Preserve clean runtime staging/integrity and existing retirement behavior. |
 | OpenCode discovery | Pinned CLI discovers the task-derived Goal name and exposes `goal_run`/`goal_evaluate` to the worker, evaluator-only `goal_verdict`, and no retired cycle/handoff tools. |
 | Native compatibility | Native Build/Plan prompts and execution remain unchanged; same-conversation historical Goal inspection is available without authorizing Goal mutation. Unrelated agents remain native. |
 | Documentation | Durable docs assert the persistent root, supported metadata API, independent candidate-bound acceptance, explicit recovery and narrow control boundary; replaced old contract assertions remain substantively enforced. |
@@ -87,6 +89,30 @@ and continuation behavior in a fresh process without resuming an active task.
 Source/installed tests do not activate a fix in already running OpenCode servers;
 restart those servers after deployment. Historical paused runs are not silently
 resumed by the fix.
+
+Focused persistent-recovery and full publication journey:
+
+```sh
+node --test tests/plugins/goal.test.mjs tests/plugins/publish_goal_agent.test.mjs
+node --test --test-name-pattern="Prometheus publishes a fresh scaffold|genuinely impossible Goal|native predecessor inspection" tests/integration/goal_runtime.test.mjs
+OPENCODE_GOAL_RUNTIME_ROOT="$HOME/.config/opencode" OPENCODE_GOAL_TEST_CLI="$(command -v opencode)" node --test --test-name-pattern="Prometheus publishes a fresh scaffold|genuinely impossible Goal|native predecessor inspection" tests/integration/goal_runtime.test.mjs
+```
+
+These use the real CLI/tools and an isolated deterministic, deliberately mistaken
+model provider. They verify executable persistence and native cancellation, not
+the quality or eventual success of an arbitrary model or live domain task. Twelve
+failed contradictory evaluations and eight rejected self-pauses are test observations,
+not runtime limits. Prometheus publishes only; its worker starts once and loops.
+The mistaken worker also tries to open an unnecessary `Resume Goal` Question;
+verify rejection without a human popup or pause, while real paused handback remains
+fully covered by native Question/compaction tests.
+
+Qualification (2026-10-12): focused Goal/publisher tests passed 129 checks;
+`npm test` passed 265 tests with one existing authenticated-provenance skip.
+All three publication/impossible-outcome/predecessor journeys also passed against
+the installed runtime using OpenCode 1.18.35. Deployment used `install --backup`;
+the installer reported the managed profile current. Already running servers still
+need restarting before they load these changes.
 
 Repository-wide verification, when authorized for the full implementation:
 

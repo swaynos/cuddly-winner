@@ -1,14 +1,14 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { parse } from "yaml";
 import { tool } from "@opencode-ai/plugin";
 import { OpencodeClient } from "@opencode-ai/sdk/v2";
 import { activeWorktree, goalAgentPath, goalDefinitionFingerprint, hasGoalAgentFile, readGoalAgentPolicy } from "../tools/publish_goal_agent.ts";
-import { RUNTIME, CHECKPOINT, checkpoint, transition, resumeIntent, type Run } from "./goal/state.ts";
+import { RUNTIME, CHECKPOINT, checkpoint, transition, resumeIntent, pauseIntent, recoverableModelError, type Run } from "./goal/state.ts";
 import { canonical, captureFiles, initialWorktree } from "./goal/evidence.ts";
 import { evaluate, validateVerdict } from "./goal/evaluation.ts";
 
-const CONTINUE = "Continue the admitted Goal in this same worker conversation. Use the current findings to explore, experiment or repair within authority. A partial report or failed experiment does not finish the task. Seek independent feedback when useful and final evaluation when the actual outcome is ready. Do not replay unknown external actions.";
+const CONTINUE = "Continue the admitted Goal in this same worker conversation. Inspect current goal_run status when needed; earlier tool results may be stale. Correct bad tool arguments and retry. Failed experiments, missing implementation, evaluator blockers and apparently impossible outcomes require further diagnosis, exploration or repair, not a self-declared pause. Keep working without time, attempt or stall limits, using existing findings and permitted alternatives. Seek independent feedback when useful and final evaluation when the actual outcome is ready. Preserve user-set resource ceilings and permissions; do not repeat prohibited actions or replay unknown external actions.";
 const actionTool = (name: string) => ["write", "edit", "apply_patch", "bash"].includes(name)
   || (/browser_/.test(name) && /click|upload|evaluate|press_key|download|save_media|screenshot/.test(name));
 // Native apply_patch emits these only before its write phase. Other failures
@@ -134,6 +134,51 @@ export const Goal = async ({ client, directory, worktree }: any) => {
         completion_target: run?.completion_target, authorized_actions: run?.authorized_actions };
     } catch (error) { return { runtime_contract: RUNTIME, state: "unknown", reason: error instanceof Error ? error.message : String(error) }; }
   }
+  async function inspectPredecessor(id: string, predecessorID: string) {
+    try {
+      const caller = await session(id);
+      const current = checkpoint(caller);
+      const goal = current ? undefined : await definition(id);
+      const agent = current?.agent ?? (goal?.selected === goal?.agent ? goal?.agent : undefined);
+      const fingerprint = current?.definition_sha256 ?? goal?.fingerprint;
+      if (!agent || caller.parentID || id === predecessorID) throw new Error("Not a root predecessor inspection");
+      const previous = data(await client.session.get({ path: { id: predecessorID }, signal: AbortSignal.timeout(10000) }));
+      const run = checkpoint(previous);
+      if (!run || previous.id !== predecessorID || previous.parentID || run.agent !== agent
+          || typeof caller.projectID !== "string" || previous.projectID !== caller.projectID
+          || typeof previous.directory !== "string" || realpathSync(previous.directory) !== realpathSync(root)) {
+        throw new Error("Predecessor must belong to the same task and worktree");
+      }
+      const children = data(await client.session.children({ path: { id: predecessorID }, signal: AbortSignal.timeout(10000) }));
+      const statuses = data(await client.session.status({ signal: AbortSignal.timeout(10000) }));
+      if (!Array.isArray(children) || !statuses || typeof statuses !== "object" || Array.isArray(statuses)
+          || children.some((child: any) => child.parentID !== predecessorID)) throw new Error("Invalid session status response");
+      // The native status map omits idle sessions. Only a successful status read
+      // permits treating an absent entry as idle; timestamps are never evidence.
+      const activity = statuses[predecessorID]?.type ?? "idle";
+      if (!["idle", "busy", "retry"].includes(activity)) throw new Error("Unknown predecessor activity");
+      const readOnly = children.filter((child: any) => {
+        const marker = child.metadata?.cuddly_winner_evaluator;
+        return marker?.parentID === predecessorID && marker.definition_sha256 === run.definition_sha256
+          && !child.metadata?.[CHECKPOINT];
+      });
+      const pending = Object.keys(run.pending_actions ?? {}).length;
+      return { runtime_contract: RUNTIME, predecessor: {
+        session_id: predecessorID, state: run.state, runtime_status: activity,
+        definition_matches: run.definition_sha256 === fingerprint,
+        pending_action_count: pending, evaluation_pending: !!run.evaluation,
+        continuation_pending: !!run.continuation, read_only_evaluator_count: readOnly.length,
+        unverified_child_count: children.length - readOnly.length,
+        can_continue: activity === "idle" && ["paused", "accepted"].includes(run.state)
+          && pending === 0 && !run.evaluation && !run.continuation && children.length === readOnly.length,
+      } };
+    } catch {
+      // Never expose another conversation's content, credentials, baseline or
+      // transport error body, and never reconcile/mutate another session.
+      return { runtime_contract: RUNTIME, predecessor: { session_id: predecessorID,
+        state: "unknown", can_continue: false, reason: "Predecessor status unavailable or outside the same task/worktree; no continuation established." } };
+    }
+  }
   async function pause(id: string, reason: string, observed = false) {
     const current = checkpoint(await session(id));
     if (!current || current.state === "accepted") return;
@@ -159,15 +204,20 @@ export const Goal = async ({ client, directory, worktree }: any) => {
 
   return {
     tool: {
-      goal_run: tool({ description: "Start a persistent Goal once before mutation; inspect, pause, or explicitly resume its recorded state. Partial work and failed experiments continue in the same worker without attempt quotas.", args: {
+      goal_run: tool({ description: "Start a persistent Goal once before mutation; inspect, honor an explicit user pause, or explicitly resume its recorded state. Model-declared blockers do not pause a working run: correct tool mistakes and keep exploring permitted work. Inspect with predecessor_session_id before or after start for read-only native status of a prior root of the same task/worktree; baseline content is always excluded. Partial work and failed experiments continue in the same worker without attempt quotas.", args: {
         operation: tool.schema.enum(["start", "inspect", "pause", "resume"]),
         completion_target: tool.schema.string().min(1).max(4000).optional(),
         authorized_actions: tool.schema.string().min(1).max(4000).optional(),
         reason: tool.schema.string().min(1).max(4000).optional(),
         reconciled: tool.schema.boolean().optional(),
         include_baseline: tool.schema.boolean().optional(),
+        predecessor_session_id: tool.schema.string().min(1).optional(),
       }, async execute(args, context) {
         const id = context.sessionID;
+        if (args.predecessor_session_id !== undefined) {
+          if (args.operation !== "inspect") throw new Error('Predecessor inspection is inspect-only. Retry with operation="inspect"; start/resume control only your current session.');
+          return JSON.stringify(await inspectPredecessor(id, args.predecessor_session_id));
+        }
         if (args.operation === "inspect") return JSON.stringify(await inspect(id, args.include_baseline === true));
         const goal = await definition(id);
         if (!goal || goal.selected !== goal.agent) throw new Error("Select the root persistent Goal before starting or resuming work.");
@@ -176,13 +226,18 @@ export const Goal = async ({ client, directory, worktree }: any) => {
         if (run?.state === "accepted") return JSON.stringify(await inspect(id));
         if (args.operation === "pause") {
           if (!run) throw new Error("No admitted Goal to pause.");
-          await pause(id, args.reason?.trim() || "User or worker requested a pause; explicit resumption required.");
+          if (run.state !== "paused" && !pauseIntent(goal.messages, CONTINUE, run.resumed_after_user)) return JSON.stringify({
+            runtime_contract: RUNTIME, state: run.state, pause_applied: false,
+            reason: "No explicit user stop or runtime-observed boundary established a pause. Correct recoverable errors, inspect current status and continue permitted work; model-declared blockers or impossible outcomes are not stopping conditions.",
+          });
+          await pause(id, args.reason?.trim() || "User requested a pause; explicit resumption required.");
           return JSON.stringify(await inspect(id));
         }
         if (args.operation === "resume") {
           if (run?.state !== "paused" || !args.reconciled || !resumeIntent(run, goal.messages, CONTINUE).confirmed) throw new Error("Explicit user resumption and reconciled action outcomes are required; a status question does not resume work.");
           if (!(await childrenIdle(id, run.definition_sha256))) throw new Error("Previous evaluator is active or its activity is unknown; establish inactivity first.");
-          run = await save(id, current => transition(current!, { type: "resume" }, Date.now()));
+          const human = goal.messages.findLast((m: any) => m.info.role === "user" && m.parts.some((p: any) => p.type === "text" && !p.synthetic && p.text !== CONTINUE));
+          run = await save(id, current => ({ ...transition(current!, { type: "resume" }, Date.now()), resumed_after_user: human?.info.id }));
           return JSON.stringify({ runtime_contract: RUNTIME, state: run.state });
         }
         if (args.operation !== "start") throw new Error("Unknown Goal operation.");
@@ -261,7 +316,14 @@ export const Goal = async ({ client, directory, worktree }: any) => {
         return JSON.stringify(validateVerdict(args, assignment.criteria, assignment.findings));
       } }),
     },
-    "tool.execute.before": async (input: any) => {
+    "tool.execute.before": async (input: any, output: any) => {
+      if (input.tool === "question" && output?.args?.questions?.some((q: any) => q.header === "Resume Goal")) {
+        const goal = await definition(input.sessionID);
+        if (goal) {
+          const run = await reconcile(input.sessionID);
+          if (run?.state !== "paused") throw new Error(`Goal is ${run?.state ?? "not_started"}; no Resume Goal confirmation is needed. Inspect current status, start if unadmitted, otherwise correct the error and continue permitted work.`);
+        }
+      }
       if (!actionTool(input.tool)) return;
       const goal = await definition(input.sessionID);
       if (!goal) return; // Native sessions and evaluators use their own permissions/guard.
@@ -314,6 +376,10 @@ export const Goal = async ({ client, directory, worktree }: any) => {
         const denied = event.type === "permission.replied" || event.properties.error?.name === "PermissionRejectedError";
         const cancelled = event.properties.error?.name === "MessageAbortedError";
         const parentID = child?.parentID ?? (await session(id)).parentID ?? id;
+        const run = checkpoint(await session(parentID));
+        if (!denied && !cancelled && recoverableModelError(event.properties.error)
+          && run && !Object.keys(run.pending_actions ?? {}).length && !run.continuation
+          && (child || run.state === "working")) return;
         await pause(parentID, denied ? "Observed permission denial; explicit user resumption required."
           : cancelled ? "Observed cancellation; inspect action outcomes before explicit resumption."
             : "Observed session failure; inspect unknown action outcomes before explicit resumption.", denied || (cancelled && parentID === id));
@@ -326,14 +392,16 @@ export const Goal = async ({ client, directory, worktree }: any) => {
         if (!goal) return;
         const run = await reconcile(id);
         if (!run || run.state !== "working" || run.definition_sha256 !== goal.fingerprint) return;
+        if (pauseIntent(goal.messages, CONTINUE, run.resumed_after_user)) { await pause(id, "User requested a stop; explicit resumption required."); return; }
         const last = goal.messages.at(-1);
-        if (last?.info.role !== "assistant" || !last.info.finish || last.info.error) return;
+        if (last?.info.role !== "assistant" || (!last.info.finish && !last.info.error)) return;
+        if (last.info.error && !recoverableModelError(last.info.error)) return;
         if (run.continuation) {
           const exists = goal.messages.some((m: any) => m.info.id === run.continuation!.messageID);
           if (!exists) { await pause(id, "Continuation dispatch outcome unknown; inspect history before explicit resumption."); return; }
           await save(id, current => ({ ...current!, continuation: undefined, updated_at: Date.now() }));
         }
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise(resolve => setTimeout(resolve, last.info.error ? 1000 : 0));
         const statuses = data(await client.session.status({ signal: AbortSignal.timeout(10000) }));
         if (statuses[id] && statuses[id].type !== "idle") return;
         const messageID = `msg_${Date.now().toString(16)}${randomBytes(9).toString("hex")}`;

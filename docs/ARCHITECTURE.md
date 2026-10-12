@@ -100,6 +100,7 @@ The checkpoint contains:
 - `pending_actions` and `continuation` dispatch evidence.
 - `evaluation` assignment, child identity, artifacts and candidate hashes.
 - Latest `feedback`, final `validation`, unresolved `findings`, timestamps/reason.
+- `resumed_after_user` prevents reuse of a handled human stop after explicit resume.
 - `accepted_candidate` when final evaluation accepts the stable candidate.
 
 Compaction text is a context summary, not authority. The compaction hook reminds
@@ -117,11 +118,28 @@ it cannot replace authority/baseline. The root worker prepares, explores,
 implements, experiments and repairs in its original conversation, without a
 builder child, handoff or build/validation cycle.
 
+Optional `predecessor_session_id` on `goal_run(inspect)` uses native get/children/
+status APIs with bounded reads and same-task/project/worktree checks. It bypasses
+`reconcile` entirely, including for the caller, so it cannot pause or otherwise
+rewrite a different worker. Output contains only checkpoint/activity facts and a
+`can_continue` snapshot; no prompts, private metadata, artifacts or baselines.
+An unadmitted caller uses its selected validated Goal definition for scoping;
+inspection grants no admission. `include_baseline` is harmless here and never
+exposes predecessor baseline data.
+Busy/retry/working predecessors, unresolved actions/evaluation/continuation,
+unmarked children and inaccessible/malformed status remain blockers. Children
+whose permanent evaluator marker matches the predecessor's identity are read-only
+and need not be idle for this handoff check. Existing same-session evaluation and
+resume guards still check their own active evaluator to protect candidate stability.
+
 When an admitted working root returns partial work, idle continuation submits a
 synthetic prompt to that same agent/session using its selected model. Dispatch
 intent and message identity are persisted before submission to diagnose unknown
 outcomes. Working state and matching definition are required. No arbitrary
 default time/token/attempt/cycle/stall quota terminates creative exploration.
+Incorrect calls, stale status reasoning, model-declared blockers and impossible
+outcomes feed this loop instead of terminating it. The dispatcher supplies fresh-state
+and correction guidance; it keeps the selected model and the original authority.
 User-explicit resource ceilings live in task-owned records, with amendments and
 historical consumption preserved in existing intent/receipt evidence. Definitions
 and admission reference that authority without freezing numerical ceilings. An
@@ -149,8 +167,12 @@ UI part alone is not the after-hook checkpoint acknowledgment. No-effect cleanup
 also never resumes a separately cancelled, denied or already paused run; old
 paused sessions still require normal explicit reconciliation/resumption.
 
-`goal_run(operation="pause")` persists a pause. Cancellation, real permission
-denial, genuine observed blockers, transport interruption or unknown actions also
+`goal_run(operation="pause")` persists a pause only for a corroborated real user
+stop request. An unsupported model pause returns current state and correction guidance.
+Idle continuation also observes the user stop; explicit resume records the latest
+handled human ID in `resumed_after_user`, preventing reuse of an old stop after a
+native Question answer. Cancellation, real permission
+denial, unknown transport interruption or unknown actions also
 pause. Mutation is frozen during evaluating, paused and accepted states.
 `goal_run(operation="inspect")` reads current/historical Goal state in the same
 conversation, including after switching to native Build/Plan. It starts no work
@@ -164,6 +186,12 @@ messages and summaries do not authorize resumption. Preserve original authority,
 baseline, feedback, final validation and unresolved findings. Reload recognizes
 pending actions or orphaned evaluation as unknown and pauses; restarting does not
 automatically replay external actions or unknown continuation dispatches.
+Terminal context/structured-output errors and API errors with known non-auth HTTP
+status can retry when no pending task effect or continuation is uncertain. Error
+continuation waits one second to avoid a hot retry loop; this is not a time limit.
+Unknown errors, HTTP 401/403 and effects/evaluation uncertainty remain paused.
+Recognized read-only evaluator model failures discard the unfinished assignment and
+return working error feedback; they cannot accept a candidate or erase a real pause.
 
 ## Initial Worktree Attribution
 
@@ -222,8 +250,9 @@ make synthetic checks establish a required live outcome.
 | --- | --- |
 | Feedback pass or ordinary failed feedback | `working`, latest feedback retained. |
 | Final check failure | `working`, final validation and unresolved findings retained for repair. |
+| Model-declared evaluator blocker | `working`, blocker evidence retained for diagnosis; no acceptance or self-declared stop. |
 | Stable final pass of every fixed criterion | Terminal `accepted`, accepted candidate retained. |
-| Observed genuine blocker, cancellation, denial or unknown outcome | Durable `paused`; explicit reconciled resumption required. |
+| Actual user stop, cancellation, denial or unknown effect/dispatch outcome | Durable `paused`; explicit reconciled resumption required. |
 | Incomplete evaluator report after protocol correction | `working` with error feedback; no domain stop. |
 
 Report errors are corrected in the same child. The three-report protocol watchdog

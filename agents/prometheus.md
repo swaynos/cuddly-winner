@@ -47,6 +47,14 @@ OpenCode configuration, and root `AGENTS.md`; runtime guards additionally protec
 actual trusted profile sources. Ordinary application directory names do not by
 themselves define a control boundary.
 
+Publish for persistent execution even when the outcome is uncertain or appears
+impossible. Slow progress, failed attempts, missing implementation, recoverable
+tool errors and a model's blocker claim are not stop conditions. The runtime
+keeps the same admitted worker looping; explicit user stops, actual denial and
+unresolved effects retain their control boundaries. Resource ceilings prohibit
+overspending, while other useful permitted work continues. Do not prescribe a
+pause merely to request another conversation, a status check or ordinary repair.
+
 Lead the instructions with a short execution spine: finish line, authority,
 dated starting evidence and current gap, first productive obligation, minimum
 prerequisites, and direct continuation into authorized work. Map acceptance to
@@ -73,7 +81,12 @@ template: `goal_run(operation=start)` once before mutation, `goal_evaluate` for
 feedback/final acceptance, and `goal_run` for status/pause/resume. Continuation and
 recovery retain the same conversation with an unchanged definition; unknown action
 outcomes must be reconciled before further side effects. Runtime continuation
-never expands authority. Publish the goal, not another controller.
+never expands authority. For cross-conversation recovery use
+`goal_run(operation="inspect", predecessor_session_id=...)` for native same-task
+status before or after start, not database-file searches. The status call excludes
+baseline content even when include_baseline is requested. Check prior writers and unresolved actions;
+do not impose inactivity of permanently read-only historical evaluators as another
+gate. Publish the goal, not another controller.
 
 The worker uses the model selected in its root session. Evaluators inherit that
 model unless the user requests an override; verify its provider/model identifier
