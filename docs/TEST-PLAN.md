@@ -116,6 +116,12 @@ need restarting before they load these changes.
 
 ## First-Publication Qualification
 
+For a cold-context repeat experiment, follow
+[Repeat the first-publication experiment](GOAL-PUBLICATION-EXPERIMENT.md).
+It gives the authorization requirements, source/installed commands, five-case
+pass criteria, evidence inspection and charged-retry procedure. The historical
+150-turn allowance below is exhausted; documentation is not new spending authority.
+
 Offline regressions exercise ordinary short Prometheus/worker prompts, missing code,
 obsolete instructions, repairable preparation, failed checks and native continuation.
 Publisher tests reject objective path/verification dead ends before file mutation,
