@@ -15,6 +15,15 @@ hidden Grounder are read-only. Prometheus is planning-only: it may research,
 clarify decision-changing uncertainty and invoke `publish_goal_agent`, but may
 not implement, edit project files or use Bash. Root Build may also publish.
 
+An ordinary outcome-and-authority request must be sufficient for publication.
+Prometheus establishes the finish line, current gap and first productive code
+change/experiment; gives permitted routes for necessary prerequisites; maps work,
+verification and delivery to sufficient exact paths; reconciles obsolete instructions
+and publishes. Prerequisites can be verified, worker-repairable or dependent on
+genuinely new authority/input. Unsolved technical problems remain publishable.
+Users need not coach persistence, repeat permission already granted or prove feasibility.
+Domain instructions remain concise; generic looping/recovery stays in the shared template.
+
 There is exactly one Goal Agent format:
 `.opencode/agents/generated/<task-derived-name>.md`. Its schema-v1 embedded policy
 declares exact canonical worktree-relative `edit_paths` and boolean `bash`.
@@ -28,6 +37,15 @@ require a complete definition and the inspected `expected_sha256`. Reject stale,
 concurrent, colliding, malformed and symlinked updates. Restart OpenCode and use
 a fresh conversation after publication or revision. Changed definitions cannot
 reuse prior authority, permissions or acceptance.
+
+Publication checks objective local inconsistencies before creating or replacing a
+scaffold: exact edit paths cannot be existing directories, symlinks, or both a
+file and its descendant. Recognizable literal shell verification requires Bash;
+a missing literal Node verification file needs an exact editable implementation
+path. Existing read-only checks are valid. These narrow checks do not interpret
+arbitrary shell/prose, require all prerequisites to exist, or impose a keyword-based
+quality/feasibility gate. Context and artifact tool arguments contain paths only;
+descriptions and obsolete-authority explanations belong in task instructions/focus.
 
 Published instructions lead with the actual finish line, existing authority,
 starting evidence and current gap, first productive obligation, minimum
@@ -55,6 +73,9 @@ impossible outcome, incorrect tool arguments and a worker's own blocker claim do
 not finish or pause the run. Correct the call, inspect fresh state, repair or
 explore another permitted approach in the same worker. Do not require human rescue
 for ordinary recovery.
+Each failed experiment identifies the observed failure, a materially justified
+change and evidence that would support or reject it, using existing task records
+and evaluator feedback. Repeated failures improve the next experiment, not a quota.
 
 `goal_run` provides `start`, `inspect`, `pause`, and `resume`. Call
 `goal_run(operation="start", completion_target=..., authorized_actions=...)`
@@ -161,6 +182,12 @@ without changing native execution. Inspection starts no work and clears no pause
 it may record a pause upon detecting interrupted/unknown activity. An unstarted
 Goal has no inferred admission. Accepted-candidate inspection distinguishes
 historical acceptance from whether current bytes still match.
+Rejected control/evaluation calls report observed state and the applicable next
+operation. Working needs correction/continuation, evaluating needs its current
+result, unadmitted needs one start, and paused needs real authorization plus receipt
+reconciliation. Correctable argument/snapshot failures dispatch no evaluator and
+cannot imply new authority. Unavailable evidence identifies the actual paths;
+explicit absence remains distinct from inaccessible/directory/symlink evidence.
 
 ## Independent Feedback And Final Evaluation
 

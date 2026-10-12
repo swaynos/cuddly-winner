@@ -2565,6 +2565,35 @@ test("invalid evaluation paths, absent focus and missing model fail before child
   assert.equal(f.run().state, "working");
 }));
 
+test("recovery errors distinguish unadmitted, working and paused state without replacing authority", async () => fixture(async f => {
+  await assert.rejects(f.invoke("goal_run", { operation: "resume", reconciled: true }), /State: not_started.*Nothing needs resuming.*start/);
+  await assert.rejects(f.evaluate(), /State: not_started.*Start the matching Goal/);
+  assert.equal(f.run(), undefined);
+  await f.start();
+  const admitted = f.run();
+  await assert.rejects(f.invoke("goal_run", { operation: "resume", reconciled: true }), /State: working.*Nothing needs resuming/);
+  assert.deepEqual(f.run(), admitted);
+  const pause = await f.invoke("goal_run", { operation: "pause", reason: "A test failed" });
+  assert.equal(pause.state, "working");
+  assert.equal(pause.pause_applied, false);
+  assert.match(pause.next_action, /nothing needs resuming/);
+  await assert.rejects(f.evaluate("feedback", { focus: " " }), /State: working.*correct these arguments/i);
+  assert.deepEqual(f.run(), admitted);
+  await mkdir(path.join(f.root, "inspection-board"));
+  await assert.rejects(f.evaluate("final", { artifacts: ["inspection-board"] }), /State: working.*Candidate evidence unavailable.*inspection-board.*individual inspectable files/);
+  assert.equal(f.run().state, "working");
+  assert.equal(f.run().evaluation, undefined);
+  assert.equal(f.calls.length, 0);
+  assert.deepEqual(f.run().initial_worktree, admitted.initial_worktree);
+  await f.pause();
+  const paused = f.run();
+  await assert.rejects(f.invoke("goal_run", { operation: "resume", reconciled: true }), /State: paused.*Explicit user resumption/);
+  assert.deepEqual(f.run(), paused);
+  f.finish("A paused run remains paused after actionable feedback");
+  await f.event("session.idle");
+  assert.equal(f.continuations.length, 0);
+}));
+
 test("retired Goal definitions and historical coordinator runs fail closed", async () => {
   for (const legacy of ["options-missing", "old-runtime", "historical-run"]) await fixture(async f => {
     const file = path.join(f.root, ".opencode/agents/generated/fix-counter.md");

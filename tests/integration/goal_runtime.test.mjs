@@ -8,7 +8,10 @@ import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { createOpencodeClient } from "@opencode-ai/sdk/v2";
+import { parse as parseJsonc } from "jsonc-parser";
 import { publishGoalAgentFile } from "../../tools/publish_goal_agent.ts";
+import { qualificationSettings, qualificationGuard, publicationCases, publicationPrompt,
+  caseReadme, caseVerifier, allowedQualificationCommand, qualificationPermissionCommand } from "../helpers/publication-qualification.mjs";
 
 const repo = path.resolve(import.meta.dirname, "../..");
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -21,7 +24,7 @@ const readsGood = output => /^\s*\d+\s*[:|]\s*good\s*$/m.test(output);
 const compactionRequest = input => input.messages?.some(message => message.role === "system" && /context summarization agent|summarizing conversations/i.test(content(message)));
 const evaluatorMode = text => text.match(/^INDEPENDENT EVALUATOR mode=(feedback|final)\b/m)?.[1];
 
-async function fixture(t, respond, { runtime = true, extraPlugin, prometheus = false } = {}) {
+async function fixture(t, respond, { runtime = true, extraPlugin, prometheus = false, live } = {}) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "goal-runtime-live-")));
   let child;
   let serverLog = "";
@@ -32,6 +35,7 @@ async function fixture(t, respond, { runtime = true, extraPlugin, prometheus = f
   const errors = [];
   const brief = (value, limit = 500) => String(typeof value === "string" ? value : JSON.stringify(value)).slice(0, limit);
   const diagnostics = () => {
+    if (live) return "Real-model transport details are suppressed. Inspect public qualification receipts and checkpoint state; authentication is outside the task directory.";
     const lines = serverLog.split("\n");
     return `Server ERRORs:\n${lines.filter(line => /level=ERROR|errorRef=|err_[a-f0-9]+/.test(line)).slice(-6).map(line => brief(line, 1800)).join("\n") || "(none)"}\nServer tail:\n${lines.slice(-8).map(line => brief(line, 350)).join("\n")}\nProvider trace (last ${providerTrace.length} requests):\n${providerTrace.map(trace => JSON.stringify(trace)).join("\n")}\nObserved stop events (last ${eventTrace.length}):\n${eventTrace.join("\n") || "(none)"}`;
   };
@@ -105,6 +109,26 @@ async function fixture(t, respond, { runtime = true, extraPlugin, prometheus = f
   }));
   const env = { ...process.env, HOME: root, XDG_CONFIG_HOME: path.join(root, "config"), XDG_DATA_HOME: path.join(root, "data"), XDG_CACHE_HOME: path.join(root, "cache"), OPENCODE_DISABLE_DEFAULT_PLUGINS: "1" };
   for (const key of ["OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_PURE", "OPENCODE_DISABLE_PROJECT_CONFIG"]) delete env[key];
+  delete env.NODE_TEST_CONTEXT; // A child must execute its own real Node checks.
+  if (live) {
+    const privateDir = await mkdtemp(path.join(live.privateRoot, "profile-"));
+    env.HOME = os.homedir();
+    env.XDG_CONFIG_HOME = path.join(privateDir, "config");
+    env.XDG_DATA_HOME = path.join(privateDir, "data");
+    env.NODE_OPTIONS = ""; // Only this non-secret runtime option may be inspected.
+    delete env.OPENCODE_DISABLE_DEFAULT_PLUGINS;
+    await mkdir(path.join(env.XDG_CONFIG_HOME, "opencode"), { recursive: true, mode: 0o700 });
+    await mkdir(path.join(env.XDG_DATA_HOME, "opencode"), { recursive: true, mode: 0o700 });
+    await writeFile(path.join(env.XDG_CONFIG_HOME, "opencode", "opencode.json"), JSON.stringify({
+      $schema: "https://opencode.ai/config.json", provider: live.provider, share: "disabled",
+    }), { mode: 0o600 });
+    await writeFile(path.join(env.XDG_DATA_HOME, "opencode", "auth.json"), JSON.stringify(live.auth), { mode: 0o600 });
+    await writeFile(path.join(root, "opencode.json"), JSON.stringify({
+      $schema: "https://opencode.ai/config.json", model: live.model, small_model: live.model, share: "disabled",
+      permission: { external_directory: "deny" },
+    }));
+    await writeFile(path.join(root, ".opencode", "plugins", "qualification.ts"), qualificationGuard(live.receipts, live.maxTurns, live.deadline, live.model));
+  }
   const probe = http.createServer();
   probe.listen(0, "127.0.0.1");
   await once(probe, "listening");
@@ -114,17 +138,17 @@ async function fixture(t, respond, { runtime = true, extraPlugin, prometheus = f
   const sdk = createOpencodeClient({ baseUrl });
   const api = async (url, body, method = body === undefined ? "GET" : "POST") => {
     const response = await fetch(`${baseUrl}${url}`, { method, headers: { "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000) });
-    assert.ok(response.ok, `${method} ${url}: ${response.status} ${response.ok ? "" : await response.text()}`);
+    assert.ok(response.ok, `${method} ${url}: ${response.status} ${response.ok || live ? "" : await response.text()}`);
     return response.status === 204 ? undefined : response.json();
   };
   const wait = async (label, check) => {
     try {
-      const deadline = Date.now() + 30_000;
+      const deadline = live?.deadline ?? Date.now() + 30_000;
       while (Date.now() < deadline) {
         if (errors.length) throw errors[0];
         const result = await check();
         if (result) return result;
-        await delay(50);
+        await delay(live ? 200 : 50);
       }
       throw new Error(`${label} timed out`);
     } catch (error) {
@@ -418,7 +442,7 @@ test("Prometheus publishes a fresh scaffold whose worker recovers from errors an
   assert.equal(mistakes.length, 2);
   assert.equal(mistakes[0].tool, "goal_run");
   assert.equal(mistakes[0].state.input.operation, "resume");
-  assert.match(mistakes[0].state.error, /Explicit user resumption/);
+  assert.match(mistakes[0].state.error, /State: working.*Nothing needs resuming/);
   assert.equal(mistakes[1].tool, "question");
   assert.match(mistakes[1].state.error, /working; no Resume Goal confirmation/);
   assert.deepEqual(await f.api("/question"), [], "Routine recovery never waits for a human popup answer");
@@ -431,6 +455,225 @@ test("Prometheus publishes a fresh scaffold whose worker recovers from errors an
   assert.equal(accepted.accepted_candidate["counter.txt"].sha256, sha256("good\n"));
   assert.equal(await bytes(f.root, "README.md"), "Existing task context\n");
   assert.equal(history.filter(message => message.info.role === "user" && !message.parts.some(part => part.synthetic)).length, 1, "No human rescues the worker");
+});
+
+test("ordinary Prometheus prompts publish repairable work without persistence coaching", { timeout: 120_000 }, async t => {
+  for (const kind of ["missing implementation", "stale instructions", "repairable prerequisite"]) {
+    const f = await fixture(t, async (input, { root }) => {
+      const { user, results, lastUser } = conversation(input);
+      if (user.includes("INDEPENDENT EVALUATOR")) return evaluator(input, root);
+      if (user.includes("Publish a Goal for README.md")) {
+        if (!results.some(result => result.name === "read")) return call("read", { filePath: path.join(root, "README.md") });
+        if (kind === "stale instructions" && !results.some(result => result.name === "read" && result.args.filePath.endsWith("HISTORY.md"))) return call("read", { filePath: path.join(root, "HISTORY.md") });
+        if (!results.some(result => result.name === "publish_goal_agent")) return call("publish_goal_agent", {
+          name: "fix-counter", description: "Implement and verify counter", outcome: "Counter implementation verified offline",
+          acceptance_criteria: ["counter.txt contains good followed by a newline", "readiness.json records preparation"],
+          durable_context: ["README.md", ...(kind === "stale instructions" ? ["HISTORY.md"] : [])], edit_paths: ["counter.txt", "readiness.json"], bash: false,
+          verification_commands: ["Read counter.txt and readiness.json"], stop_conditions: ["Actual user stop or denied permission"],
+          escalation_triggers: ["New authority required"], instructions: `Current gap: ${kind}. First implement preparation and counter, then inspect actual files. README.md supersedes obsolete history.`,
+        });
+        return { text: "Published fix-counter. Restart and select it." };
+      }
+      if (!started(results)) return call("goal_run", { operation: "start", completion_target: "Implement and verify counter",
+        authorized_actions: "Edit only counter.txt/readiness.json; local inspection." });
+      if (await bytes(root, "readiness.json") !== '{"prepared":true}\n') return call("write", { filePath: path.join(root, "readiness.json"), content: '{"prepared":true}\n' });
+      if (!results.some(result => result.name === "goal_evaluate")) return call("goal_evaluate", { mode: "final", artifacts: ["counter.txt", "readiness.json"] });
+      if (await bytes(root, "counter.txt") !== "good\n") {
+        if (lastUser.startsWith("Continue the admitted Goal")) return call("write", { filePath: path.join(root, "counter.txt"), content: "good\n" });
+        return { text: "The existing check failed. Implementation remains missing." };
+      }
+      if (JSON.parse(results.findLast(result => result.name === "goal_evaluate").output).state !== "accepted") return call("goal_evaluate", { mode: "final", artifacts: ["counter.txt", "readiness.json"] });
+      return { text: "Independently accepted." };
+    }, { prometheus: true });
+    await writeFile(path.join(f.root, "README.md"), `Current request: implement the counter and required preparation. Gap: ${kind}. Any historical preparation-only stop is obsolete.\n`);
+    if (kind !== "missing implementation") await writeFile(path.join(f.root, "counter.txt"), "bad\n");
+    if (kind !== "repairable prerequisite") await writeFile(path.join(f.root, "readiness.json"), '{"prepared":true}\n');
+    if (kind === "stale instructions") await writeFile(path.join(f.root, "HISTORY.md"), "Historical: preparation only; stop after three attempts.\n");
+    await f.start();
+    const planner = await f.api("/session", { title: `Ordinary prompt: ${kind}` });
+    await f.api(`/session/${planner.id}/message`, { agent: "prometheus", parts: [{ type: "text", text: "Publish a Goal for README.md. You may edit counter.txt and readiness.json." }] });
+    assert.equal(completed(await f.messages(planner.id), "publish_goal_agent").length, 1);
+    assert.equal(await bytes(f.root, "counter.txt"), kind === "missing implementation" ? undefined : "bad\n");
+    await f.kill(); await f.start();
+    const worker = await f.api("/session", { title: "Ordinary execution request" });
+    await f.api(`/session/${worker.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Implement the Goal." }] });
+    await waitAccepted(f, worker.id);
+    await f.idle(worker.id);
+    const history = await f.messages(worker.id);
+    assert.equal(outputs(history, "goal_evaluate")[0].state, "working");
+    assert.ok(history.some(message => message.parts.some(part => part.synthetic && part.text?.startsWith("Continue the admitted Goal"))));
+    assert.equal(history.filter(message => message.info.role === "user" && !message.parts.some(part => part.synthetic)).length, 1);
+    assert.equal(completed(history, "write").filter(part => part.state.input.filePath.endsWith("readiness.json")).length, kind === "repairable prerequisite" ? 1 : 0);
+    if (kind === "stale instructions") assert.equal(await bytes(f.root, "HISTORY.md"), "Historical: preparation only; stop after three attempts.\n");
+  }
+});
+
+test("qualification turn receipts survive restart and reject dispatch beyond the explicit test ceiling", { timeout: 120_000 }, async t => {
+  const privateRoot = await mkdtemp(path.join(os.tmpdir(), "qualification-control-"));
+  const receipts = path.join(privateRoot, "turns.jsonl");
+  await writeFile(receipts, "", { mode: 0o600 });
+  try {
+    const f = await fixture(t, async (input, { root }) => {
+      const { results } = conversation(input);
+      if (!results.length) return call("read", { filePath: path.join(root, "counter.txt") });
+      return { text: "One native model turn with its actual tool result." };
+    }, { extraPlugin: qualificationGuard(receipts, 2, Date.now() + 120_000) });
+    await writeFile(path.join(f.root, "counter.txt"), "good\n");
+    await f.start();
+    const first = await f.api("/session", { title: "Qualification budget: two turns" });
+    await f.api(`/session/${first.id}/message`, { agent: "build", parts: [{ type: "text", text: "Read the counter once." }] });
+    assert.equal(f.requests.length, 2);
+    assert.equal((await readFile(receipts, "utf8")).trim().split("\n").length, 2);
+    await f.kill(); await f.start();
+    const second = await f.api("/session", { title: "Budget remains consumed after restart" });
+    await f.api(`/session/${second.id}/prompt_async`, { agent: "build", parts: [{ type: "text", text: "Read the counter once." }] });
+    await f.wait("native budget rejection before provider dispatch", async () => (await f.messages(second.id)).some(message => message.info.error));
+    assert.equal(f.requests.length, 2);
+    assert.equal((await readFile(receipts, "utf8")).trim().split("\n").length, 2);
+    await f.kill();
+  } finally { t.after(() => rm(privateRoot, { recursive: true, force: true })); }
+});
+
+test("real-model first-publication qualification from ordinary prompts", {
+  skip: process.env.OPENCODE_LIVE_PUBLICATION !== "1" && "opt in with a model and explicit test-only turn/time ceilings",
+}, async t => {
+  const settings = qualificationSettings(process.env);
+  const evidence = process.env.OPENCODE_PUBLICATION_EVIDENCE ?? await mkdtemp("/tmp/opencode/goal-publication-qualification-");
+  let previous;
+  try { previous = JSON.parse(await readFile(path.join(evidence, "summary.json"), "utf8")); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
+  if (process.env.OPENCODE_PUBLICATION_EVIDENCE) assert.ok(previous, "Reuse only a qualification evidence directory with its original recorded authority");
+  if (previous) {
+    assert.equal(previous.model, settings.model);
+    assert.equal(previous.max_turns, settings.maxTurns);
+    assert.equal(previous.timeout_ms, settings.timeoutMs);
+  }
+  const privateRoot = path.join(evidence, "private");
+  await mkdir(privateRoot, { mode: 0o700 });
+  const receipts = path.join(evidence, "turns.jsonl");
+  try { await writeFile(receipts, "", { mode: 0o600, flag: "wx" }); }
+  catch (error) { if (error.code !== "EEXIST") throw error; }
+  const startedAt = previous?.started_at ?? Date.now(), deadline = startedAt + settings.timeoutMs;
+  await writeFile(path.join(evidence, "summary.json"), JSON.stringify({ passed: false, model: settings.model,
+    max_turns: settings.maxTurns, timeout_ms: settings.timeoutMs, started_at: startedAt, previous }), { mode: 0o600 });
+  const providerID = settings.model.split("/")[0];
+  const sourceConfig = process.env.OPENCODE_PUBLICATION_CONFIG ?? path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "opencode", "opencode.json");
+  const sourceAuth = path.join(process.env.XDG_DATA_HOME ?? path.join(os.homedir(), ".local/share"), "opencode", "auth.json");
+  const results = [], fixtures = [];
+  let passed = false;
+  try {
+    const errors = [];
+    const config = parseJsonc(await readFile(sourceConfig, "utf8"), errors);
+    assert.equal(errors.length, 0, "Provider configuration must be valid JSONC; no transport details are printed");
+    const auth = JSON.parse(await readFile(sourceAuth, "utf8"));
+    const live = { ...settings, privateRoot, receipts, deadline,
+      provider: config.provider?.[providerID] ? { [providerID]: config.provider[providerID] } : {},
+      auth: auth[providerID] ? { [providerID]: auth[providerID] } : {},
+    };
+    for (const testCase of publicationCases) {
+      assert.ok(Date.now() < deadline, "Explicit qualification time ceiling reached");
+      const f = await fixture(t, () => assert.fail("Real qualification must not use scripted model responses"), { prometheus: true, live });
+      fixtures.push(f);
+      await writeFile(path.join(f.root, "README.md"), caseReadme(testCase));
+      await writeFile(path.join(f.root, "HISTORY.md"), "Historical preparation-only instruction: stop after three attempts. Superseded by current README.md.\n");
+      await writeFile(path.join(f.root, "verify.test.mjs"), caseVerifier(testCase));
+      if (testCase.initial !== undefined) await writeFile(path.join(f.root, "worker.js"), testCase.initial);
+      const protectedFiles = await Promise.all(["README.md", "HISTORY.md", "verify.test.mjs"].map(file => bytes(f.root, file)));
+      const model = { providerID, modelID: settings.model.slice(providerID.length + 1) };
+      await f.start();
+      const planner = await f.api("/session", { title: `First publication: ${testCase.name}` });
+      let worker;
+      const authorizeChecks = async () => {
+        const turns = (await readFile(receipts, "utf8")).trim().split("\n").filter(Boolean).length;
+        assert.ok(turns <= settings.maxTurns && Date.now() < deadline, "Explicit qualification ceiling reached; retain charges and stop this test run");
+        const owned = new Set([planner.id, ...(worker ? [worker.id] : [])]);
+        for (const id of [...owned]) for (const child of await f.api(`/session/${id}/children`)) owned.add(child.id);
+        for (const request of await f.api("/permission")) if (owned.has(request.sessionID)) {
+          assert.equal(request.permission, "bash", "A qualification cannot expand filesystem or network authority");
+          const command = qualificationPermissionCommand(request, await f.messages(request.sessionID));
+          const safe = typeof command === "string" && !/api.?key|authorization|bearer|cookie|token|password/i.test(command) ? command : "(unavailable or sensitive)";
+          assert.ok(allowedQualificationCommand(command, f.root), `Only the bound existing read-only Node check is approved. Command: ${safe}; bound tool: ${JSON.stringify(request.tool)}`);
+          await f.api(`/permission/${request.id}/reply`, { reply: "once" });
+        }
+        assert.equal((await f.api("/question")).filter(request => owned.has(request.sessionID)).length, 0,
+          "Ordinary first publication/recovery must not require a human rescue");
+      };
+      await f.api(`/session/${planner.id}/prompt_async`, { agent: "prometheus", model, parts: [{ type: "text", text: publicationPrompt(testCase) }] });
+      const publication = await f.wait(`${testCase.name}: first publication`, async () => {
+        await authorizeChecks();
+        const history = await f.messages(planner.id);
+        const result = completed(history, "publish_goal_agent").at(-1);
+        if (result) return result;
+        if (history.at(-1)?.info.error) throw new Error("Planner model/access failed; inspect its native session without retrying through another workflow");
+        const activity = (await f.api("/session/status"))[planner.id];
+        if (!activity && history.at(-1)?.info.finish === "stop") throw new Error("Planner returned without publishing a runnable Goal");
+        return false;
+      });
+      const published = JSON.parse(publication.state.output);
+      assert.ok(!publication.state.input.validator_model || publication.state.input.validator_model === settings.model, "An evaluator override must not change the explicitly authorized model");
+      await writeFile(path.join(evidence, `${testCase.name}-goal.md`), await bytes(f.root, published.path), { mode: 0o600 });
+      const allowed = ["worker.js", ...(testCase.name === "repairable-prerequisite" ? ["preparation.json"] : [])];
+      assert.ok(publication.state.input.edit_paths.every(file => allowed.includes(file)), "Publication must stay within the ordinary prompt's exact authority");
+      assert.equal(await bytes(f.root, "worker.js"), testCase.initial, "Planning cannot implement product");
+      assert.equal(completed(await f.messages(planner.id), "publish_goal_agent").length, 1, "Exactly one successful first publication");
+      await f.kill(); await f.start();
+      worker = await f.api("/session", { title: `Execute ordinary request: ${testCase.name}` });
+      await f.api(`/session/${worker.id}/prompt_async`, { agent: published.name, model, parts: [{ type: "text", text: "Implement the Goal." }] });
+      const terminal = await f.wait(`${testCase.name}: independent outcome or sustained impossible loop`, async () => {
+        await authorizeChecks();
+        const run = await f.checkpoint(worker.id);
+        if (run?.state === "paused" && (await readFile(receipts, "utf8")).trim().split("\n").filter(Boolean).length >= settings.maxTurns) {
+          throw new Error("Explicit qualification turn ceiling reached; this is test-budget exhaustion, not a production-loop failure");
+        }
+        assert.notEqual(run?.state, "paused", "Recoverable task difficulty must not require user resumption");
+        if (testCase.impossible) {
+          assert.notEqual(run?.state, "accepted", "Contradictory criteria cannot be accepted");
+          const history = await f.messages(worker.id);
+          const continued = history.filter(message => message.parts.some(part => part.synthetic && part.text?.startsWith("Continue the admitted Goal"))).length;
+          const failed = outputs(history, "goal_evaluate").filter(result => result.state === "working").length;
+          return run?.state === "working" && continued >= 2 && failed >= 2 && run;
+        }
+        return run?.state === "accepted" && run;
+      });
+      if (testCase.impossible) {
+        await f.api(`/session/${worker.id}/abort`, {});
+        await f.wait("actual user-style cancellation", async () => (await f.checkpoint(worker.id))?.state === "paused");
+      }
+      await f.idle(worker.id);
+      const history = await f.messages(worker.id);
+      assert.equal(completed(history, "goal_run").filter(part => part.state.input.operation === "start").length, 1);
+      assert.equal(history.filter(message => message.info.role === "user" && !message.parts.some(part => part.synthetic)).length, 1, "No follow-up coaching or rescue");
+      assert.deepEqual(await Promise.all(["README.md", "HISTORY.md", "verify.test.mjs"].map(file => bytes(f.root, file))), protectedFiles);
+      const { execFile } = await import("node:child_process");
+      const checkEnv = { ...process.env }; delete checkEnv.NODE_TEST_CONTEXT;
+      const checked = await new Promise(resolve => execFile(process.execPath, ["--test", "verify.test.mjs"], { cwd: f.root, env: checkEnv }, error => resolve(!error)));
+      assert.equal(checked, !testCase.impossible, "Native acceptance must agree with independently executed current product bytes");
+      if (!testCase.impossible) assert.equal(terminal.accepted_candidate["worker.js"].sha256, sha256(await bytes(f.root, "worker.js")));
+      const children = await f.api(`/session/${worker.id}/children`);
+      assert.ok(children.length > 0);
+      for (const child of children) await assertEvaluatorMarker(f, child.id, worker.id, terminal.definition_sha256);
+      const result = { case: testCase.name, planner: planner.id, worker: worker.id, outcome: terminal.state,
+        continuations: history.filter(message => message.parts.some(part => part.synthetic)).length,
+        evaluations: children.length, independently_checked: true };
+      results.push(result); t.diagnostic(JSON.stringify(result));
+      for (const file of ["worker.js", "README.md", "HISTORY.md", "verify.test.mjs", ...(testCase.name === "repairable-prerequisite" ? ["preparation.json"] : [])]) {
+        await writeFile(path.join(evidence, `${testCase.name}-${file}`), await bytes(f.root, file), { mode: 0o600 });
+      }
+      await f.kill();
+    }
+    passed = true;
+  } finally {
+    for (const f of fixtures) for (const session of await f.api("/session").catch(() => [])) {
+      if (session.directory === f.root) await f.api(`/session/${session.id}/abort`, {}).catch(() => {});
+    }
+    await writeFile(path.join(evidence, "summary.json"), JSON.stringify({ passed, model: settings.model,
+      max_turns: settings.maxTurns, timeout_ms: settings.timeoutMs, started_at: startedAt,
+      elapsed_ms: Date.now() - startedAt, model_turn_intents: (await readFile(receipts, "utf8")).trim().split("\n").filter(Boolean).length, results, previous }, null, 2), { mode: 0o600 });
+    t.diagnostic(`Qualification evidence: ${evidence}`);
+    // Registered after fixture cleanup: private credentials are erased only once
+    // all isolated servers have stopped. Public receipts remain for inspection.
+    t.after(() => rm(privateRoot, { recursive: true, force: true }));
+  }
 });
 
 test("a genuinely impossible Goal keeps looping until actual user cancellation", { timeout: 120_000 }, async t => {

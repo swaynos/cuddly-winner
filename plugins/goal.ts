@@ -215,7 +215,10 @@ export const Goal = async ({ client, directory, worktree }: any) => {
       }, async execute(args, context) {
         const id = context.sessionID;
         if (args.predecessor_session_id !== undefined) {
-          if (args.operation !== "inspect") throw new Error('Predecessor inspection is inspect-only. Retry with operation="inspect"; start/resume control only your current session.');
+          if (args.operation !== "inspect") {
+            const run = checkpoint(await session(id));
+            throw new Error(`State: ${run?.state ?? "not_started"}. Predecessor inspection is inspect-only. Next: retry operation="inspect" with predecessor_session_id; start/resume control only your current session.`);
+          }
           return JSON.stringify(await inspectPredecessor(id, args.predecessor_session_id));
         }
         if (args.operation === "inspect") return JSON.stringify(await inspect(id, args.include_baseline === true));
@@ -225,16 +228,20 @@ export const Goal = async ({ client, directory, worktree }: any) => {
         if (run && run.definition_sha256 !== goal.fingerprint) throw new Error("Goal definition changed; republish explicitly and use a fresh loaded conversation. Prior acceptance is not applicable.");
         if (run?.state === "accepted") return JSON.stringify(await inspect(id));
         if (args.operation === "pause") {
-          if (!run) throw new Error("No admitted Goal to pause.");
+          if (!run) throw new Error('State: not_started. No admitted Goal to pause. Next: call goal_run(operation="start", completion_target=..., authorized_actions=...) before mutation; no resume confirmation is needed.');
           if (run.state !== "paused" && !pauseIntent(goal.messages, CONTINUE, run.resumed_after_user)) return JSON.stringify({
             runtime_contract: RUNTIME, state: run.state, pause_applied: false,
             reason: "No explicit user stop or runtime-observed boundary established a pause. Correct recoverable errors, inspect current status and continue permitted work; model-declared blockers or impossible outcomes are not stopping conditions.",
+            next_action: run.state === "evaluating" ? "Wait for the current evaluation; its findings return to this worker." : "Correct the failed call or experiment and continue the existing authorized work; nothing needs resuming.",
           });
           await pause(id, args.reason?.trim() || "User requested a pause; explicit resumption required.");
           return JSON.stringify(await inspect(id));
         }
         if (args.operation === "resume") {
-          if (run?.state !== "paused" || !args.reconciled || !resumeIntent(run, goal.messages, CONTINUE).confirmed) throw new Error("Explicit user resumption and reconciled action outcomes are required; a status question does not resume work.");
+          if (!run) throw new Error('State: not_started. Nothing needs resuming. Next: call goal_run(operation="start", completion_target=..., authorized_actions=...) once before mutation.');
+          if (run.state === "working") throw new Error("State: working. Nothing needs resuming. Next: correct the prior call or experiment and continue permitted work in this worker.");
+          if (run.state === "evaluating") throw new Error("State: evaluating. An independent evaluation is active. Next: wait for its result, then use its findings; do not resume or overlap it.");
+          if (!args.reconciled || !resumeIntent(run, goal.messages, CONTINUE).confirmed) throw new Error('State: paused. Explicit user resumption and reconciled action outcomes are required; a status question does not resume work. Next: inspect receipts and obtain a fresh real user resume request or native Resume Goal answer, then call resume with reconciled=true.');
           if (!(await childrenIdle(id, run.definition_sha256))) throw new Error("Previous evaluator is active or its activity is unknown; establish inactivity first.");
           const human = goal.messages.findLast((m: any) => m.info.role === "user" && m.parts.some((p: any) => p.type === "text" && !p.synthetic && p.text !== CONTINUE));
           run = await save(id, current => ({ ...transition(current!, { type: "resume" }, Date.now()), resumed_after_user: human?.info.id }));
@@ -256,17 +263,18 @@ export const Goal = async ({ client, directory, worktree }: any) => {
       goal_evaluate: tool({ description: "Obtain fresh independent feedback on a concrete candidate or final acceptance of the entire Goal. Failed feedback returns to this same worker; no builder handoff or cycle limit.", args: {
         mode: tool.schema.enum(["feedback", "final"]),
         focus: tool.schema.string().min(1).max(4000).optional(),
-        artifacts: tool.schema.array(tool.schema.string().min(1)).min(1).max(256),
+        artifacts: tool.schema.array(tool.schema.string().min(1)).min(1).max(256).describe("Paths only: exact canonical worktree-relative files, e.g. worker.js. Do not append descriptions, hashes or judgments to filenames. Put evaluation questions in focus; supply actual inspectable files, not directories."),
       }, async execute(args, context) {
         const id = context.sessionID;
         const goal = await definition(id);
         if (!goal) throw new Error("Only the selected root Goal may request evaluation.");
         const run = await reconcile(id);
-        if (!run || run.definition_sha256 !== goal.fingerprint) throw new Error("Start the matching Goal before evaluation.");
+        if (!run) throw new Error('State: not_started. Start the matching Goal before evaluation. Next: call goal_run(operation="start", completion_target=..., authorized_actions=...) before mutation, implement the candidate, then evaluate.');
+        if (run.definition_sha256 !== goal.fingerprint) throw new Error(`State: ${run.state}. Evaluation requires the matching Goal definition; this definition changed. Next: explicitly republish and use a fresh loaded conversation; repeating start cannot replace existing authority.`);
         if (run.state === "accepted") return JSON.stringify(await inspect(id));
-        if (run.state !== "working" || Object.keys(run.pending_actions ?? {}).length || liveEvaluations.has(id)) throw new Error("Finish active task actions/evaluation before requesting a stable candidate check; the existing work is unchanged.");
+        if (run.state !== "working" || Object.keys(run.pending_actions ?? {}).length || liveEvaluations.has(id)) throw new Error(`State: ${run.state}. Finish active task actions/evaluation before requesting a stable candidate check. Next: inspect current goal_run status; wait for owned actions/evaluation, or reconcile receipts and explicitly resume if paused. Do not replay uncertain effects.`);
         if (!["feedback", "final"].includes(args.mode) || !Array.isArray(args.artifacts) || !args.artifacts.length
-          || args.artifacts.length > 256 || args.artifacts.some(p => !canonical(p)) || (args.mode === "feedback" && !args.focus?.trim())) throw new Error("Supply canonical candidate artifact paths and an explicit feedback focus, or request final evaluation.");
+          || args.artifacts.length > 256 || args.artifacts.some(p => !canonical(p)) || (args.mode === "feedback" && !args.focus?.trim())) throw new Error("State: working. Supply canonical candidate artifact paths and an explicit feedback focus, or request final evaluation. Next: correct these arguments and retry; no evaluator was dispatched and nothing needs resuming.");
         if (!goal.model?.providerID || !goal.model?.modelID) throw new Error("Independent evaluation requires the selected worker model.");
         // Reserve the evaluation before any asynchronous snapshot work. Concurrent
         // requests must neither overlap nor pause an existing evaluation.
@@ -282,7 +290,8 @@ export const Goal = async ({ client, directory, worktree }: any) => {
           const preserved = args.mode === "final" ? Object.entries(run.initial_worktree.files)
             .filter(([, value]: any) => value.state === "present").map(([file]) => file) : [];
           const candidate = await captureFiles(root, [...goal.policy.edit_paths, ...args.artifacts, ...preserved]);
-          if (Object.values(candidate).some((file: any) => file.state === "unavailable")) throw new Error("Candidate evidence unavailable; resolve ownership/access before evaluation.");
+          const unavailable = Object.keys(candidate).filter(file => candidate[file].state === "unavailable");
+          if (unavailable.length) throw new Error(`Candidate evidence unavailable at ${JSON.stringify(unavailable)}. Next: inspect these paths and supply individual inspectable files within authority; directory/symlink references cannot establish acceptance. Missing files remain explicit absence, not fabricated evidence.`);
           const assigned = await save(id, current => {
             if (current!.state !== "evaluating") throw new Error("Evaluation paused during snapshot capture.");
             return { ...current!, evaluation: { ...current!.evaluation!, candidate }, updated_at: Date.now() };
@@ -297,9 +306,9 @@ export const Goal = async ({ client, directory, worktree }: any) => {
         } catch (error) {
           if (!started) throw error; // A rejected transition did not start work.
           if (!dispatched) {
-            await save(id, current => current!.state === "evaluating"
+            const recovered = await save(id, current => current!.state === "evaluating"
               ? { ...current!, state: "working", evaluation: undefined, updated_at: Date.now() } : current!);
-            throw error; // Correctable snapshot failure, not an external action.
+            throw new Error(`State: ${recovered.state}. ${error instanceof Error ? error.message : String(error)} No evaluator was dispatched; inspect current status and correct the candidate references.`);
           }
           await pause(id, error instanceof Error ? error.message : String(error));
           return JSON.stringify(await inspect(id));

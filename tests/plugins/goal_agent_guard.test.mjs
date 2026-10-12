@@ -29,7 +29,7 @@ async function publish(root, overrides = {}) {
     durable_context: ["docs/REQUIREMENTS.md"],
     edit_paths: ["src/retry.ts"],
     bash: true,
-    verification_commands: ["node --test tests/retry.test.mjs"],
+    verification_commands: ["Inspect the declared source files"],
     stop_conditions: ["Scope expands."],
     escalation_triggers: ["The outcome is ambiguous."],
     instructions: "Implement the smallest correct change.",

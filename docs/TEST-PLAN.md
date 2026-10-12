@@ -114,6 +114,70 @@ the installed runtime using OpenCode 1.18.35. Deployment used `install --backup`
 the installer reported the managed profile current. Already running servers still
 need restarting before they load these changes.
 
+## First-Publication Qualification
+
+Offline regressions exercise ordinary short Prometheus/worker prompts, missing code,
+obsolete instructions, repairable preparation, failed checks and native continuation.
+Publisher tests reject objective path/verification dead ends before file mutation,
+while accepting unsolved work with authorized implementation paths. Recovery tests
+check state-specific next actions without erasing admission, findings or real pauses.
+
+Real-model qualification is separate and opt-in. It asks the actual configured model
+to publish from `README.md` and a short outcome/authority prompt, then starts its
+generated worker with only `Implement the Goal.` It does not supply canned publisher
+arguments or recovery coaching. Five disposable cases cover missing implementation,
+stale instructions, missing preparation, failing checks and contradictory criteria.
+Feasible cases need native independent final acceptance and a separately executed
+fixed Node verifier; contradictory criteria must keep working until explicit cancellation.
+Read-only fixture bytes and native evaluator identities are checked independently.
+
+```sh
+OPENCODE_LIVE_PUBLICATION=1 OPENCODE_PUBLICATION_MODEL=provider/model OPENCODE_PUBLICATION_MAX_TURNS=150 OPENCODE_PUBLICATION_TIMEOUT_MS=1800000 node --test --test-name-pattern="real-model first-publication" tests/integration/goal_runtime.test.mjs
+```
+
+Choose the model and both test-only ceilings with explicit user authority before
+running. No model or resource limit is inferred. These values are not production
+Goal limits or claims of a billing hard cap. A private test hook records every native
+model-turn intent before dispatch, preserves all charges through server restart and
+rejects model changes, spent turns and expired time. Test controls also abort owned
+temporary sessions when stopping. Requests already in flight remain charged.
+For a retry after a clean recorded stop, set `OPENCODE_PUBLICATION_EVIDENCE` to the
+printed evidence directory: original ceilings, start time, receipts and previous
+summaries are retained. Do not reset its budget or automatically replay an uncertain run.
+
+Authentication/provider settings stay in owner-only private directories outside
+task/model-readable roots, are removed after servers stop, and never enter logs.
+Only the owned, call-bound fixed local Node check and closed read-only status/hash
+diagnostics receive automated Bash approval; permission patterns are not commands.
+The subprocess environment excludes inherited `NODE_TEST_CONTEXT`, so both the worker's
+check and the independent check execute real tests rather than suppress recursive runs.
+The normal account configuration and other active sessions are not restarted.
+Public summaries, intent receipts and newly retained successful artifacts remain
+under `/tmp/opencode/goal-publication-qualification-*` for inspection.
+
+### 2026-10-12: bounded gpt-6-luna observation
+
+The user authorized `openai/gpt-6-luna`, 150 model turns and 30 minutes for the
+five-case qualification. Evidence is
+`/tmp/opencode/goal-publication-qualification-10QV7T/summary.json` and `turns.jsonl`.
+The same receipts were reused through harness corrections, retaining all charges
+and the original clock. The run stopped at exactly 150 intents (elapsed 1,783,868 ms).
+One case passed: missing implementation, planner `ses_ececaf10dffevJeuQgZGfWQ6vs`,
+worker `ses_ececaac76ffemEglfV14T3XaeK`, terminal native acceptance, one independent
+evaluator and a separately passing current-byte Node check. No follow-up coaching
+was supplied. Its scaffold is retained; that historical run preceded successful
+product-artifact retention and its deleted product bytes cannot be recreated as evidence.
+The other four cases remain unqualified; the aggregate run did not pass. A larger
+or fresh qualification needs explicit new test authority. No further paid calls
+were made after this ceiling. This is test-budget exhaustion, not a new Goal stop rule.
+
+Implementation verification: `npm test` passed 272 tests with two opt-in skips
+(real publication qualification and the existing authenticated provenance test).
+After `install --backup`, both the deliberately mistaken-worker journey and the
+three-case ordinary-prompt journey passed against installed OpenCode 1.18.35.
+Installer status reported the managed profile current. Active task conversations
+were not restarted or edited; new processes load the updated publication defaults.
+
 Repository-wide verification, when authorized for the full implementation:
 
 ```sh

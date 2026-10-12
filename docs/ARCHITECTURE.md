@@ -83,6 +83,21 @@ historical stops or user budgets; old evidence is retained without a migration o
 compatibility execution path. Historical coordinator tool records cannot seed
 a new persistent run in the old conversation.
 
+Prometheus's publication process turns a short request into executable work:
+finish line/authority, gap/first productive action, reachable prerequisites,
+sufficient exact implementation/verification/delivery paths, and reconciled history.
+Technical uncertainty does not require a planning-session implementation or proof
+of feasibility. The renderer supplies persistence and experiment-learning mechanics
+once; task prose supplies domain constraints and evidence. No second package or
+readiness manifest is introduced.
+
+`assertPublicationPaths` examines local filesystem facts before publication writes.
+It rejects directory/symlink edit targets and missing literal Node entry points
+without implementation authority; pure validation rejects file/descendant conflicts.
+Recognizable literal shell commands need Boolean Bash access. Complex shell/prose
+and quality/feasibility remain planning/evaluation obligations, not a static sandbox
+or keyword classifier. Existing read-only verification files need no edit grant.
+
 ## Native Checkpoint
 
 `session.metadata.cuddly_winner_goal` stores the run. The supported V2 client for
@@ -186,6 +201,11 @@ messages and summaries do not authorize resumption. Preserve original authority,
 baseline, feedback, final validation and unresolved findings. Reload recognizes
 pending actions or orphaned evaluation as unknown and pauses; restarting does not
 automatically replay external actions or unknown continuation dispatches.
+Tool errors distinguish observed working/evaluating/paused/not-started state and
+give the appropriate next operation, rather than treating every invalid resume as
+missing human authorization. Snapshot rejection restores the actual current state
+before reporting unavailable file paths and correction guidance. Descriptions on
+context/artifact parameters require paths only, avoiding prose-as-filename baselines.
 Terminal context/structured-output errors and API errors with known non-auth HTTP
 status can retry when no pending task effect or continuation is uncertain. Error
 continuation waits one second to avoid a hot retry loop; this is not a time limit.

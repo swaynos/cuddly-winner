@@ -74,6 +74,7 @@ test("publishes one self-contained persistent Goal worker", async () => fixture(
   assert.match(content, /no default time, attempt or stall limit/);
   assert.match(content, /Correct invalid tool arguments and retry/);
   assert.match(content, /saying blocked is feedback, not permission to stop/);
+  assert.match(content, /observed failure, the materially justified change and the evidence/);
   assert.match(content, /goal_evaluate\(mode=feedback, focus=\.\.\., artifacts=\[\.\.\.\]\)/);
   assert.match(content, /goal_evaluate\(mode=final, artifacts=\[\.\.\.\]\)/);
   assert.match(content, /goal_run operations inspect, pause, and resume/);
@@ -127,8 +128,34 @@ test("publisher inherits the selected root model and stores only an evaluator ov
   await assert.rejects(publishGoalAgentFile(root, request({ builder_model: "qwen/coder" })), /unknown Goal Agent field: builder_model/);
 }));
 
+test("publication rejects objective path and verification dead ends without writing a scaffold", async () => fixture(async root => {
+  await mkdir(path.join(root, "src"));
+  await writeFile(path.join(root, "existing.mjs"), "// readonly verification\n");
+  await symlink(path.join(root, "existing.mjs"), path.join(root, "linked.mjs"));
+  for (const [definition, error] of [
+    [request({ edit_paths: ["src", "src/retry.ts"] }), /file and its descendant/],
+    [request({ edit_paths: ["src"] }), /exact regular files/],
+    [request({ edit_paths: ["linked.mjs"] }), /symlink/],
+    [request({ bash: false }), /requires Bash/],
+    [request({ verification_commands: ["node --test tests/missing.test.mjs"] }), /no implementation path/],
+    [request({ verification_commands: ["node linked.mjs"] }), /symlink/],
+  ]) await assert.rejects(publishGoalAgentFile(root, definition), error);
+  await assert.rejects(lstat(path.join(root, ".opencode")), { code: "ENOENT" });
+  await publishGoalAgentFile(root, request({ verification_commands: ["node existing.mjs"] }));
+  const inspected = await publishGoalAgentFile(root, { operation: "inspect", name: "retry-fix" });
+  await assert.rejects(publishGoalAgentFile(root, { ...request({ verification_commands: ["node missing.mjs"] }),
+    operation: "update", expected_sha256: inspected.sha256 }), /no implementation path/);
+  assert.equal(await readFile(path.join(root, inspected.path), "utf8"), inspected.content);
+}));
+
+test("missing implementations are publishable when their exact verification paths are authorized", async () => fixture(async root => {
+  const result = await publishGoalAgentFile(root, request({ instructions: "The solution is technically unsolved. Implement and experiment within the declared paths." }));
+  assert.match(await readFile(path.join(root, result.path), "utf8"), /technically unsolved/);
+  await assert.rejects(lstat(path.join(root, "tests/retry.test.mjs")), { code: "ENOENT" });
+}));
+
 test("evaluator model is optional while fixed criteria and the policy schema are preserved", async () => fixture(async root => {
-  const definition = request({ bash: false });
+  const definition = request({ bash: false, verification_commands: ["Inspect src/retry.ts and tests/retry.test.mjs through Read"] });
   const result = await publishGoalAgentFile(root, definition);
   const content = await readFile(path.join(root, result.path), "utf8");
   const header = parseYaml(content.match(/^---\n([\s\S]*?)\n---\n/)[1]);
@@ -192,7 +219,7 @@ test("publisher accepts ordinary application paths with control-directory names"
     "src/scripts/helper.ts", "docs/AGENTS.md", ".opencode-backup/notes.md", "src/opencode.json",
   ];
   for (const editPath of edit_paths) assert.equal(isProtectedControlPath(editPath), false, editPath);
-  await publishGoalAgentFile(root, request({ edit_paths }));
+  await publishGoalAgentFile(root, request({ edit_paths, verification_commands: ["Inspect the declared application files"] }));
   assert.deepEqual(readGoalAgentPolicy(root, "retry-fix").edit_paths, edit_paths);
 }));
 
@@ -231,7 +258,7 @@ test("explicit fingerprint-bound revisions preserve identity and reject stale up
   assert.match(inspected.sha256, /^[a-f0-9]{64}$/);
   assert.equal(inspected.content, await readFile(path.join(root, first.path), "utf8"));
   assert.equal(inspected.sha256, first.sha256);
-  const update = { ...request({ outcome: "Updated policy", edit_paths: ["src/new.ts"], bash: false }), operation: "update", expected_sha256: inspected.sha256 };
+  const update = { ...request({ outcome: "Updated policy", edit_paths: ["src/new.ts"], bash: false, verification_commands: ["Inspect src/new.ts"] }), operation: "update", expected_sha256: inspected.sha256 };
   const revised = await publishGoalAgentFile(root, update);
   assert.equal(revised.path, first.path);
   assert.notEqual(revised.sha256, inspected.sha256);
@@ -294,6 +321,10 @@ test("Prometheus remains a read-only publisher for persistent workers and fresh 
   assert.match(content, /model selected in its root session/);
   assert.match(content, /validator_model/);
   assert.match(content, /Do not invent cycle, stall, time, batch, or resource limits/);
+  assert.match(content, /ordinary outcome-and-authority/);
+  assert.match(content, /worker-repairable within authority/);
+  assert.match(content, /proving feasibility is not a gate/);
+  assert.match(content, /do not duplicate an orchestration manual/);
   assert.doesNotMatch(content, /goal_cycle|goal_handoff|builder_model|max_cycles|max_stalled_cycles|fresh bounded builder|coordinator/);
 });
 

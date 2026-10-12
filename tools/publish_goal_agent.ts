@@ -109,6 +109,36 @@ function assertSafeEditPaths(paths: string[]): void {
     if (isProtectedControlPath(item)) {
       throw new Error(`edit_paths must not contain a protected control-plane path: ${item}`);
     }
+    if (paths.some(other => other !== item && other.startsWith(`${item}/`))) {
+      throw new Error(`edit_paths declare both a file and its descendant: ${item}. Declare exact files, not directories.`);
+    }
+  }
+}
+
+async function assertPublicationPaths(root: string, request: GoalAgentRequest): Promise<void> {
+  for (const item of request.edit_paths) {
+    const target = path.join(root, item);
+    assertSafeExistingPath(root, target);
+    try {
+      if (!(await fs.lstat(target)).isFile()) throw new Error(`edit_paths must name exact regular files: ${item}`);
+    } catch (error: any) { if (error?.code !== "ENOENT") throw error; }
+  }
+  for (const command of request.verification_commands) {
+    // Check only literal, recognizable shell entry points. Arbitrary shell/prose
+    // is not statically interpretable, and this is not a command sandbox.
+    if (!request.bash && /^\s*(?:node|npm|npx|bash|sh|python[0-9.]*|pytest|git|uv)\s/.test(command)) {
+      throw new Error(`Verification requires Bash but bash is false: ${command}. Enable authorized Bash or supply a permitted inspection route.`);
+    }
+    const entry = /^\s*node\s+(?:--test\s+)?(?:"([^"\n]+\.[cm]?js)"|'([^'\n]+\.[cm]?js)'|([^\s;&|]+\.[cm]?js))(?:\s|$)/.exec(command);
+    const file = entry?.[1] ?? entry?.[2] ?? entry?.[3];
+    if (!file || !canonicalPath(file) || /[*?\[]/.test(file)) continue;
+    assertSafeExistingPath(root, path.join(root, file));
+    try {
+      if (!(await fs.lstat(path.join(root, file))).isFile()) throw new Error(`Verification entry point is not a regular file: ${file}`);
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
+      if (!request.edit_paths.includes(file)) throw new Error(`Missing verification entry point ${file} has no implementation path. Include it in edit_paths or provide an existing permitted check.`);
+    }
   }
 }
 
@@ -285,6 +315,7 @@ export function renderGoalAgent(request: GoalAgentRequest): string {
     "Work directly and creatively within the exact edit_paths and Bash policy. Prepare missing or stale prerequisites, verify readiness, and continue into authorized work. Preparation alone is not completion unless explicitly requested as the finish line.",
     "Continue partial work in this conversation. Reuse verified prerequisites; refresh affected preparation and invalidate dependent evidence when inputs change, preserving unaffected work and history. Acceptance criteria are implementation and verification obligations, not an inspection checklist.",
     "Keep looping even when progress is slow or the outcome appears impossible; there is no default time, attempt or stall limit. Correct invalid tool arguments and retry, inspect fresh status instead of reusing stale results, and explore materially different permitted approaches. A worker or evaluator saying blocked is feedback, not permission to stop. Missing implementation and repairable prerequisites are your work; do not ask the user to rescue ordinary recovery.",
+    "Turn each failed experiment into the next productive action: identify the observed failure, the materially justified change and the evidence that would support or reject it. Use existing task records and evaluator feedback; repeated failure improves diagnosis, not a stall quota. A prohibited action does not stop other useful permitted work, and an unsolved technical problem does not require new authority.",
     "Seek fresh independent feedback with goal_evaluate(mode=feedback, focus=..., artifacts=[...]) when useful. Diagnose findings, repair the work, and continue; feedback and passing partial checks do not establish completion.",
     "For full acceptance, call goal_evaluate(mode=final, artifacts=[...]) with concrete artifact and verification references for the requested outcome. Resolve failed findings and obtain independent final acceptance before reporting completion. Never weaken the goal to finish.",
     "Use goal_run operations inspect, pause, and resume to inspect or control this run. After interruption, inspect status and reconcile actual task actions before resuming the same conversation. Do not replay unknown side effects. Explicit resumption can use a fresh user request or a native Question with header and offered option Resume Goal; a status question or Keep paused answer does not authorize it. A changed definition requires fingerprint-checked publication, restart, and a fresh conversation.",
@@ -424,6 +455,7 @@ export async function publishGoalAgentFile(root: string, value: unknown): Promis
     if (typeof expected_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(expected_sha256)) throw new Error("update requires the inspected expected_sha256");
     const request = validateGoalAgentRequest(definition);
     const realRoot = await fs.realpath(path.resolve(root));
+    await assertPublicationPaths(realRoot, request);
     const directory = await ensureSafeGeneratedDirectory(realRoot);
     const target = goalAgentPath(realRoot, request.name);
     const lock = path.join(directory, `.update-${request.name}.lock`);
@@ -455,6 +487,7 @@ export async function publishGoalAgentFile(root: string, value: unknown): Promis
   }
   const request = validateGoalAgentRequest(value);
   const realRoot = await fs.realpath(path.resolve(root));
+  await assertPublicationPaths(realRoot, request);
   await assertNameIsAvailable(realRoot, request.name);
   const directory = await ensureSafeGeneratedDirectory(realRoot);
   const target = path.join(directory, `${request.name}.md`);
@@ -491,13 +524,13 @@ export default tool({
     description: tool.schema.string().min(1).optional(),
     outcome: tool.schema.string().min(1).describe("State the actual finish line: preparation, executable behavior verified offline, or authorized live outcome. Do not substitute simulations for a live result.").optional(),
     acceptance_criteria: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Concrete implementation/artifact obligations and independent evidence for the requested behavior; distinguish prerequisite gates from final acceptance.").optional(),
-    durable_context: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Canonical worktree-relative input/evidence paths. Identify stale authority instructions and their disposition in instructions; unavailable historical evidence cannot be manufactured.").optional(),
-    edit_paths: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
+    durable_context: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Paths only: exact canonical worktree-relative input/evidence paths, e.g. README.md. Do not append explanations to filenames. Put stale-authority disposition and other prose in instructions; unavailable historical evidence cannot be manufactured.").optional(),
+    edit_paths: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Exact files sufficient for implementation, repairable prerequisites, missing verification programs and delivery. Existing directories and symlinks are not edit paths.").optional(),
     bash: tool.schema.boolean().optional(),
     verification_commands: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Real verification entry points. Label commands that the worker must implement rather than implying they already exist.").optional(),
     stop_conditions: tool.schema.array(tool.schema.string().min(1)).min(1).describe("Genuine task-specific blockers and stop procedures. Do not invent cycle, stall, or resource limits; include only limits explicitly authorized by the user.").optional(),
     escalation_triggers: tool.schema.array(tool.schema.string().min(1)).min(1).optional(),
-    instructions: tool.schema.string().min(1).describe("Lead with a short execution spine: finish line, authority, current gap, first productive obligation, minimum prerequisites and direct continuation. Reconcile stale context; describe readiness/reuse/invalidation and tool usage once. Respect preparation-only/scaffolding-only limits.").optional(),
+    instructions: tool.schema.string().min(1).describe("Lead with finish line, authority, current gap and first productive implementation/experiment. Give permitted routes for necessary prerequisites: verified, worker-repairable or requiring genuinely new authority. Reconcile stale context; keep domain instructions concise and rely on the shared persistence/recovery template. Unsolved technical problems are publishable. Respect preparation-only/scaffolding-only limits.").optional(),
   },
   async execute(args, context) {
     const root = activeWorktree(context.directory, context.worktree);
