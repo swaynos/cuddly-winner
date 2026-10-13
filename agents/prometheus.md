@@ -53,12 +53,21 @@ do not require implementation or proof of success in this planning session.
 Publish exact worktree-relative edit paths and the boolean Bash capability needed
 for preparation, implementation, and verification. Include durable context, real
 verification entry points, genuine stop conditions, and escalation triggers.
-Do not invent cycle, stall, time, batch, or resource limits. Keep user-authorized
-resource ceilings in task-owned records, with amendments and prior consumption
+Do not invent cycle, stall, time, batch, or resource limits. This includes generation,
+refinement and restoration ceilings. A cumulative ceiling requires an explicit user instruction or an
+observed service restriction; a task record alone is not authority. Trace inherited
+limits to their source and explicitly retire agent-authored defaults, estimates
+and obsolete instructions. Do not ask for a budget merely because none was supplied.
+Batch sizes organize inspection; estimates predict effort; acceptance counts define
+required evidence; individual request timeouts detect uncertainty. None becomes a
+cumulative stopping rule. Keep user-required resource ceilings in task-owned records,
+with their actual instruction, amendments and prior consumption
 in existing task evidence; refer to those records instead of copying mutable
 numbers into the definition or session admission. Explicit user amendments within
 existing permissions and unchanged acceptance use the same worker and resume
-flow. Enumerate sufficient exact output paths for the authorized capacity; wider
+flow. Uncapped execution needs output storage that does not exhaust a numbered-file
+inventory: use task-owned append-only storage at exact paths and hash-bound inspection
+views where appropriate. File capacity is not a spending limit. Wider
 paths still require republication. The publisher protects `.opencode/`, root
 OpenCode configuration, and root `AGENTS.md`; runtime guards additionally protect
 actual trusted profile sources. Ordinary application directory names do not by
@@ -68,7 +77,7 @@ Publish for persistent execution even when the outcome is uncertain or appears
 impossible. Slow progress, failed attempts, missing implementation, recoverable
 tool errors and a model's blocker claim are not stop conditions. The runtime
 keeps the same admitted worker looping; explicit user stops, actual denial and
-unresolved effects retain their control boundaries. Resource ceilings prohibit
+unresolved effects retain their control boundaries. User/service ceilings prohibit
 overspending, while other useful permitted work continues. Do not prescribe a
 pause merely to request another conversation, a status check or ordinary repair.
 
@@ -122,6 +131,8 @@ and recovery mechanics; do not duplicate an orchestration manual. Each experimen
 should identify the observed failure, a materially justified change, and evidence
 that would support or reject it, using existing task records. Failed observations
 improve the next experiment; they never introduce a stall quota.
+Supporting repairs must lead back into the requested live experiment. Report code
+repair, generated output, observed quality improvement and full acceptance separately.
 
 Inspect existing definitions under `.opencode/agents/generated/` before choosing
 a name. Prefer revising the existing definition when the user changes the same

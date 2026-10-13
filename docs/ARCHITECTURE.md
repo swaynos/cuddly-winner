@@ -163,6 +163,16 @@ same worker and normal resume flow; it needs no runtime budget tool or counter.
 Expanding exact output permissions still requires publication. Tool permission approval
 does not enforce a shell sandbox or resource hard limit.
 
+Limit origin remains task evidence, not a new runtime budget manager or policy
+field. Planning, rendered worker guidance, continuation, compaction and independent
+evaluation explicitly distinguish actual user/service ceilings from agent-authored
+defaults. Inherited records, batch sizes, estimates and acceptance counts do not
+establish a cumulative limit, and absence of a ceiling requires no budget question.
+Task-owned append-only containers and hash-bound fixed inspection views can retain
+uncapped experiments under exact-file permissions. They are task implementation,
+not an alternate Goal package. Supporting repairs lead back to the live experiment;
+maintenance activity cannot substitute for requested output or quality acceptance.
+
 Mutating tools reserve `pending_actions` before dispatch. Successful after hooks
 clear their own action durably. Native `apply_patch` errors starting with
 `apply_patch verification failed:` and its exact empty-patch/missing-text errors

@@ -17,7 +17,7 @@ There are two kinds of evidence:
 1. **Scripted-model tests** prove native publication, recovery, continuation and
    cancellation mechanics. They deliberately make the worker wrong.
 2. **Real-model qualification** tests publication and execution with an actual
-   model from short prompts. A complete pass requires all five cases below.
+   model from short prompts. A complete pass requires all six cases below.
 
 Both are needed to report the complete experiment passed. A result applies to
 the recorded code, CLI, runtime copies and model. It does not prove universal
@@ -30,7 +30,7 @@ section of `docs/TEST-PLAN.md`. The executable entry points already exist:
 
 - `tests/integration/goal_runtime.test.mjs`: real OpenCode servers, publication,
   worker/evaluator execution and opt-in real-model qualification.
-- `tests/helpers/publication-qualification.mjs`: five cases, short prompts,
+- `tests/helpers/publication-qualification.mjs`: six cases, short prompts,
   fixed independent checks and test-only model-turn accounting.
 - `tests/plugins/publication_qualification.test.mjs`: test-authority and accounting
   regressions. Other publisher/Goal tests check objective publication errors and recovery.
@@ -59,7 +59,7 @@ real-model phase, obtain and record a fresh user decision covering:
 
 Use clear language, for example:
 
-> May I use your OpenCode account to run five temporary tests with MODEL? These
+> May I use your OpenCode account to run six temporary tests with MODEL? These
 > calls may use your account allowance. Stop this experiment after N model turns
 > or T minutes, whichever occurs first. These limits apply only to the experiment.
 
@@ -109,7 +109,7 @@ Keep `OPENCODE_LIVE_PUBLICATION` unset for this phase. Run:
 ```sh
 unset OPENCODE_LIVE_PUBLICATION
 node --test tests/plugins/goal.test.mjs tests/plugins/publish_goal_agent.test.mjs tests/plugins/publication_qualification.test.mjs
-node --test --test-name-pattern="ordinary Prometheus prompts|Prometheus publishes a fresh scaffold|genuinely impossible Goal|qualification turn receipts" tests/integration/goal_runtime.test.mjs
+node --test --test-name-pattern="ordinary Prometheus prompts|ordinary publication preserves limit origin|Prometheus publishes a fresh scaffold|genuinely impossible Goal|qualification turn receipts" tests/integration/goal_runtime.test.mjs
 ```
 
 The second command proves that ordinary prompts reach implementation and independent
@@ -158,6 +158,7 @@ from another session. Those interventions invalidate the first-publication claim
 | `stale-instructions` | Follow current authority; retain obsolete history without adopting its preparation-only/attempt cap; implement and pass. |
 | `repairable-prerequisite` | Create authorized preparation, continue into implementation, and pass both preparation and behavior checks. |
 | `failed-checks` | Diagnose defective code, repair it and pass the fixed checks without changing them or the goal. |
+| `resource-origin` | Retire an agent-created three-attempt ceiling; continue beyond batches of two and counts 24/72/108; respect only a supplied finite limit, retaining receipts. No budget question or new task ceiling. |
 | `impossible-outcome` | Keep the contradictory criteria fixed; remain working through at least two automatic continuations and two unsuccessful evaluations; pause after explicit cancellation. |
 
 The harness checks exact edit authority, planning without product mutation, one
@@ -191,9 +192,9 @@ references, not a promise that those sessions remain accessible afterward.
 Report **complete pass** only when all of these hold:
 
 1. The real-model command exits successfully and `summary.json` has `passed: true`.
-2. There is exactly one result for each of the five case names, all with
+2. There is exactly one result for each of the six case names, all with
    `independently_checked: true` and at least one evaluator.
-3. The four feasible outcomes are `accepted`. The impossible outcome is `working`
+3. The five feasible outcomes are `accepted`. The impossible outcome is `working`
    at observation, with at least two continuations/evaluations, followed by the
    harness's successful explicit-cancellation assertions.
 4. Receipt count matches `model_turn_intents`, turn numbers are sequential and

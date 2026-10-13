@@ -111,6 +111,21 @@ Reaching a ceiling prohibits further spending; it does not prohibit useful permi
 reasoning, inspection or implementation. Continuation never resets or widens a ceiling.
 Transport/protocol safeguards are not domain progress or resource quotas.
 
+No planner, publisher, worker, compaction summary or evaluator may create a
+cumulative generation, refinement, restoration, retry, time or spending ceiling.
+A ceiling requires its actual explicit user instruction or an observed service
+restriction. An agent-written task record does not confer authority by repetition.
+Trace inherited limits and retire unsupported defaults while preserving history.
+No supplied ceiling means no invented ceiling and no mandatory budget question.
+Batch sizes organize inspection, estimates forecast effort, acceptance counts
+define evidence, and individual request timeouts detect uncertainty; none is a
+cumulative stopping rule. Uncapped tasks must retain future outputs at exact
+authorized paths without a finite numbered-file inventory. Supporting repairs
+return directly to the next justified experiment; reports distinguish code repair,
+new output, observed quality improvement and independent complete acceptance.
+These semantic obligations are verified through publication/execution journeys;
+the publisher does not pretend that a prose keyword filter can prove user authority.
+
 Recoverable tool failures with a verified no-effect outcome do not require a new
 `Resume Goal` authorization. Native `apply_patch` parsing/verification failures,
 empty patches and missing patch text occur before its file-write phase; clear only

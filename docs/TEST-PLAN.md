@@ -118,7 +118,7 @@ need restarting before they load these changes.
 
 For a cold-context repeat experiment, follow
 [Repeat the first-publication experiment](GOAL-PUBLICATION-EXPERIMENT.md).
-It gives the authorization requirements, source/installed commands, five-case
+It gives the authorization requirements, source/installed commands, six-case
 pass criteria, evidence inspection and charged-retry procedure. The historical
 150-turn allowance below is exhausted; documentation is not new spending authority.
 
@@ -131,18 +131,21 @@ check state-specific next actions without erasing admission, findings or real pa
 Real-model qualification is separate and opt-in. It asks the actual configured model
 to publish from `README.md` and a short outcome/authority prompt, then starts its
 generated worker with only `Implement the Goal.` It does not supply canned publisher
-arguments or recovery coaching. Five disposable cases cover missing implementation,
-stale instructions, missing preparation, failing checks and contradictory criteria.
+arguments or recovery coaching. Six disposable cases cover missing implementation,
+stale instructions, missing preparation, failing checks, resource-limit origin and
+contradictory criteria. The origin case tests continuation past 24/72/108 with no
+user ceiling, batch size two without a cumulative cap, and supplied finite ceilings.
 Feasible cases need native independent final acceptance and a separately executed
 fixed Node verifier; contradictory criteria must keep working until explicit cancellation.
 Read-only fixture bytes and native evaluator identities are checked independently.
 
 ```sh
-OPENCODE_LIVE_PUBLICATION=1 OPENCODE_PUBLICATION_MODEL=provider/model OPENCODE_PUBLICATION_MAX_TURNS=150 OPENCODE_PUBLICATION_TIMEOUT_MS=1800000 node --test --test-name-pattern="real-model first-publication" tests/integration/goal_runtime.test.mjs
+OPENCODE_LIVE_PUBLICATION=1 node --test --test-name-pattern="real-model first-publication" tests/integration/goal_runtime.test.mjs
 ```
 
 Choose the model and both test-only ceilings with explicit user authority before
-running. No model or resource limit is inferred. These values are not production
+running; export `OPENCODE_PUBLICATION_MODEL`, `OPENCODE_PUBLICATION_MAX_TURNS` and
+`OPENCODE_PUBLICATION_TIMEOUT_MS` from that decision. No model or resource limit is inferred. These values are not production
 Goal limits or claims of a billing hard cap. A private test hook records every native
 model-turn intent before dispatch, preserves all charges through server restart and
 rejects model changes, spent turns and expired time. Test controls also abort owned
@@ -153,13 +156,56 @@ summaries are retained. Do not reset its budget or automatically replay an uncer
 
 Authentication/provider settings stay in owner-only private directories outside
 task/model-readable roots, are removed after servers stop, and never enter logs.
-Only the owned, call-bound fixed local Node check and closed read-only status/hash
+Only the owned, call-bound fixed local Node check and closed read-only status/list/diff/hash
 diagnostics receive automated Bash approval; permission patterns are not commands.
 The subprocess environment excludes inherited `NODE_TEST_CONTEXT`, so both the worker's
 check and the independent check execute real tests rather than suppress recursive runs.
 The normal account configuration and other active sessions are not restarted.
 Public summaries, intent receipts and newly retained successful artifacts remain
 under `/tmp/opencode/goal-publication-qualification-*` for inspection.
+
+The deterministic real-CLI `ordinary publication preserves limit origin` journey
+separately checks no ceiling, agent-authored historical limits, an explicit user
+ceiling and inspection batches. It preserves receipts beyond the old batch at one
+exact output path, obtains independent acceptance, and requires no human rescue
+or budget question. This proves native mechanics and guidance delivery, not arbitrary
+model compliance. Shared templates, continuation, compaction and evaluator prompts
+must retain the source-aware contract without a new policy schema or budget manager.
+
+### 2026-10-13 UTC: limit-origin implementation and bounded real-model observation
+
+The source suite passed 273 tests with two opt-in skips. The four-scenario
+`ordinary publication preserves limit origin` journey also passed against fresh
+installed copies on OpenCode 1.18.35 after `install --backup`; installer status
+reported current. Node was v24.14.1. Exact-path policy, native admission/pause,
+independent evaluation and the existing browser inventory remain verified.
+
+The user separately authorized a fresh `openai/gpt-6-luna` qualification experiment
+for 300 model-turn intents or 60 minutes, whichever came first. It used repository
+runtime sources and the installed CLI 1.18.35:
+
+```sh
+OPENCODE_LIVE_PUBLICATION=1 OPENCODE_PUBLICATION_MODEL=openai/gpt-6-luna OPENCODE_PUBLICATION_MAX_TURNS=300 OPENCODE_PUBLICATION_TIMEOUT_MS=3600000 OPENCODE_GOAL_TEST_CLI="$(command -v opencode)" node --test --test-name-pattern="real-model first-publication" tests/integration/goal_runtime.test.mjs
+```
+
+Evidence: `/tmp/opencode/goal-publication-qualification-96M4Nu/summary.json` and
+`turns.jsonl`. Every retry used that same directory, model, ceilings and original
+clock. Harmless local list/diff/log diagnostics exposed missing test-only approvals;
+the closed command list was corrected with owned-path and mutation-denial tests.
+Failures consumed authority rather than resetting it. The final stop was exactly
+300 numbered intents after 1,497,774 ms; receipt sequencing and dispatch times
+were independently checked. Private profiles were removed after owned servers stopped.
+
+Missing implementation, stale instructions and repairable preparation passed native
+independent final acceptance and separate current-byte Node verification. Their
+published definitions and successful product/verifier/context files are retained.
+Failed checks had not reached acceptance at the ceiling; resource-origin and the
+impossible case were not reached in this real-model run. **The six-case aggregate
+qualification is incomplete (`passed: false`).** Deterministic native limit-origin
+and impossible-outcome journeys passed; they do not fill the missing real-model
+evidence. This test authority is exhausted. Further real qualification needs a new
+explicit user decision and must retain this history. It imposes no production Goal
+or image-generation ceiling.
 
 ### 2026-10-12: bounded gpt-6-luna observation
 

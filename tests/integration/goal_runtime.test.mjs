@@ -508,6 +508,71 @@ test("ordinary Prometheus prompts publish repairable work without persistence co
   }
 });
 
+test("ordinary publication preserves limit origin and continues beyond inspection batches at exact paths", { timeout: 120_000 }, async t => {
+  for (const kind of ["no ceiling", "agent-authored history", "explicit user ceiling", "inspection batch"]) {
+    const limit = kind === "explicit user ceiling" ? 2 : null;
+    const target = limit ?? 5;
+    const f = await fixture(t, async (input, { root }) => {
+      const { user, results, lastUser } = conversation(input);
+      if (user.includes("INDEPENDENT EVALUATOR")) {
+        assert.match(user, /an inherited task record alone is not authority/);
+        if (!results.some(result => result.name === "read")) return call("read", { filePath: path.join(root, "ledger.json") });
+        if (!results.some(result => result.name === "goal_verdict")) {
+          const ledger = JSON.parse(await bytes(root, "ledger.json"));
+          return call("goal_verdict", { status: "checked", reason: "Independent receipt/authority inspection", checks: {
+            c0: { passed: ledger.receipts.length === target && ledger.ceiling === limit && ledger.source === (limit === null ? null : "README.md: user instruction"),
+              evidence: `Read ledger.json: ${ledger.receipts.length} retained receipts; source-verified ceiling ${limit}` },
+          } });
+        }
+        return { text: "Independent evidence recorded." };
+      }
+      if (user.includes("Publish a Goal for README.md")) {
+        if (!results.some(result => result.name === "read")) return call("read", { filePath: path.join(root, "README.md") });
+        if (kind === "agent-authored history" && !results.some(result => result.args.filePath?.endsWith("HISTORY.md"))) return call("read", { filePath: path.join(root, "HISTORY.md") });
+        if (!results.some(result => result.name === "publish_goal_agent")) return call("publish_goal_agent", {
+          name: "fix-counter", description: "Receipt retention with current authority", outcome: "Retain requested receipts with no invented ceiling",
+          acceptance_criteria: [`ledger.json retains ${target} receipts and only the current user's actual ceiling/source`],
+          durable_context: ["README.md", ...(kind === "agent-authored history" ? ["HISTORY.md"] : [])],
+          edit_paths: ["ledger.json"], bash: false, verification_commands: ["Read ledger.json and inspect retained receipts and ceiling origin"],
+          stop_conditions: ["Actual user stop or denied access"], escalation_triggers: ["Genuinely new authority required"],
+          instructions: "Implement receipt retention. Agent-authored historical ceilings are obsolete. Inspect in batches of two and continue the requested work at the same exact ledger path.",
+        });
+        return { text: "Published; restart and select the Goal." };
+      }
+      if (!started(results)) return call("goal_run", { operation: "start", completion_target: "Retain requested receipts",
+        authorized_actions: "Edit ledger.json only; obey the actual user ceiling in README.md if supplied." });
+      const ledger = JSON.parse(await bytes(root, "ledger.json") ?? '{"receipts":[]}');
+      if (ledger.receipts.length === 2 && !lastUser.startsWith("Continue the admitted Goal")) return { text: "Inspection batch complete; requested work remains." };
+      if (ledger.receipts.length < target) return call("write", { filePath: path.join(root, "ledger.json"), content: JSON.stringify({
+        receipts: [...ledger.receipts, ledger.receipts.length + 1], ceiling: limit, source: limit === null ? null : "README.md: user instruction",
+      }) });
+      if (!results.some(result => result.name === "goal_evaluate")) return call("goal_evaluate", { mode: "final", artifacts: ["ledger.json"] });
+      return { text: "Independently accepted." };
+    }, { prometheus: true });
+    await writeFile(path.join(f.root, "README.md"), `Current user request: retain ${target} fixture receipts. ${limit === null ? "No cumulative resource ceiling was requested." : "User instruction: no more than two receipts."} Inspect batches of two; a batch is not a cumulative ceiling.\n`);
+    if (kind === "agent-authored history") await writeFile(path.join(f.root, "HISTORY.md"), "Agent-written plan: stop after two attempts. No user required this limit.\n");
+    await f.start();
+    const planner = await f.api("/session", { title: `Limit origin: ${kind}` });
+    await f.api(`/session/${planner.id}/message`, { agent: "prometheus", parts: [{ type: "text", text: "Publish a Goal for README.md. You may edit ledger.json." }] });
+    assert.equal(completed(await f.messages(planner.id), "publish_goal_agent").length, 1);
+    assert.equal(await bytes(f.root, "ledger.json"), undefined);
+    const scaffold = await bytes(f.root, ".opencode/agents/generated/fix-counter.md");
+    assert.match(scaffold, /No supplied ceiling means no invented ceiling and no mandatory budget question/);
+    await f.kill(); await f.start();
+    const worker = await f.api("/session", { title: `Execute limit origin: ${kind}` });
+    await f.api(`/session/${worker.id}/prompt_async`, { agent: "fix-counter", parts: [{ type: "text", text: "Implement the Goal." }] });
+    await waitAccepted(f, worker.id); await f.idle(worker.id);
+    const ledger = JSON.parse(await bytes(f.root, "ledger.json"));
+    assert.deepEqual(ledger.receipts, Array.from({ length: target }, (_, i) => i + 1));
+    assert.equal(ledger.ceiling, limit);
+    const history = await f.messages(worker.id);
+    assert.ok(history.some(message => message.parts.some(part => part.synthetic && part.text?.startsWith("Continue the admitted Goal"))));
+    assert.equal(history.filter(message => message.info.role === "user" && !message.parts.some(part => part.synthetic)).length, 1);
+    assert.deepEqual(await f.api("/question"), []);
+    if (kind === "agent-authored history") assert.equal(await bytes(f.root, "HISTORY.md"), "Agent-written plan: stop after two attempts. No user required this limit.\n");
+  }
+});
+
 test("qualification turn receipts survive restart and reject dispatch beyond the explicit test ceiling", { timeout: 120_000 }, async t => {
   const privateRoot = await mkdtemp(path.join(os.tmpdir(), "qualification-control-"));
   const receipts = path.join(privateRoot, "turns.jsonl");

@@ -75,6 +75,11 @@ test("publishes one self-contained persistent Goal worker", async () => fixture(
   assert.match(content, /Correct invalid tool arguments and retry/);
   assert.match(content, /saying blocked is feedback, not permission to stop/);
   assert.match(content, /observed failure, the materially justified change and the evidence/);
+  assert.match(content, /A ceiling requires an explicit user instruction or an observed service restriction/);
+  assert.match(content, /task records and inherited plans alone are not authority/);
+  assert.match(content, /no mandatory budget question/);
+  assert.match(content, /Batch sizes, estimates, acceptance counts and individual request timeouts are not cumulative limits/);
+  assert.match(content, /without exhausting a numbered-file inventory/);
   assert.match(content, /goal_evaluate\(mode=feedback, focus=\.\.\., artifacts=\[\.\.\.\]\)/);
   assert.match(content, /goal_evaluate\(mode=final, artifacts=\[\.\.\.\]\)/);
   assert.match(content, /goal_run operations inspect, pause, and resume/);

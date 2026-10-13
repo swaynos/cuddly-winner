@@ -16,7 +16,7 @@ test("real qualification has no inferred model or default spending/time ceilings
     OPENCODE_PUBLICATION_MAX_TURNS: "150", OPENCODE_PUBLICATION_TIMEOUT_MS: "1800000" }), {
     model: "provider/model", maxTurns: 150, timeoutMs: 1800000,
   });
-  assert.equal(publicationCases.length, 5);
+  assert.equal(publicationCases.length, 6);
   for (const task of publicationCases) {
     assert.doesNotMatch(publicationPrompt(task), /persistent|loop|resume|pause|stall|hours/i);
     assert.match(caseReadme(task), /existing read-only check/);
@@ -31,6 +31,16 @@ test("real qualification has no inferred model or default spending/time ceilings
   assert.equal(allowedQualificationCommand("pwd && git status --short", "/tmp/task"), true);
   assert.equal(allowedQualificationCommand("sha256sum worker.js README.md HISTORY.md verify.test.mjs && git status --short", "/tmp/task"), true);
   assert.equal(allowedQualificationCommand("sha256sum /private/auth.json", "/tmp/task"), false);
+  assert.equal(allowedQualificationCommand("git status --short && git diff -- worker.js preparation.json", "/tmp/task"), true);
+  assert.equal(allowedQualificationCommand("git diff -- /private/auth.json", "/tmp/task"), false);
+  assert.equal(allowedQualificationCommand("git diff --no-index worker.js /private/auth.json", "/tmp/task"), false);
+  assert.equal(allowedQualificationCommand("git status --short && git diff -- worker.js && git log --oneline -10", "/tmp/task"), true);
+  assert.equal(allowedQualificationCommand("git status --short && git diff --name-only", "/tmp/task"), true);
+  assert.equal(allowedQualificationCommand("git status --porcelain && git diff --stat", "/tmp/task"), true);
+  assert.equal(allowedQualificationCommand("git add worker.js", "/tmp/task"), false);
+  assert.equal(allowedQualificationCommand("git diff --no-index /dev/null preparation.json", "/tmp/task"), true);
+  assert.equal(allowedQualificationCommand("ls -la", "/tmp/task"), true);
+  assert.equal(allowedQualificationCommand("ls -la /private", "/tmp/task"), false);
   const request = { permission: "bash", sessionID: "root", tool: { messageID: "m1", callID: "call1" }, patterns: ["node *"] };
   const part = { type: "tool", tool: "bash", messageID: "m1", callID: "call1", sessionID: "root", state: {
     status: "running", input: { command: "node --test verify.test.mjs" },
