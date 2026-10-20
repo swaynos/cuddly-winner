@@ -1,5 +1,9 @@
 # Cuddly Winner
 
+> Moving to OpenCode V2? Read [Migrate to Prometheus](docs/MIGRATION-TO-PROMETHEUS.md).
+> The replacement [Prometheus project](https://github.com/swaynos/prometheus) is experimental.
+> It is distinct from this profile's planning-only Prometheus agent.
+
 Goal Agents are persistent named workers: they implement and explore in their root
 conversation, automatically continuing partial work and failed experiments. Fresh
 independent evaluators provide feedback and final acceptance. Publication, passing
